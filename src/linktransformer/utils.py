@@ -1,4 +1,4 @@
-from llmlink.modified_sbert.LinkTransformer import LinkTransformer
+from linktransformer.modified_sbert.LinkTransformer import LinkTransformer
 import numpy as np
 import pandas as pd
 import transformers

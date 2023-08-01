@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 from linktransformer.data import DATA_DIR_PATH
-from linktransformer.infer import lm_merge, lm_aggregate, lm_merge_blocking, lm_aggregate
+from linktransformer.infer import lm_merge, lm_aggregate, lm_merge_blocking, lm_aggregate, dedup
 
 def test_lm_merge():
     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
@@ -42,7 +42,7 @@ def test_lm_merge_with_blocking_df():
 # Add more test functions for other functionalities of your code
 
 # French to English Translation Test
-def test_french_to_english_translation():
+def test_french_to_english_crosslingual():
     df_french = pd.read_csv(os.path.join(DATA_DIR_PATH, "translation_1.csv"))
     df_english = pd.read_csv(os.path.join(DATA_DIR_PATH, "translation_2.csv"))
 
@@ -52,9 +52,20 @@ def test_french_to_english_translation():
     # Add more assertions to check the correctness of the output
 
 
+###Test deduplication
+def test_dedup():
+    df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
+    df_dedup=dedup(df,on="CompanyName",model="all-MiniLM-L6-v2",cluster_type= "agglomerative",
+        cluster_params= {'threshold': 0.7})
+    assert isinstance(df_dedup, pd.DataFrame,)
+    # Add more assertions to check the correctness of the output
+
+
+
 if __name__ == "__main__":
-    test_lm_merge()
-    test_lm_aggregate()
-    test_lm_merge_with_multiple_columns()
-    test_lm_merge_with_blocking_df()
-    test_french_to_english_translation()
+    # test_lm_merge()
+    # test_lm_aggregate()
+    # test_lm_merge_with_multiple_columns()
+    # test_lm_merge_with_blocking_df()
+    # test_french_to_english_crosslingual()
+    test_dedup()

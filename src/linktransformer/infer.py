@@ -31,21 +31,18 @@ def lm_merge(
     """
     Merge two dataframes using language model embeddings.
 
-    Args:
-        df1 (DataFrame): First dataframe (left).
-        df2 (DataFrame): Second dataframe (right).
-        merge_type (str): Type of merge to perform (1:m or m:1 or 1:1).
-        model (str): Language model to use.
-        on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
-        left_on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
-        right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
-        suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
-        use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
-        batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
-        openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
-
-    Returns:
-        DataFrame: The merged dataframe.
+    :param df1 (DataFrame): First dataframe (left).
+    :param df2 (DataFrame): Second dataframe (right).
+    :param merge_type (str): Type of merge to perform (1:m or m:1 or 1:1).
+    :param model (str): Language model to use.
+    :param on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+    :param left_on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+    :param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
+    :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
+    :param use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
+    :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
+    :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
+    :return: DataFrame: The merged dataframe.
     """
     ## Set common columns as on if not specified
     if on is None:
@@ -187,7 +184,7 @@ def lm_merge_blocking(
     ### First, we need to check if blocking vars are specified
     if blocking_vars is None:
         print("No blocking vars specified, matching between all rows")
-        df_lm_matched = lm_merge_df(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
+        df_lm_matched = lm_merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
                                     right_on=right_on, suffixes=suffixes, use_gpu=use_gpu, batch_size=batch_size,
                                      openai_key=openai_key)
         return df_lm_matched
@@ -229,7 +226,7 @@ def lm_merge_blocking(
             df1_block = df1_blocks.get_group(block_1)
             df2_block = df2_blocks.get_group(block_1)
             ## Merge the blocks
-            df_block_matched = lm_merge_df(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
+            df_block_matched = lm_merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
                                            left_on=left_on, right_on=right_on, suffixes=suffixes, use_gpu=use_gpu,
                                            batch_size=batch_size, openai_key=openai_key)
             ## Add to merged dfs
@@ -294,7 +291,6 @@ def dedup(
     embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
     ### Now, cluster the embeddings based on similarity threshold
     labels = cluster(cluster_type, cluster_params, embeddings, corpus_ids=None)
-    print(labels)
     ### Now, keep only 1 row per cluster
     df["cluster"] = labels
     df = df.drop_duplicates(subset="cluster", keep="first")
@@ -329,7 +325,7 @@ def lm_aggregate(
     ref_df = ref_df.copy()
 
     ## Just use the merge function with merge type 1:m
-    df_lm_matched = lm_merge_df(df, ref_df, merge_type="1:1", on=None, model=model, left_on=left_on,
+    df_lm_matched = lm_merge(df, ref_df, merge_type="1:1", on=None, model=model, left_on=left_on,
                                 right_on=right_on, suffixes=("_x", "_y"), use_gpu=False, batch_size=128,
                                  openai_key=openai_key)
 
