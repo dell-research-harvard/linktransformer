@@ -7,8 +7,8 @@ from collections import defaultdict
 from typing import List, Tuple, Dict, Any
 import pandas as pd
 
-from llmlink.utils import serialize_columns
-from llmlink.modified_sbert.cluster_fns import clusters_from_edges
+from linktransformer.utils import serialize_columns
+from linktransformer.modified_sbert.cluster_fns import clusters_from_edges
 
 def convert_to_text(unicode_string):
     return unicode_string.encode('ascii','ignore').decode('ascii')
