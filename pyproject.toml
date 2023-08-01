@@ -3,7 +3,7 @@ requires = ['setuptools']
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "llmlink"
+name = "linktransformer"
 version = "0.1.0"
 dependencies = [
        "scikit-learn",
@@ -33,7 +33,7 @@ classifiers = [
 license = {file = "LICENSE.txt"}
 
 [project.urls]
-Homepage = "https://github.com/dell-research-harvard/llmklink"
+Homepage = "https://github.com/dell-research-harvard/linktransformer"
 
 
 [tool.pytest.ini_options]
