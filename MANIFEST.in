@@ -1,0 +1,3 @@
+include src/linktransformer/data/*.csv
+include src/linktransformer/data/*.xlsx
+include src/linktransformer/configs/*.json

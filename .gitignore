@@ -1,0 +1,7 @@
+**__pycache__/**
+.pytest_cache/
+models/
+current_best_matches.csv
+*.pyc
+dist/
+*.egg-info/

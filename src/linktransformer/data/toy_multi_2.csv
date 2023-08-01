@@ -1,0 +1,16 @@
+ProductID,CompanyName,ProductCategory,ProductDescription,Price
+201,TechCorp,Electronics,High performance laptop with solid state drive,1400
+202,InfoTech Solutions,Electronics,Smartphone with AI support,950
+203,GlobalSoft,Software,CRM software for enterprises,1800
+204,DataTech,Data Analysis,Data analytics platform for large datasets,1700
+205,SoftSys,Software,Document management software for businesses,2000
+206,TechCorp,Electronics,Powerful gaming laptop with SSD,1600
+207,InfoTech Solutions,Electronics,Smartphone with advanced AI capabilities,1100
+208,GlobalSoft,Software,Advanced CRM software for businesses,2100
+209,DataTech,Data Analysis,Big data analytics platform for enterprises,1900
+210,SoftSys,Software,Enterprise document management system,2300
+211,TechCorp,Electronics,Ultra-thin laptop with touchscreen,2000
+212,InfoTech Solutions,Electronics,Smartphone with 5G support,1200
+213,GlobalSoft,Software,Cloud-based CRM software,2500
+214,DataTech,Data Analysis,Real-time data analytics platform,2200
+215,SoftSys,Software,Team collaboration software,1800

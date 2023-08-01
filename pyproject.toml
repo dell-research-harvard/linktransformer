@@ -1,0 +1,51 @@
+[build-system]
+requires = ['setuptools']
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llmlink"
+version = "0.1.0"
+dependencies = [
+       "scikit-learn",
+        "faiss-cpu",
+        "hdbscan",
+        "networkx",
+        "torch",
+        "sentence_transformers",
+        "transformers",
+        "wandb",
+        "numpy",
+        "pandas",
+        "openai",
+        "openpyxl"
+]
+authors = [
+  { name="Abhishek Arora, Sam Jones and Melissa Dell", email="llmklinkpython@gmail.com" },
+]
+description = "A simple way to do link dataframes using large language models."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent"
+]
+license = {file = "LICENSE.txt"}
+
+[project.urls]
+Homepage = "https://github.com/dell-research-harvard/llmklink"
+
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "src"
+]
+
+[tool.setuptools]
+# ...
+# By default, include-package-data is true in pyproject.toml, so you do
+# NOT have to specify this line.
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]

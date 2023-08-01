@@ -1,0 +1,17 @@
+{
+  "model_save_dir": "models",
+  "model_save_name" : "linkage-es",
+  "train_batch_size": 64,
+  "num_epochs": 10,
+  "warm_up_perc": 1,
+  "learning_rate": 2e-6,
+  "val_perc": 0.2,
+  "wandb_names": {
+    "project": "linkage",
+    "id": "econabhishek",
+    "run": "paraphrase-xlm-r-multilingual-v1-es",
+    "entity": "econabhishek"
+  }, 
+  "add_pooling_layer": false,
+  "language":"es"
+}
