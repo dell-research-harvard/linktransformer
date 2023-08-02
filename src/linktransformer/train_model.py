@@ -1,9 +1,10 @@
 import json
 import os
-from typing import List
+from typing import List, Union
 from linktransformer.modified_sbert.train import train_biencoder
 from linktransformer.preprocess import prep_linkage_data, preprocess_mexican_tarrif_data
 from linktransformer.configs import LINKAGE_CONFIG_PATH
+from pandas import DataFrame
 
 
 def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
@@ -80,7 +81,8 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
 
 def train_model(
     model_path: str="sentence-transformers/paraphrase-xlm-r-multilingual-v1",
-    dataset_path: str = "data/es_mexican_products.xlsx",
+    ##Data can be path to the excel file or a dataframe
+    data: Union[str,DataFrame]=None,
     left_col_names: List[str] = ["description47"],
     right_col_names: List[str] = ['description48'],
     left_id_name: List[str] = ['tariffcode47'],
@@ -93,7 +95,7 @@ def train_model(
     Train the LinkTransformer model.
 
     :param: model_path (str): The name of the model to use.
-    :param: dataset_path (str): Path to the dataset in Excel format.
+    :param: data (str): Path to the dataset in Excel or CSV format or a dataframe object.
     :param: left_col_names (List[str]): List of column names to use as left side data.
     :param: right_col_names (List[str]): List of column names to use as right side data.
     :param: left_id_name (List[str]): List of column names to use as identifiers for the left data.
@@ -103,7 +105,6 @@ def train_model(
     :param: log_wandb (bool): Whether to log the training run on wandb.
     :return: The path to the saved best model.
     """
-    print(f"Using Training data from {dataset_path}")
 
     # Load the configuration from the JSON file
     with open(config_path, "r") as config_file:
@@ -122,7 +123,7 @@ def train_model(
 
     print("loading wiki comp data - would only work with supcon loss")
     train_data, val_data = prep_linkage_data(
-        dataset_path,
+        data,
         left_col_names=left_col_names,
         right_col_names=right_col_names,
         left_id_name=left_id_name,
@@ -151,7 +152,7 @@ def train_model(
     print(f"Best model saved on the path: {best_model_path} ")
 
     ##Add the dataset used in the config 
-    config["training_dataset"]=dataset_path
+    config["training_dataset"]=data if isinstance(data,str) else "dataframe"
     ##Add the best model path in the config
     config["best_model_path"]=best_model_path
     ##Save the config

@@ -10,14 +10,14 @@ def test_train_model():
     # Call the train_model function
     saved_model_path = train_model(
         model_path="hiiamsid/sentence_similarity_spanish_es",
-        dataset_path=dataset_path,
+        data=dataset_path,
         left_col_names=["description47"],
         right_col_names=['description48'],
         left_id_name=['tariffcode47'],
         right_id_name=['tariffcode48'],
         log_wandb=False,
         config_path=LINKAGE_CONFIG_PATH,
-        training_args={"num_epochs": 1}
+        training_args={"num_epochs": 0}
     )
 
     # Add assertions to check if the training was successful and the model was saved

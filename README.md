@@ -24,7 +24,7 @@ pip install linktransformer
 
 ```python
 
-from linktransformer import lm_merge_df, dedup
+from linktransformer import lm_merge, dedup
 
 # Example usage of lm_merge_df
 merged_df = lm_merge_df(df1, df2, merge_type='1:1', on='key_column', model='your-pretrained-model')

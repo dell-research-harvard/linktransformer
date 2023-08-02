@@ -63,26 +63,31 @@ def lm_merge(
 
     if merge_type == "1:m":
         if df1[left_on].duplicated().any():
-            raise ValueError(f"Keys in df1 are not unique")
+           print("Warning: Keys in df1 are not unique")
 
     if merge_type == "m:1":
         ## Check if keys in df2 are unique
         if df2[right_on].duplicated().any():
-            raise ValueError(f"Keys in df2 are not unique")
-
+            print("Warning: Keys in df2 are not unique")
     if merge_type == "1:1":
         ## Check if keys in df1 are unique
         if df1[left_on].duplicated().any():
-            raise ValueError(f"Keys in df1 are not unique")
+           print("Warning: Keys in df1 are not unique")
         ## Check if keys in df2 are unique
         if df2[right_on].duplicated().any():
-            raise ValueError(f"Keys in df2 are not unique")
+           print("Warning: Keys in df1 are not unique")
 
     df1 = df1.copy()
     df2 = df2.copy()
     ## give ids to each df
-    df1.loc[:, "id"] = np.arange(len(df1))
-    df2.loc[:, "id"] = np.arange(len(df2))
+    ##Ensure that there is no id_lt column in df1 or df2
+    if "id_lt" in df1.columns:
+        raise ValueError(f"Column id_lt already exists in df1, please rename it to proceed")
+    if "id_lt" in df2.columns:
+        raise ValueError(f"Column id_lt already exists in df2,please rename it to proceed")
+
+    df1.loc[:, "id_lt"] = np.arange(len(df1))
+    df2.loc[:, "id_lt"] = np.arange(len(df2))
 
     if isinstance(right_on, list):
         strings_right = serialize_columns(df2, right_on, sep_token=model)
@@ -263,7 +268,7 @@ def dedup(
         on (Union[str, List[str]]): Column(s) to deduplicate on.
         cluster_type (str): Clustering method to use. Defaults to "SLINK".
         cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
-        openai_key (str): OpenAI API key for InferKit API. Defaults to None.
+        openai_key (str): OpenAI API key
 
     Returns:
         DataFrame: The deduplicated dataframe.

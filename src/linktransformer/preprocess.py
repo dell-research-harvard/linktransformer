@@ -16,7 +16,7 @@ def convert_to_text(unicode_string):
 
 
 def prep_linkage_data(
-    data_path: str = "file.csv",
+    data: str = "file.csv",
     left_col_names: List[str] = [],
     right_col_names: List[str] = [],
     left_id_name: List[str] = [],
@@ -28,7 +28,7 @@ def prep_linkage_data(
     Process linkage data to create training and validation sets.
 
     Args:
-        data_path (str): Path to the csv file.
+        data (str): Path to the csv or excel file or dataframe
         left_col_names (List[str]): List of column names to use for linkage in the left dataframe. Each list is a set of columns that are used to make a pair. Left columns need to be unique.
         right_col_names (List[str]): List of column names to use for linkage in the right dataframe. Each list is a set of columns that are used to make a pair. Right columns can have duplicates.
         left_id_name (List[str]): List of column names to use as id for the left columns.
@@ -43,10 +43,15 @@ def prep_linkage_data(
     """
 
     ### Load the data if xlsx, else csv
-    if data_path.endswith(".xlsx"):
-        data = pd.read_excel(data_path)
+    if isinstance(data, pd.DataFrame):
+        data = data
+    elif data.endswith(".xlsx"):
+        data = pd.read_excel(data)
+    elif data.endswith(".csv"):
+        data = pd.read_csv(data)
     else:
-        data = pd.read_csv(data_path)
+        raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+
     data = data.copy()
 
     ### Check if the columns are present in the data or not
@@ -77,7 +82,7 @@ def prep_linkage_data(
     
     ## Check if left columns form a unique key
     if not data[left_col_names].duplicated().any():
-        raise ValueError(f"Left columns do not form a unique key, please check the left column names")
+        print(f" Warning Left columns do not form a unique key, please check the left column names")
     
     #### Check if right columns form a unique key, leave a warning if not and drop duplicates
     if data[right_col_names].duplicated().any():
