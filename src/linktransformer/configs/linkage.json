@@ -13,5 +13,8 @@
     "entity": "econabhishek"
   }, 
   "add_pooling_layer": false,
-  "language":"es"
+  "language":"es",
+  "large_val": true,
+  "eval_steps_perc": 0.1,
+  "test_at_end": true
 }

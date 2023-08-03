@@ -7,7 +7,7 @@ from typing import Union, List, Optional, Tuple,Dict, Any
 from pandas import DataFrame
 
 from linktransformer.modified_sbert.cluster_fns import cluster
-from linktransformer.utils import serialize_columns, infer_embeddings, load_model
+from linktransformer.utils import serialize_columns, infer_embeddings, load_model, cosine_similarity
 
 
 
@@ -90,9 +90,9 @@ def lm_merge(
     df2.loc[:, "id_lt"] = np.arange(len(df2))
 
     if isinstance(right_on, list):
-        strings_right = serialize_columns(df2, right_on, sep_token=model)
+        strings_right = serialize_columns(df2, right_on, model=model)
     if isinstance(left_on, list):
-        strings_left = serialize_columns(df1, left_on, sep_token=model)
+        strings_left = serialize_columns(df1, left_on, model=model)
     else:
         strings_left = df1[left_on].tolist()
         strings_right = df2[right_on].tolist()
@@ -286,7 +286,7 @@ def dedup(
     ## First, get the embeddings
     ### If len(on)>1, then we need to serialize the columns
     if isinstance(on, list):
-        strings = serialize_columns(df, on, sep_token=model)
+        strings = serialize_columns(df, on, model=model)
     else:
         strings = df[on].tolist()
     
@@ -336,6 +336,59 @@ def lm_aggregate(
 
     return df_lm_matched
 
+
+
+def lm_evaluate_pairs(df,model,left_on,right_on,openai_key=None):
+    """
+    This function evaluates paired columns in a dataframe and gives a match score (cosine similarity). 
+    Typically, this can be though of as a way to evaluate already merged in dataframes.
+
+    :param df (DataFrame): Dataframe to evaluate.
+    :param model (str): Language model to use.
+    :param left_on (Union[str, List[str]]): Column(s) to evaluate on in df.
+    :param right_on (Union[str, List[str]]): Reference column(s) to evaluate on in df.
+    :return: DataFrame: The evaluated dataframe.
+    """
+
+    df = df.copy()
+
+    ###We will serialize the columns if they are lists
+    if isinstance(left_on, list):
+        strings_left = serialize_columns(df, left_on, model=model)
+    else:
+        strings_left = df[left_on].tolist()
+    
+    if isinstance(right_on, list):
+        strings_right = serialize_columns(df, right_on, model=model)
+    else:
+        strings_right = df[right_on].tolist()
+
+    ## Load the model
+    model = load_model(model)
+
+    ## Infer embeddings for df1
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key)
+    ## Infer embeddings for df2
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key)
+
+    ### Expand dim if embeddings are 1d (numpy)
+    if len(embeddings1.shape) == 1:
+        embeddings1 = np.expand_dims(embeddings1, axis=0)
+    if len(embeddings2.shape) == 1:
+        embeddings2 = np.expand_dims(embeddings2, axis=0)
+    ## Normalize embedding tensors using numpy
+
+    embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
+    embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
+
+    ## Compute cosine similarity between CORRESPONDING pair of embeddings
+    cosine_similarity_12 = cosine_similarity(embeddings1,embeddings2)
+    print(cosine_similarity_12.shape)
+
+    ## Add cosine similarity to df
+    df["score"] = cosine_similarity_12.flatten()
+
+    return df
 
 
 

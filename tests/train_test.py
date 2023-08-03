@@ -17,7 +17,8 @@ def test_train_model():
         right_id_name=['tariffcode48'],
         log_wandb=False,
         config_path=LINKAGE_CONFIG_PATH,
-        training_args={"num_epochs": 0}
+        training_args={"num_epochs": 3,
+                       "test_at_end": False}
     )
 
     # Add assertions to check if the training was successful and the model was saved

@@ -10,6 +10,9 @@ import wandb
 from typing import List, Dict, Set, Callable
 from torch import Tensor
 
+from sklearn.metrics.pairwise import paired_cosine_distances, paired_euclidean_distances, paired_manhattan_distances
+from sklearn.metrics import average_precision_score
+
 currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
 sys.path.append(parentdir)
@@ -397,3 +400,89 @@ class InformationRetrievalEvaluator_wandb(evaluation.InformationRetrievalEvaluat
         return {'accuracy@k': num_hits_at_k, 'precision@k': precisions_at_k, 'recall@k': recall_at_k, 'ndcg@k': ndcg, 'mrr@k': MRR, 'map@k': AveP_at_k}
 
 
+
+
+class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluator):
+
+
+    def __init__(self, sentences1: List[str], sentences2: List[str], labels: List[int], name: str = '', batch_size: int = 32, show_progress_bar: bool = False, write_csv: bool = True, wandb_names=None):
+        self.sentences1 = sentences1
+        self.sentences2 = sentences2
+        self.labels = labels
+        self.wandb_names = wandb_names
+
+        assert len(self.sentences1) == len(self.sentences2)
+        assert len(self.sentences1) == len(self.labels)
+        for label in labels:
+            assert (label == 0 or label == 1)
+
+        self.write_csv = write_csv
+        self.name = name
+        self.batch_size = batch_size
+        if show_progress_bar is None:
+            show_progress_bar = (logger.getEffectiveLevel() == logging.INFO or logger.getEffectiveLevel() == logging.DEBUG)
+        self.show_progress_bar = show_progress_bar
+
+        self.csv_file = "binary_classification_evaluation" + ("_"+name if name else '') + "_results.csv"
+        self.csv_headers = ["epoch", "steps",
+                            "cossim_accuracy", "cossim_accuracy_threshold", "cossim_f1", "cossim_precision", "cossim_recall", "cossim_f1_threshold", "cossim_ap",
+                            "manhattan_accuracy", "manhattan_accuracy_threshold", "manhattan_f1", "manhattan_precision", "manhattan_recall", "manhattan_f1_threshold", "manhattan_ap",
+                            "euclidean_accuracy", "euclidean_accuracy_threshold", "euclidean_f1", "euclidean_precision", "euclidean_recall", "euclidean_f1_threshold", "euclidean_ap",
+                            "dot_accuracy", "dot_accuracy_threshold", "dot_f1", "dot_precision", "dot_recall", "dot_f1_threshold", "dot_ap"]
+
+
+
+    def compute_metrices(self, model):
+
+        print("*********************EVALUATION STARTED******************************")
+
+        sentences = list(set(self.sentences1 + self.sentences2))
+        embeddings = model.encode(sentences, batch_size=self.batch_size, show_progress_bar=self.show_progress_bar, convert_to_numpy=True)
+        emb_dict = {sent: emb for sent, emb in zip(sentences, embeddings)}
+        embeddings1 = [emb_dict[sent] for sent in self.sentences1]
+        embeddings2 = [emb_dict[sent] for sent in self.sentences2]
+
+        cosine_scores = 1 - paired_cosine_distances(embeddings1, embeddings2)
+        manhattan_distances = paired_manhattan_distances(embeddings1, embeddings2)
+        euclidean_distances = paired_euclidean_distances(embeddings1, embeddings2)
+
+        embeddings1_np = np.asarray(embeddings1)
+        embeddings2_np = np.asarray(embeddings2)
+        dot_scores = [np.dot(embeddings1_np[i], embeddings2_np[i]) for i in range(len(embeddings1_np))]
+
+        labels = np.asarray(self.labels)
+        output_scores = {}
+        for short_name, name, scores, reverse in [['cossim', 'Cosine-Similarity', cosine_scores, True], ['manhattan', 'Manhattan-Distance', manhattan_distances, False], ['euclidean', 'Euclidean-Distance', euclidean_distances, False], ['dot', 'Dot-Product', dot_scores, True]]:
+            # Note: newer versions of sbert have updated the spelling on manhatten to manhattan
+
+            acc, acc_threshold = self.find_best_acc_and_threshold(scores, labels, reverse)
+            f1, precision, recall, f1_threshold = self.find_best_f1_and_threshold(scores, labels, reverse)
+            ap = average_precision_score(labels, scores * (1 if reverse else -1))
+
+            logger.info("Accuracy with {}:           {:.2f}\t(Threshold: {:.4f})".format(name, acc * 100, acc_threshold))
+            logger.info("F1 with {}:                 {:.2f}\t(Threshold: {:.4f})".format(name, f1 * 100, f1_threshold))
+            logger.info("Precision with {}:          {:.2f}".format(name, precision * 100))
+            logger.info("Recall with {}:             {:.2f}".format(name, recall * 100))
+            logger.info("Average Precision with {}:  {:.2f}\n".format(name, ap * 100))
+
+            output_scores[short_name] = {
+                'accuracy': acc,
+                'accuracy_threshold': acc_threshold,
+                'f1': f1,
+                'f1_threshold': f1_threshold,
+                'precision': precision,
+                'recall': recall,
+                'ap': ap
+            }
+            if self.wandb_names:
+                wandb.log({
+                    f"Classification Accuracy {name}": acc,
+                    f"Classification Accuracy threshold {name}": acc_threshold,
+                    f"Classification F1 {name}": f1,
+                    f"Classification F1 threshold {name}": f1_threshold,
+                    f"Classification Precision {name}": precision,
+                    f"Classification Recall {name}": recall,
+                    f"Classification Average precision {name}": ap
+                })
+
+        return output_scores

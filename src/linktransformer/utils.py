@@ -16,7 +16,14 @@ def load_model(model_path: str) -> LinkTransformer:
     return model
 
 
-def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str, model: str = None) -> list:
+def cosine_similarity(vector1, vector2):
+    dot_product = np.sum(vector1 * vector2, axis=1)
+    norm_vector1 = np.linalg.norm(vector1, axis=1)
+    norm_vector2 = np.linalg.norm(vector2, axis=1)
+    cosine_sim = dot_product / (norm_vector1 * norm_vector2)
+    return cosine_sim
+
+def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str=None, model: str = None) -> list:
     """
     Serialize columns of a DataFrame into a single string.
 
