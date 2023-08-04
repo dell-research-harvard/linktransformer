@@ -5,6 +5,7 @@ from linktransformer.modified_sbert.train import train_biencoder
 from linktransformer.preprocess import preprocess_any_data, preprocess_mexican_tarrif_data
 from linktransformer.configs import LINKAGE_CONFIG_PATH
 import pandas as pd
+import pickle
 
 
 def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
@@ -118,6 +119,13 @@ def train_model(
     if training_args is not None:
         for key in training_args:
             config[key]=training_args[key]
+    
+    ##Make model dir
+    if not os.path.exists(config["model_save_dir"]):
+        os.makedirs(config["model_save_dir"])
+    ##Make dir for this model
+    if not os.path.exists(os.path.join(config["model_save_dir"], config["model_save_name"])):
+        os.makedirs(os.path.join(config["model_save_dir"], config["model_save_name"]))
         
     
     print(f"Loading config saved at {config_path}")
@@ -144,6 +152,17 @@ def train_model(
         test_at_end=config["test_at_end"]
     )
     
+    ##Save val and test pickles
+    if config["save_val_test_pickles"]:
+        print("Saving val and test pickles")
+        with open(os.path.join(config["model_save_dir"], config["model_save_name"], "val_data.pickle"), "wb") as val_file:
+            pickle.dump(val_data, val_file)
+        with open(os.path.join(config["model_save_dir"], config["model_save_name"], "test_data.pickle"), "wb") as test_file:
+            pickle.dump(test_data, test_file)
+
+        print("Saved val and test pickles")
+
+
     ##If label_col_name is not None, specify that the eval type is classification
     if label_col_name is not None:
         config["eval_type"]="classification"
@@ -175,15 +194,15 @@ def train_model(
     config["training_dataset"]=data if isinstance(data,str) else "dataframe"
     ##Add the best model path in the config
     config["best_model_path"]=best_model_path
-
+    config["base_model_path"]=model_path
 
     ##Save the config
     with open(os.path.join(config["model_save_dir"], config["model_save_name"], "LT_training_config.json"), "w") as config_file:
         json.dump(config, config_file)
+        
     
 
     return best_model_path
-
 
 
 
