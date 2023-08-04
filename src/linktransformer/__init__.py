@@ -1,6 +1,6 @@
 # __init__.py
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __MODEL_HUB_ORGANIZATION__ = 'sentence-transformers'
 from .data import DATA_DIR_PATH
 from .infer import *

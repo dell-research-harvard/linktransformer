@@ -82,6 +82,12 @@ def test_eval_pairs():
 
     assert isinstance(df_eval,pd.DataFrame)
 
+##Test pairwise evaluate
+def test_all_pairwise_eval():
+    df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_pairs.csv"))
+    df_eval=lt.all_pair_combos_evaluate(df, model="sentence-transformers/all-MiniLM-L6-v2",left_on="company_name_1",right_on="company_name_2",openai_key=None)
+    print(df_eval)
+    assert isinstance(df_eval,pd.DataFrame)
 
 
 if __name__ == "__main__":

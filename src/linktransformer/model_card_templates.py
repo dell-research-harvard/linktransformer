@@ -3,7 +3,7 @@ import logging
 from sentence_transformers.util import fullname
 
 class ModelCardTemplate:
-    __TAGS__ = ["link-transformers","sentence-transformers", "sentence-similarity","tabular-classification"]
+    __TAGS__ = ["linktransformer","sentence-transformers", "sentence-similarity","tabular-classification"]
     __DEFAULT_VARS__ = {
         "{PIPELINE_TAG}": "sentence-similarity",
         "{MODEL_DESCRIPTION}": "<!--- Describe your model here -->",
@@ -16,6 +16,8 @@ class ModelCardTemplate:
     __MODEL_CARD__ = """
 ---
 pipeline_tag: {PIPELINE_TAG}
+language: 
+{LANGUAGE}
 tags:
 {TAGS}
 {DATASETS}
@@ -30,7 +32,8 @@ It maps sentences & paragraphs to a {NUM_DIMENSIONS} dimensional dense vector sp
 Take a look at the documentation of [sentence-transformers](https://www.sbert.net/index.html) if you want to use this model for more than what we support in our applications. 
 
 
-This model has been fine-tuned on the model : {BASE_MODEL}. 
+This model has been fine-tuned on the model : {BASE_MODEL}. It is pretrained for the language : {LANGUAGE}.
+
 
 {MODEL_DESCRIPTION}
 

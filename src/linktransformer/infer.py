@@ -7,8 +7,9 @@ from typing import Union, List, Optional, Tuple,Dict, Any
 from pandas import DataFrame
 
 from linktransformer.modified_sbert.cluster_fns import cluster
-from linktransformer.utils import serialize_columns, infer_embeddings, load_model, cosine_similarity
-
+from linktransformer.utils import serialize_columns, infer_embeddings, load_model, cosine_similarity_corresponding_pairs
+from sklearn.metrics.pairwise import cosine_similarity
+from itertools import combinations
 
 
 
@@ -325,8 +326,7 @@ def evaluate_pairs(df,model,left_on,right_on,openai_key=None):
     embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
 
     ## Compute cosine similarity between CORRESPONDING pair of embeddings
-    cosine_similarity_12 = cosine_similarity(embeddings1,embeddings2)
-    print(cosine_similarity_12.shape)
+    cosine_similarity_12 = cosine_similarity_corresponding_pairs(embeddings1,embeddings2)
 
     ## Add cosine similarity to df
     df["score"] = cosine_similarity_12.flatten()
@@ -366,16 +366,10 @@ def cluster_rows(
     :param openai_key (str): OpenAI API key
     :return: DataFrame: The deduplicated dataframe.
     """
-    print(f"Deduplicating dataframe with originally {len(df)} rows")
 
     df = df.copy()
 
-    ### First, deduplicate based on exact matches
-    df = df.drop_duplicates(subset=on, keep="first")
-    print(f"Exact matches found: dropping them")
-    print(f"Number of rows after exact match deduplication: {len(df)}")
 
-    ### Now, deduplicate based on similarity threshold
     ## First, get the embeddings
     ### If len(on)>1, then we need to serialize the columns
     if isinstance(on, list):
@@ -418,7 +412,16 @@ def dedup_rows(
     :return: DataFrame: The deduplicated dataframe.
     """
 
+    df = df.copy()
+
+    
+
     print(f"Deduplicating dataframe with originally {len(df)} rows")
+    ##Drop exact duplicates
+    print("Checking for and dropping exact duplicates")
+    df = df.drop_duplicates(subset=on, keep="first")
+    print(f"Number of rows after dropping exact duplicates: {len(df)}")
+
     df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key)
     df = df.drop_duplicates(subset="cluster", keep="first")
     df = df.drop(columns=["cluster"])
@@ -429,6 +432,61 @@ def dedup_rows(
 
     
 
+def all_pair_combos_evaluate(df,model,left_on,right_on,openai_key=None):
+    """
+    Get similarity scores for every pair of rows in a dataframe. 
+    We make this efficient by only embedding each string once and get all possible pairwise distances
+    and add the expanded rows and their scores to the dataframe
+    :param df (DataFrame): Dataframe to evaluate.
+    :param model (str): Language model to use.
+    :param left_on (Union[str, List[str]]): Column(s) to evaluate on in df.
+    :param right_on (Union[str, List[str]]): Reference column(s) to evaluate on in df.
+    :param openai_key (str): OpenAI API key
+    :return: DataFrame: The evaluated dataframe.
+    """
+
+    ###Get the embeddings for the left_on column
+    if isinstance(left_on, list):
+        strings_left = serialize_columns(df, left_on, model=model)
+    else:
+        strings_left = df[left_on].tolist()
     
+    ## Infer embeddings for df1
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key)
+    embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
+
+    ###Get the embeddings for the right_on column
+    if isinstance(right_on, list):
+        strings_right = serialize_columns(df, right_on, model=model)
+    else:
+        strings_right = df[right_on].tolist()
+    
+    ## Infer embeddings for df1
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key)
+    embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
+
+    ###calculate the cosine similarity between all pairs of rows
+    cosine_similarity_12_all_pairs = cosine_similarity(embeddings1,embeddings2)
+    ##Flatten the matrix
+    cosine_similarity_12_all_pairs = cosine_similarity_12_all_pairs.flatten()
+
+    ###This gives an n*n matrix of cosine similarities. 
+
+    ###Similarly, make an n*n matrix of the left_on column and right_on column
+    left_on_all_pairs = np.repeat(df[left_on].values, len(df[right_on]), axis=0)
+
+
+    ###Left part of the df was repeating n times. We also want the right one to repeat, but 
+
+
+    right_on_all_pairs = np.tile(df[right_on].values, (len(df[left_on]),1))
+
+    ###Now, flattenn the right on pairs
+    right_on_all_pairs = right_on_all_pairs.flatten()
+
+    ###Now, we can make a dataframe with the left_on, right_on and cosine similarity
+    df_concat = pd.DataFrame({"left_on":left_on_all_pairs,"right_on":right_on_all_pairs,"score":cosine_similarity_12_all_pairs})
+
+    return df_concat
 
 

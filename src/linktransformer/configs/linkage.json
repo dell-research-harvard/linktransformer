@@ -1,6 +1,8 @@
 {
   "model_save_dir": "models",
   "model_save_name" : "linkage-es",
+  "opt_model_description":null,
+  "opt_model_lang":null,
   "train_batch_size": 64,
   "num_epochs": 10,
   "warm_up_perc": 1,
@@ -13,7 +15,6 @@
     "entity": "econabhishek"
   }, 
   "add_pooling_layer": false,
-  "language":"es",
   "large_val": true,
   "eval_steps_perc": 0.1,
   "test_at_end": true,

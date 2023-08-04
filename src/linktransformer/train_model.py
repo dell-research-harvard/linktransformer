@@ -19,7 +19,11 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
                             val_perc:float=None,
                             wandb_names:dict=None,
                             add_pooling_layer:bool=None,
-                            language:str=None):
+                            opt_model_description:str=None,
+                            opt_model_lang:str=None,
+                            test_at_end:bool=None,
+                            save_val_test_pickles:bool=None
+                            ):
     """
     Function to create a training config
     :param config_save_path (str): Path to save the config
@@ -63,8 +67,15 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
         config["wandb_names"]=wandb_names
     if add_pooling_layer is not None:
         config["add_pooling_layer"]=add_pooling_layer
-    if language is not None:
-        config["language"]=language
+    if opt_model_description is not None:
+        config["opt_model_description"]=opt_model_description
+    if opt_model_lang is not None:
+        config["opt_model_lang"]=opt_model_lang
+    if test_at_end is not None:
+        config["test_at_end"]=test_at_end
+    if save_val_test_pickles is not None:
+        config["save_val_test_pickles"]=save_val_test_pickles
+
     
 
     with open(config_save_path, "w") as config_file:
@@ -94,6 +105,7 @@ def train_model(
     config_path: str = LINKAGE_CONFIG_PATH,
     training_args: dict = {"num_epochs":10},
     log_wandb: bool = False,
+
 ) -> str:
     """
     Train the LinkTransformer model.
@@ -186,7 +198,9 @@ def train_model(
         model_save_path=os.path.join(config["model_save_dir"], config["model_save_name"]),
         wandb_names=config["wandb_names"] if log_wandb else None,
         optimizer_params={'lr': config["learning_rate"]},
-        eval_type=config["eval_type"]
+        eval_type=config["eval_type"],
+        opt_model_description=config["opt_model_description"],
+        opt_model_lang=config["opt_model_lang"]
     )
     print(f"Best model saved on the path: {best_model_path} ")
 

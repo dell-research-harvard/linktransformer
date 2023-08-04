@@ -43,10 +43,11 @@ class LinkTransformer(SentenceTransformer):
                  modules: Optional[Iterable[nn.Module]] = None,
                  device: Optional[str] = None,
                  cache_folder: Optional[str] = None,
-                 use_auth_token: Union[bool, str, None] = None
+                 use_auth_token: Union[bool, str, None] = None,
+                 opt_model_description: Optional[str] = None,
+                 opt_model_lang: Optional[str] = None,
                  ):
 
-        print("LinkTransformer's custom LinkTransformer class")
 
         super().__init__(model_name_or_path=model_name_or_path, modules=modules, device=device, cache_folder=cache_folder, use_auth_token=use_auth_token)
 
@@ -58,9 +59,15 @@ class LinkTransformer(SentenceTransformer):
                     self._lt_model_config = json.load(fIn)
                     print("Loaded LinkTransformer model config from {}".format(os.path.join(model_name_or_path, 'LT_training_config.json')))
                 self.base_model_name_or_path = self._lt_model_config['base_model_path']
+                self.opt_model_description = self._lt_model_config['opt_model_description']
+                self.opt_model_lang = self._lt_model_config['opt_model_lang']
         else:
             ###If huggningface model, then assign ##Implement later
             self.base_model_name_or_path = model_name_or_path
+
+            self.opt_model_description = opt_model_description
+            self.opt_model_lang = opt_model_lang
+            
 
 
 
@@ -120,11 +127,6 @@ class LinkTransformer(SentenceTransformer):
             tags = ModelCardTemplate.__TAGS__.copy()
             model_card = ModelCardTemplate.__MODEL_CARD__
 
-            # if len(self._modules) == 2 and isinstance(self._first_module(), Transformer) and isinstance(self._last_module(), Pooling) and self._last_module().get_pooling_mode_str() in ['cls', 'max', 'mean']:
-            #     # pooling_fct_name, pooling_fct = ModelCardTemplate.model_card_get_pooling_function(pooling_mode)
-            #     # model_card = model_card.replace("{POOLING_FUNCTION}", pooling_fct).replace("{POOLING_FUNCTION_NAME}", pooling_fct_name).replace("{POOLING_MODE}", pooling_mode)
-            #     tags.append('transformers')
-
             # Print full model
             model_card = model_card.replace("{FULL_MODEL_STR}", str(self))
 
@@ -138,6 +140,20 @@ class LinkTransformer(SentenceTransformer):
 
             ###Add base model name
             model_card=model_card.replace("{BASE_MODEL}",self.base_model_name_or_path)
+
+            ##ADd optional model description
+            if self.opt_model_description is not None:
+                model_card=model_card.replace("{MODEL_DESCRIPTION}",self.opt_model_description)
+            else:
+                pass
+                
+            ##ADd optional model language
+            if self.opt_model_lang is not None:
+                model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in [self.opt_model_lang]]))
+
+                model_card=model_card.replace("{LANGUAGE}",self.opt_model_lang)
+            else:
+                pass
 
             # Add dim info
             self._model_card_vars["{NUM_DIMENSIONS}"] = self.get_sentence_embedding_dimension()

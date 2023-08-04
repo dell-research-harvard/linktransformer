@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import transformers
 import openai
+from itertools import combinations
 
 
 def load_model(model_path: str) -> LinkTransformer:
@@ -23,12 +24,17 @@ def load_model(model_path: str) -> LinkTransformer:
     return model
 
 
-def cosine_similarity(vector1, vector2):
+def cosine_similarity_corresponding_pairs(vector1, vector2):
     dot_product = np.sum(vector1 * vector2, axis=1)
     norm_vector1 = np.linalg.norm(vector1, axis=1)
     norm_vector2 = np.linalg.norm(vector2, axis=1)
     cosine_sim = dot_product / (norm_vector1 * norm_vector2)
     return cosine_sim
+
+
+    
+
+
 
 def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str=None, model: str = None) -> list:
     """
@@ -99,4 +105,10 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
         embeddings = np.array(list(map(f, response)), dtype=np.float32)
 
     return embeddings
+
+
+
+
+
+
 

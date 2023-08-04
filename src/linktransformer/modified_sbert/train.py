@@ -45,7 +45,10 @@ def train_biencoder(
         wandb_names=None,
         already_clustered_train=False,
         eval_steps_perc=0.1,
-        eval_type="retrieval"
+        eval_type="retrieval",
+        opt_model_description=None,
+        opt_model_lang=None
+
 ):
 
     # Logging
@@ -68,11 +71,11 @@ def train_biencoder(
     if add_pooling_layer:
         word_embedding_model = models.Transformer(base_model, max_seq_length=512)
         pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension(), pooling_mode='mean')
-        model = LinkTransformer(modules=[word_embedding_model, pooling_model])
+        model = LinkTransformer(modules=[word_embedding_model, pooling_model],opt_model_description=opt_model_description,opt_model_lang=opt_model_lang)
     elif type(base_model) == LinkTransformer:
         model = base_model
     else:
-        model = LinkTransformer(base_model)
+        model = LinkTransformer(base_model,opt_model_description=opt_model_description,opt_model_lang=opt_model_lang)
 
     if wandb_names is not None:
         wandb.watch(model)

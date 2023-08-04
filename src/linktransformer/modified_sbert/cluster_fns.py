@@ -51,7 +51,7 @@ def cluster(cluster_type, cluster_params, corpus_embeddings, corpus_ids=None):
             n_clusters=None,
             distance_threshold=cluster_params["threshold"],
             linkage=cluster_params["clustering linkage"],
-            affinity=cluster_params["metric"]
+            metric=cluster_params["metric"]
         )
 
     if cluster_type == "SLINK":

@@ -12,4 +12,7 @@
     + Option to save val and test data before training
     + More API changes in the inference script
     + Added an inference function to cluster rows of a df using an LM
+## 0.1.2 
+    + Added inference function to evaluate all pairs of left and right keys to calculate distances
+    + Added more robust model card generation and upload to huggingface hub
     

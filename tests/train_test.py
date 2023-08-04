@@ -18,7 +18,9 @@ def test_train_model():
         training_args={"num_epochs": 0,
                        "test_at_end": False,
                        "save_val_test_pickles": True,
-                       "model_save_name": "test_model"}
+                       "model_save_name": "test_model",
+                       "opt_model_description": "test",
+                       "opt_model_lang":"es"}
     )
 
     # Add assertions to check if the training was successful and the model was saved
