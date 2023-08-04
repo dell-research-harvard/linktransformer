@@ -12,7 +12,14 @@ def load_model(model_path: str) -> LinkTransformer:
     :param model_path: Path to the saved model.
     :return: The loaded LinkTransformer model.
     """
-    model = LinkTransformer(model_path)
+    ###Throw an error if there is an error in loading the model
+    try:
+        model = LinkTransformer(model_path)
+    except:
+        print("Can't load the model, please check your path. All transformer based models from [HuggingFace](https://huggingface.co/) are supported. \
+               We recommend [sentence-transformers](https://www.sbert.net/docs/pretrained_models.html) for these tasks as they are trained for \
+               semantic similarity tasks. ")
+
     return model
 
 
@@ -34,8 +41,28 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str=None, mode
     :return: List of serialized strings.
     """
     if model is not None:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model)
-        sep_token = tokenizer.sep_token
+        if "/" not in model:
+            print("No base organization specified, if there is an error, it is likely because of that.")
+            print(f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!" )
+            ###Error handling
+            try:
+                tokenizer = transformers.AutoTokenizer.from_pretrained(model)
+                sep_token = tokenizer.sep_token
+            except:
+                try:
+                    print(f"Trying sentence-transformers/{model}...")
+                    tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/"+model)
+                    sep_token = tokenizer.sep_token
+                except:
+                    print(f"Trying linktransformers/{model}...")
+                    tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/"+model)
+                    sep_token = tokenizer.sep_token
+        else:
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model)
+            sep_token = tokenizer.sep_token            
+
+        
+
 
     return df[columns].apply(lambda x: sep_token.join(x.astype(str)), axis=1).tolist()
 

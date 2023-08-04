@@ -9,4 +9,7 @@
     + splits validation into test and also logs the test accuracy if test set is not specified; added test accuracy calculation at the end of training
     + Add training and eval on pairs of negatives - both in data processing and eval during training
     + Added option to supply pre-split datasets (into train-val-test)
+    + Option to save val and test data before training
+    + More API changes in the inference script
+    + Added an inference function to cluster rows of a df using an LM
     

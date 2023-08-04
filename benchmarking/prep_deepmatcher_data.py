@@ -4,7 +4,7 @@ import os
 from sklearn.metrics import f1_score
 # import hyperopt
 
-from linktransformer.infer import lm_merge, lm_evaluate_pairs
+from linktransformer.infer import  evaluate_pairs
 from hyperopt import fmin, tpe, hp
 from time import time
 from linktransformer.train_model import train_model
@@ -33,8 +33,8 @@ def evaluate_deep_matcher_data(data_dir,model,left_on,right_on,note):
     print("Columns in the test set are: ",full_test_df.columns)
 
     ##Now, calculate the cosine similarity between the left and right columns
-    full_test_df = lm_evaluate_pairs(full_test_df, left_on=left_on, right_on=right_on, model=model)
-    full_val_df = lm_evaluate_pairs(full_val_df, left_on=left_on, right_on=right_on, model=model)
+    full_test_df = evaluate_pairs(full_test_df, left_on=left_on, right_on=right_on, model=model)
+    full_val_df = evaluate_pairs(full_val_df, left_on=left_on, right_on=right_on, model=model)
 
     ###Now, we have the cosine similarity scores for the test and val sets. We want to tune the threshold on the val set and then evaluate on the test set
     def calculate_f1(threshold):
@@ -352,7 +352,7 @@ if __name__ == "__main__":
         "Structured/iTunes-Amazon":{},
         "Structured/Walmart-Amazon":{},
         "Structured/Fodors-Zagats":{},
-        # "Textual/Company":{},
+        # "Textual/Company":{}, #This follows a different format in file naming
         "Dirty/DBLP-ACM" : {},
         "Dirty/DBLP-GoogleScholar" : {},
         "Dirty/iTunes-Amazon" : {},
@@ -360,8 +360,7 @@ if __name__ == "__main__":
         "Textual/Abt-Buy":{}
 
         }
-    pretrained_model="sentence-transformers/multi-qa-mpnet-base-dot-v1"
-    # pretrained_model="sentence-transformers/all-mpnet-base-v2"
+    pretrained_model="sentence-transformers/all-mpnet-base-v2"
 
     run_train_eval_retrieval_dm_datasets(deep_matcher_datasets,pretrained_model)
     run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_model)

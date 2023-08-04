@@ -15,7 +15,7 @@ from linktransformer.utils import serialize_columns, infer_embeddings, load_mode
 
 
 
-def lm_merge(
+def merge(
     df1: DataFrame,
     df2: DataFrame,
     merge_type: str = '1:1',
@@ -151,7 +151,7 @@ def lm_merge(
     
 
 
-def lm_merge_blocking(
+def merge_blocking(
     df1: DataFrame,
     df2: DataFrame,
     merge_type: str = '1:1',
@@ -168,28 +168,25 @@ def lm_merge_blocking(
     """
     Merge two dataframes using language model embeddings with optional blocking.
 
-    Args:
-        df1 (DataFrame): First dataframe (left).
-        df2 (DataFrame): Second dataframe (right).
-        merge_type (str): Type of merge to perform (1:m or m:1 or 1:1).
-        model (str): Language model to use.
-        on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
-        left_on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
-        right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
-        blocking_vars (List[str], optional): Columns to use for blocking. Defaults to None.
-        suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
-        use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
-        batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
-        openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
-
-    Returns:
-        DataFrame: The merged dataframe.
+    :param df1 (DataFrame): First dataframe (left).
+    :param df2 (DataFrame): Second dataframe (right).
+    :param merge_type (str): Type of merge to perform (1:m or m:1 or 1:1).
+    :param model (str): Language model to use.
+    :param on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+    :param left_on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+    :param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
+    :param blocking_vars (List[str], optional): Columns to use for blocking. Defaults to None.
+    :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
+    :param use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
+    :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
+    :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
+    :return: DataFrame: The merged dataframe.
     """
     ### For blocking, we need to chunk the dfs into blocks
     ### First, we need to check if blocking vars are specified
     if blocking_vars is None:
         print("No blocking vars specified, matching between all rows")
-        df_lm_matched = lm_merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
+        df_lm_matched = merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
                                     right_on=right_on, suffixes=suffixes, use_gpu=use_gpu, batch_size=batch_size,
                                      openai_key=openai_key)
         return df_lm_matched
@@ -231,7 +228,7 @@ def lm_merge_blocking(
             df1_block = df1_blocks.get_group(block_1)
             df2_block = df2_blocks.get_group(block_1)
             ## Merge the blocks
-            df_block_matched = lm_merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
+            df_block_matched = merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
                                            left_on=left_on, right_on=right_on, suffixes=suffixes, use_gpu=use_gpu,
                                            batch_size=batch_size, openai_key=openai_key)
             ## Add to merged dfs
@@ -251,60 +248,9 @@ def lm_merge_blocking(
         return df_lm_matched
 
 
-def dedup(
-    df: DataFrame,
-    model: str,
-    on: Union[str, List[str]],
-    cluster_type: str = "SLINK",
-    cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
-    openai_key: str = None
-) -> DataFrame:
-    """
-    Deduplicate a dataframe based on a similarity threshold.
-
-    Args:
-        df (DataFrame): Dataframe to deduplicate.
-        model (str): Language model to use.
-        on (Union[str, List[str]]): Column(s) to deduplicate on.
-        cluster_type (str): Clustering method to use. Defaults to "SLINK".
-        cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
-        openai_key (str): OpenAI API key
-
-    Returns:
-        DataFrame: The deduplicated dataframe.
-    """
-    print(f"Deduplicating dataframe with originally {len(df)} rows")
-
-    df = df.copy()
-
-    ### First, deduplicate based on exact matches
-    df = df.drop_duplicates(subset=on, keep="first")
-    print(f"Exact matches found: dropping them")
-    print(f"Number of rows after exact match deduplication: {len(df)}")
-
-    ### Now, deduplicate based on similarity threshold
-    ## First, get the embeddings
-    ### If len(on)>1, then we need to serialize the columns
-    if isinstance(on, list):
-        strings = serialize_columns(df, on, model=model)
-    else:
-        strings = df[on].tolist()
-    
-    ## Infer embeddings for df
-    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key)
-    ## Normalize embedding tensors using numpy
-    embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-    ### Now, cluster the embeddings based on similarity threshold
-    labels = cluster(cluster_type, cluster_params, embeddings, corpus_ids=None)
-    ### Now, keep only 1 row per cluster
-    df["cluster"] = labels
-    df = df.drop_duplicates(subset="cluster", keep="first")
-    print(f"Similarity matches found: {len(df)}, dropping them")
-
-    return df
 
 
-def lm_aggregate(
+def aggregate_rows(
     df: DataFrame,
     ref_df: DataFrame,
     model: str,
@@ -315,22 +261,19 @@ def lm_aggregate(
     """
     Aggregate the dataframe based on a reference dataframe using a language model.
 
-    Args:
-        df (DataFrame): Dataframe to aggregate.
-        ref_df (DataFrame): Reference dataframe to aggregate on.
-        model (str): Language model to use.
-        left_on (Union[str, List[str]]): Column(s) to aggregate on in df.
-        right_on (Union[str, List[str]]): Reference column(s) to aggregate on in ref_df.
-
-    Returns:
-        DataFrame: The aggregated dataframe.
+    :param df (DataFrame): Dataframe to aggregate.
+    :param ref_df (DataFrame): Reference dataframe to aggregate on.
+    :param model (str): Language model to use.
+    :param left_on (Union[str, List[str]]): Column(s) to aggregate on in df.
+    :param right_on (Union[str, List[str]]): Reference column(s) to aggregate on in ref_df.
+    :return: DataFrame: The aggregated dataframe.
     """
 
     df = df.copy()
     ref_df = ref_df.copy()
 
     ## Just use the merge function with merge type 1:m
-    df_lm_matched = lm_merge(df, ref_df, merge_type="1:1", on=None, model=model, left_on=left_on,
+    df_lm_matched = merge(df, ref_df, merge_type="1:1", on=None, model=model, left_on=left_on,
                                 right_on=right_on, suffixes=("_x", "_y"), use_gpu=False, batch_size=128,
                                  openai_key=openai_key)
 
@@ -338,7 +281,7 @@ def lm_aggregate(
 
 
 
-def lm_evaluate_pairs(df,model,left_on,right_on,openai_key=None):
+def evaluate_pairs(df,model,left_on,right_on,openai_key=None):
     """
     This function evaluates paired columns in a dataframe and gives a match score (cosine similarity). 
     Typically, this can be though of as a way to evaluate already merged in dataframes.
@@ -390,10 +333,98 @@ def lm_evaluate_pairs(df,model,left_on,right_on,openai_key=None):
 
     return df
 
+def cluster_rows(
+    df: DataFrame,
+    model: str,
+    on: Union[str, List[str]],
+    cluster_type: str = "SLINK",
+    cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
+    openai_key: str = None
+) -> DataFrame:
+    """
+    Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.         
+    "agglomerative": {
+            "threshold": 0.5,
+            "clustering linkage": "ward",  # You can choose a default linkage method
+            "metric": "euclidean",  # You can choose a default metric
+        },
+        "HDBScan": {
+            "min cluster size": 5,
+            "min samples": 1,
+        },
+        "SLINK": {
+            "min cluster size": 2,
+            "threshold": 0.1,
+        },
+    }
 
+    :param df (DataFrame): Dataframe to deduplicate.
+    :param model (str): Language model to use.
+    :param on (Union[str, List[str]]): Column(s) to deduplicate on.
+    :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
+    :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
+    :param openai_key (str): OpenAI API key
+    :return: DataFrame: The deduplicated dataframe.
+    """
+    print(f"Deduplicating dataframe with originally {len(df)} rows")
 
+    df = df.copy()
 
+    ### First, deduplicate based on exact matches
+    df = df.drop_duplicates(subset=on, keep="first")
+    print(f"Exact matches found: dropping them")
+    print(f"Number of rows after exact match deduplication: {len(df)}")
+
+    ### Now, deduplicate based on similarity threshold
+    ## First, get the embeddings
+    ### If len(on)>1, then we need to serialize the columns
+    if isinstance(on, list):
+        strings = serialize_columns(df, on, model=model)
+    else:
+        strings = df[on].tolist()
     
+    ## Infer embeddings for df
+    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key)
+    ## Normalize embedding tensors using numpy
+    embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+    ### Now, cluster the embeddings based on similarity threshold
+    labels = cluster(cluster_type, cluster_params, embeddings, corpus_ids=None)
+    ### Now, keep only 1 row per cluster
+    df["cluster"] = labels
+    return df
+
+
+
+
+
+def dedup_rows(
+    df: DataFrame,
+    model: str,
+    on: Union[str, List[str]],
+    cluster_type: str = "SLINK",
+    cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
+    openai_key: str = None
+) -> DataFrame:
+    """
+    Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
+    Refer to the docs for the cluster_rows function for more details.
+
+    :param df (DataFrame): Dataframe to deduplicate.
+    :param model (str): Language model to use.
+    :param on (Union[str, List[str]]): Column(s) to deduplicate on.
+    :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
+    :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
+    :param openai_key (str): OpenAI API key
+    :return: DataFrame: The deduplicated dataframe.
+    """
+
+    print(f"Deduplicating dataframe with originally {len(df)} rows")
+    df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key)
+    df = df.drop_duplicates(subset="cluster", keep="first")
+    df = df.drop(columns=["cluster"])
+    print(f"Number of rows after deduplication: {len(df)}")
+
+    return df
 
 
     

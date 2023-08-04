@@ -50,6 +50,19 @@ class LinkTransformer(SentenceTransformer):
 
         super().__init__(model_name_or_path=model_name_or_path, modules=modules, device=device, cache_folder=cache_folder, use_auth_token=use_auth_token)
 
+        ##If it is a local path, we need to load the config (LT) from the file FLAG - CLEAN THIS UP
+        if os.path.isdir(model_name_or_path):
+            ###If config file exists, load it. It will be in the parent folder of the model
+            if os.path.isfile(os.path.join(os.path.dirname(model_name_or_path), 'LT_training_config.json')):
+                with open(os.path.join(os.path.dirname(model_name_or_path), 'LT_training_config.json'), 'r') as fIn:
+                    self._lt_model_config = json.load(fIn)
+                    print("Loaded LinkTransformer model config from {}".format(os.path.join(model_name_or_path, 'LT_training_config.json')))
+                self.base_model_name_or_path = self._lt_model_config['base_model_path']
+        else:
+            ###If huggningface model, then assign ##Implement later
+            self.base_model_name_or_path = model_name_or_path
+
+
 
     def save(self, path: str, model_name: Optional[str] = None, create_model_card: bool = True, train_datasets: Optional[List[str]] = None):
         """
@@ -107,13 +120,10 @@ class LinkTransformer(SentenceTransformer):
             tags = ModelCardTemplate.__TAGS__.copy()
             model_card = ModelCardTemplate.__MODEL_CARD__
 
-            if len(self._modules) == 2 and isinstance(self._first_module(), Transformer) and isinstance(self._last_module(), Pooling) and self._last_module().get_pooling_mode_str() in ['cls', 'max', 'mean']:
-                pooling_module = self._last_module()
-                pooling_mode = pooling_module.get_pooling_mode_str()
-                model_card = model_card.replace("{USAGE_TRANSFORMERS_SECTION}", ModelCardTemplate.__USAGE_TRANSFORMERS__)
-                # pooling_fct_name, pooling_fct = ModelCardTemplate.model_card_get_pooling_function(pooling_mode)
-                # model_card = model_card.replace("{POOLING_FUNCTION}", pooling_fct).replace("{POOLING_FUNCTION_NAME}", pooling_fct_name).replace("{POOLING_MODE}", pooling_mode)
-                tags.append('transformers')
+            # if len(self._modules) == 2 and isinstance(self._first_module(), Transformer) and isinstance(self._last_module(), Pooling) and self._last_module().get_pooling_mode_str() in ['cls', 'max', 'mean']:
+            #     # pooling_fct_name, pooling_fct = ModelCardTemplate.model_card_get_pooling_function(pooling_mode)
+            #     # model_card = model_card.replace("{POOLING_FUNCTION}", pooling_fct).replace("{POOLING_FUNCTION_NAME}", pooling_fct_name).replace("{POOLING_MODE}", pooling_mode)
+            #     tags.append('transformers')
 
             # Print full model
             model_card = model_card.replace("{FULL_MODEL_STR}", str(self))
@@ -126,6 +136,8 @@ class LinkTransformer(SentenceTransformer):
                 datasets_str = "datasets:\n"+"\n".join(["- " + d for d in train_datasets])
             model_card = model_card.replace("{DATASETS}", datasets_str)
 
+            ###Add base model name
+            model_card=model_card.replace("{BASE_MODEL}",self.base_model_name_or_path)
 
             # Add dim info
             self._model_card_vars["{NUM_DIMENSIONS}"] = self.get_sentence_embedding_dimension()
@@ -154,7 +166,7 @@ class LinkTransformer(SentenceTransformer):
                     replace_model_card: bool = False,
                     train_datasets: Optional[List[str]] = None):
         """
-        Uploads all elements of this LinkTransformer (Sentence Transformer) to a new HuggingFace Hub repository.
+        Uploads all elements of this LinkTransformer (inherited Sentence Transformer) to a new HuggingFace Hub repository.
 
         :param repo_name: Repository name for your model in the Hub.
         :param organization:  Organization in which you want to push your model or tokenizer (you must be a member of this organization).
@@ -202,6 +214,10 @@ class LinkTransformer(SentenceTransformer):
             else:  # Else, save model directly into local repo.
                 create_model_card = replace_model_card or not os.path.exists(os.path.join(tmp_dir, 'README.md'))
                 self.save(tmp_dir, model_name=full_model_name, create_model_card=create_model_card, train_datasets=train_datasets)
+
+            ##Save the model config (_lt_model_config) to the repo
+            with open(os.path.join(tmp_dir, 'LT_training_config.json'), 'w') as fOut:
+                json.dump(self._lt_model_config, fOut, indent=2)
 
             #Find files larger 5M and track with git-lfs
             large_files = []
