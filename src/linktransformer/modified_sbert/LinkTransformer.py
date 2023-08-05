@@ -231,9 +231,10 @@ class LinkTransformer(SentenceTransformer):
                 create_model_card = replace_model_card or not os.path.exists(os.path.join(tmp_dir, 'README.md'))
                 self.save(tmp_dir, model_name=full_model_name, create_model_card=create_model_card, train_datasets=train_datasets)
 
-            ##Save the model config (_lt_model_config) to the repo
-            with open(os.path.join(tmp_dir, 'LT_training_config.json'), 'w') as fOut:
-                json.dump(self._lt_model_config, fOut, indent=2)
+            ##Save the model config (_lt_model_config) to the repo if it exists
+            if hasattr(self, '_lt_model_config'):
+                with open(os.path.join(tmp_dir, 'LT_training_config.json'), 'w') as fOut:
+                    json.dump(self._lt_model_config, fOut, indent=2)
 
             #Find files larger 5M and track with git-lfs
             large_files = []

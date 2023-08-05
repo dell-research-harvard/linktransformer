@@ -185,6 +185,15 @@ def train_model(
     if not os.path.exists(config["model_save_dir"]):
         os.makedirs(config["model_save_dir"])
 
+
+    ##Add the dataset used in the config 
+    config["training_dataset"]=data if isinstance(data,str) else "dataframe"
+    config["base_model_path"]=model_path
+
+    ##Save the config before training begins
+    with open(os.path.join(config["model_save_dir"], config["model_save_name"], "LT_training_config.json"), "w") as config_file:
+        json.dump(config, config_file)
+
     print("Training")
     best_model_path = train_biencoder(
         train_data=train_data,
@@ -204,17 +213,15 @@ def train_model(
     )
     print(f"Best model saved on the path: {best_model_path} ")
 
-    ##Add the dataset used in the config 
-    config["training_dataset"]=data if isinstance(data,str) else "dataframe"
+
+        
     ##Add the best model path in the config
     config["best_model_path"]=best_model_path
-    config["base_model_path"]=model_path
+    
 
-    ##Save the config
+    ##Save the config after training with the best model
     with open(os.path.join(config["model_save_dir"], config["model_save_name"], "LT_training_config.json"), "w") as config_file:
         json.dump(config, config_file)
-        
-    
 
     return best_model_path
 

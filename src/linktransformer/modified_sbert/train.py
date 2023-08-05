@@ -143,13 +143,17 @@ def train_biencoder(
         optimizer_params = optimizer_params,
     )
 
+    ###Get the best model path among the saved checkpoints
+    ##take the last saved checkpoints = best
+    ###look in the dir and get the last checkpoint (subdirs are named as numbers, take the max one)
+    best_model_path = os.path.join(model_save_path, str(max([int(x) for x in os.listdir(model_save_path) if x.isdigit()])))
     ###Evaluate on the test set using the best model
     if test_data is not None:
         logger.info("Evaluating on the test set (0.5 of val data)")
         ##Load the best model
-        print("Loading best model from:", model_save_path)
-        best_model=LinkTransformer(model_save_path)
+        print("Loading best model from:", best_model_path)
+        best_model=LinkTransformer(best_model_path)
         test_evaluator(best_model, epoch=0, steps=0, output_path=model_save_path)
 
-    return model_save_path
+    return best_model_path
 
