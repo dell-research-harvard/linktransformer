@@ -4,7 +4,16 @@
 
 ## Description
 
-LinkTransformer is a Python library for merging and deduplicating dataframes using language model embeddings. It leverages popular Sentence Transformer (or any HuggingFace) models to generate embeddings for text data and provides functions to perform efficient 1:1, 1:m, and m:1 merges based on the similarity of embeddings. Additionally, the package includes utilities for clustering and data preprocessing. It also includes modifications to Sentence Transformers that allow for logging training runs on weights and biases.
+LinkTransformer is a Python library for merging and deduplicating data frames using language model embeddings. It leverages popular Sentence Transformer (or any HuggingFace) models to generate embeddings for text data and provides functions to perform efficient 1:1, 1:m, and m:1 merges based on the similarity of embeddings. Additionally, the package includes utilities for clustering and data preprocessing. It also includes modifications to Sentence Transformers that allow for logging training runs on weights and biases.
+
+- [Demo Video]
+- Tutorials
+  + [Link Records with LinkTransformer](https://colab.research.google.com/drive/1OqUB8sqpUvrnC8oa_1RoOUzV6DaAKL4N?usp=sharing)
+  + [Train your own LinkTransformer Model](https://colab.research.google.com/drive/1tHitPGjMMI2Nvh4wwA8rdcbYfbLaJDvg?usp=sharing)
+- [Feature Deck](https://www.dropbox.com/scl/fi/dquxru8bndlyf9na14cw6/A-python-package-to-do-easy-record-linkage-using-Transformer-models.pdf?rlkey=fiv7j6c0vgl901y940054eptk&dl=0)
+
+More tutorials are coming soon!
+
 
 ## Features
 
@@ -156,7 +165,7 @@ def train_model(
 Contributions are welcome! If you encounter any issues or have suggestions for improvement, please create a new issue or submit a pull request.
 
 ## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GNU General Public License- see the LICENSE file for details.
 
 ## Acknowledgments
 The sentence-transformers library and HugginFace for providing pre-trained NLP models
@@ -166,4 +175,4 @@ OpenAI for providing language model embeddings
 
 
 ## Roadmap 
-We will continue to come up with more feature rich updates and introduce more modalities like images using support for vision and multimodal models.
+We will continue to come up with more feature-rich updates and introduce more modalities like images using support for vision and multimodal models within this framework to make those accessible to those with a non-technical background. 
