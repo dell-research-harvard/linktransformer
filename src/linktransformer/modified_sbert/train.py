@@ -102,23 +102,23 @@ def train_biencoder(
     if eval_type=="retrieval":
         print("Evaluating on retrieval task")
         queries,corpus,relevant_docs=dev_data
-        evaluators = [evaluation.InformationRetrievalEvaluator_wandb(queries,corpus,relevant_docs,wandb_names=wandb_names)]
+        evaluators = [evaluation.InformationRetrievalEvaluator_wandb(queries,corpus,relevant_docs,wandb_names=wandb_names,name="eval")]
         seq_evaluator = sentence_transformers.evaluation.SequentialEvaluator(evaluators, main_score_function=lambda scores: scores[-1])
         ###We also want to evaluate on the test set
         if test_data is not None:
             queries,corpus,relevant_docs=test_data
-            test_evaluators = [evaluation.InformationRetrievalEvaluator_wandb(queries,corpus,relevant_docs,wandb_names=wandb_names)]
+            test_evaluators = [evaluation.InformationRetrievalEvaluator_wandb(queries,corpus,relevant_docs,wandb_names=wandb_names,name="test")]
             test_evaluator = sentence_transformers.evaluation.SequentialEvaluator(test_evaluators, main_score_function=lambda scores: scores[-1])
 
     elif eval_type=="classification":
         print("Evaluating on pair-wise classification task")
         sentences1, sentences2, labels = dev_data
-        evaluators = [evaluation.BinaryClassificationEvaluator_wandb(sentences1, sentences2, labels,wandb_names=wandb_names)]
+        evaluators = [evaluation.BinaryClassificationEvaluator_wandb(sentences1, sentences2, labels,wandb_names=wandb_names,name="eval")]
         seq_evaluator = sentence_transformers.evaluation.SequentialEvaluator(evaluators, main_score_function=lambda scores: scores[-1])
         ###We also want to evaluate on the test set
         if test_data is not None:
             sentences1, sentences2, labels = test_data
-            test_evaluators = [evaluation.BinaryClassificationEvaluator_wandb(sentences1, sentences2, labels,wandb_names=wandb_names)]
+            test_evaluators = [evaluation.BinaryClassificationEvaluator_wandb(sentences1, sentences2, labels,wandb_names=wandb_names,name="test")]
             test_evaluator = sentence_transformers.evaluation.SequentialEvaluator(test_evaluators, main_score_function=lambda scores: scores[-1])
     else:
         raise ValueError("eval_type can only be either 'retrieval' or 'classification'")
@@ -136,24 +136,24 @@ def train_biencoder(
         warmup_steps=math.ceil(len(train_dataloader) * num_epochs * warm_up_perc),
         output_path=model_save_path,
         evaluation_steps= math.ceil(len(train_dataloader)/eval_steps_perc),
-        checkpoint_save_steps=math.ceil(len(train_dataloader)/eval_steps_perc),
-        checkpoint_path=model_save_path,
+        checkpoint_save_steps=None,
+        checkpoint_path=None,
         save_best_model=True,
-        checkpoint_save_total_limit=2,
+        checkpoint_save_total_limit=None,
         optimizer_params = optimizer_params,
     )
 
     ###Get the best model path among the saved checkpoints
     ##take the last saved checkpoints = best
     ###look in the dir and get the last checkpoint (subdirs are named as numbers, take the max one)
-    best_model_path = os.path.join(model_save_path, str(max([int(x) for x in os.listdir(model_save_path) if x.isdigit()])))
+    # best_model_path = os.path.join(model_save_path, str(max([int(x) for x in os.listdir(model_save_path) if x.isdigit()])))
     ###Evaluate on the test set using the best model
     if test_data is not None:
         logger.info("Evaluating on the test set (0.5 of val data)")
         ##Load the best model
-        print("Loading best model from:", best_model_path)
-        best_model=LinkTransformer(best_model_path)
+        print("Loading best model from:", model_save_path)
+        best_model=LinkTransformer(model_save_path)
         test_evaluator(best_model, epoch=0, steps=0, output_path=model_save_path)
 
-    return best_model_path
+    return model_save_path
 

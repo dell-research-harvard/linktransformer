@@ -89,12 +89,41 @@ def test_all_pairwise_eval():
     print(df_eval)
     assert isinstance(df_eval,pd.DataFrame)
 
+##Test knn
+def test_knn():
+    df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
+    df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
+
+    # Test your function here
+    df_lm_matched = lt.merge_knn(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+                                 k=1)
+    print(df_lm_matched)
+    assert isinstance(df_lm_matched, pd.DataFrame)
+
+    ###Check if identical to merge
+    df_lm_matched2 = lt.merge(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None)
+
+    ###Check if k=2 is different
+    df_lm_matched3_2nn = lt.merge_knn(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+                                    k=2)
+    
+    print(df_lm_matched3_2nn)
+
+    ###Asser that length is double
+    assert len(df_lm_matched3_2nn) == len(df_lm_matched)*2
+
+
+    assert df_lm_matched.equals(df_lm_matched2)
+    
+
 
 if __name__ == "__main__":
-    test_data_dir_path()
-    test_lm_merge()
-    test_lm_aggregate()
-    test_lm_merge_with_multiple_columns()
-    test_lm_merge_with_blocking_df()
-    test_french_to_english_crosslingual()
-    test_dedup()
+    # test_data_dir_path()
+    # test_lm_merge()
+    # test_lm_aggregate()
+    # test_lm_merge_with_multiple_columns()
+    # test_lm_merge_with_blocking_df()
+    # test_french_to_english_crosslingual()
+    # test_dedup()
+    #merge_knn
+    test_knn()

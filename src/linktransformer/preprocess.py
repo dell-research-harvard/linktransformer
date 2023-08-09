@@ -210,6 +210,8 @@ def prep_paired_label_data(
             data = pd.read_csv(data)
         else:
             raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+    ##Reset indices of data
+        data=data.reset_index(drop=True)
 
     elif train_data is not None and val_data is not None and test_data is not None:
         ### Load the data if xlsx, else csv
@@ -239,6 +241,11 @@ def prep_paired_label_data(
             test_data = pd.read_csv(test_data)
         else:
             raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+        
+        ##Reset indices of train, val, test data
+        train_data=train_data.reset_index(drop=True)
+        val_data=val_data.reset_index(drop=True)
+        test_data=test_data.reset_index(drop=True)
         
         data=train_data
 

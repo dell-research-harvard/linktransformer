@@ -145,15 +145,14 @@ class LinkTransformer(SentenceTransformer):
             if self.opt_model_description is not None:
                 model_card=model_card.replace("{MODEL_DESCRIPTION}",self.opt_model_description)
             else:
-                pass
+                model_card=model_card.replace("{MODEL_DESCRIPTION}","")
                 
             ##ADd optional model language
             if self.opt_model_lang is not None:
                 model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in [self.opt_model_lang]]))
-
-                model_card=model_card.replace("{LANGUAGE}",self.opt_model_lang)
             else:
-                pass
+                model_card = model_card.replace("language: \n{LANGUAGE}", "")
+                model_card = model_card.replace("It is pretrained for the language : {LANGUAGE}.", "")
 
             # Add dim info
             self._model_card_vars["{NUM_DIMENSIONS}"] = self.get_sentence_embedding_dimension()

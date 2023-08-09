@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linktransformer"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
        "scikit-learn",
         "faiss-cpu",
@@ -22,7 +22,7 @@ dependencies = [
 authors = [
   { name="Abhishek Arora, Sam Jones and Melissa Dell", email="llmklinkpython@gmail.com" },
 ]
-description = "A simple way to do link dataframes using large language models."
+description = "A friendly way to do link, aggregate, cluster and de-duplicate dataframes using large language models."
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [

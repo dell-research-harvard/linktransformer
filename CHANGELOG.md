@@ -17,3 +17,7 @@
     + Added more robust model card generation and upload to huggingface hub
 ## 0.1.3
     + Bug fixes
+## 0.1.4
+    + Bug fixes in training pipeline
+    + Added a function to do merge k nearest neighbours instead of just one
+    + Bug fixes in model card generation and upload to hugging face hub

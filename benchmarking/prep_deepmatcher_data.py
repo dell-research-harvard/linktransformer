@@ -15,7 +15,7 @@ import wandb
  
 def evaluate_deep_matcher_data(data_dir,model,left_on,right_on,note):
     """Calculate pair-wise cosine similarity between the left and right columns of the data and evaluate on the test set."""
-    tableA = pd.read_csv(os.path.join(data_dir, "tableA.csv"))
+    tableA = pd.read_csv(os.path.join(data_dir, "tableA.csv")) ##_tok for company name
     tableB = pd.read_csv(os.path.join(data_dir, "tableB.csv"))
 
     ##Rename the "id" variable to id_dm
@@ -345,22 +345,24 @@ if __name__ == "__main__":
 
     ###Make a dict of datasets and their match keys
     deep_matcher_datasets={
-        "Structured/Amazon-Google":{},
-        "Structured/Beer":{},
-        "Structured/DBLP-ACM":{},
-        "Structured/DBLP-GoogleScholar":{},
-        "Structured/iTunes-Amazon":{},
-        "Structured/Walmart-Amazon":{},
-        "Structured/Fodors-Zagats":{},
-        # "Textual/Company":{}, #This follows a different format in file naming
-        "Dirty/DBLP-ACM" : {},
-        "Dirty/DBLP-GoogleScholar" : {},
-        "Dirty/iTunes-Amazon" : {},
-        "Dirty/Walmart-Amazon" : {},
-        "Textual/Abt-Buy":{}
+        # "Structured/Amazon-Google":{},
+        # "Structured/Beer":{},
+        # "Structured/DBLP-ACM":{},
+        # "Structured/DBLP-GoogleScholar":{},
+        # "Structured/iTunes-Amazon":{},
+        # "Structured/Walmart-Amazon":{},
+        # "Structured/Fodors-Zagats":{},
+        "Textual/Company":{}, #This follows a different format in file naming
+        # "Dirty/DBLP-ACM" : {},
+        # "Dirty/DBLP-GoogleScholar" : {},
+        # "Dirty/iTunes-Amazon" : {},
+        # "Dirty/Walmart-Amazon" : {},
+        # "Textual/Abt-Buy":{}
 
         }
-    pretrained_model="sentence-transformers/all-mpnet-base-v2"
 
-    run_train_eval_retrieval_dm_datasets(deep_matcher_datasets,pretrained_model)
-    run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_model)
+    pretrained_model="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/deepmatcher_data/models/linkage_model_Textual/Company_sentence-transformers/multi-qa-mpnet-base-dot-v1"
+
+    # run_train_eval_retrieval_dm_datasets(deep_matcher_datasets,pretrained_model)
+    # run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_model)
+    evaluate_deep_matcher_data("Textual/Company",model=pretrained_model,left_on=["content_x"],right_on=["content_y"],note="zs")
