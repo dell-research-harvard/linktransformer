@@ -6,7 +6,7 @@
 
 LinkTransformer is a Python library for merging and deduplicating data frames using language model embeddings. It leverages popular Sentence Transformer (or any HuggingFace) models to generate embeddings for text data and provides functions to perform efficient 1:1, 1:m, and m:1 merges based on the similarity of embeddings. Additionally, the package includes utilities for clustering and data preprocessing. It also includes modifications to Sentence Transformers that allow for logging training runs on weights and biases.
 
-- [Demo Video]
+- [Demo Video](https://www.youtube.com/watch?v=Sn47nmCvV9M)
 - Tutorials
   + [Link Records with LinkTransformer](https://colab.research.google.com/drive/1OqUB8sqpUvrnC8oa_1RoOUzV6DaAKL4N?usp=sharing)
   + [Train your own LinkTransformer Model](https://colab.research.google.com/drive/1tHitPGjMMI2Nvh4wwA8rdcbYfbLaJDvg?usp=sharing)
