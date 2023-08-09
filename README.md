@@ -117,29 +117,33 @@ def evaluate_pairs(df,model,left_on,right_on,openai_key=None):
 
 
 def train_model(
-    model_path: str='your-pretrained-model',
-    dataset_path: str = "data/es_mexican_products.xlsx",
+    data: Union[str, pd.DataFrame] = None,
+    train_data: Union[str, pd.DataFrame] = None,
+    val_data: Union[str, pd.DataFrame] = None,
+    test_data: Union[str, pd.DataFrame] = None,
+    model_path: str="sentence-transformers/paraphrase-xlm-r-multilingual-v1",
     left_col_names: List[str] = ["description47"],
     right_col_names: List[str] = ['description48'],
     left_id_name: List[str] = ['tariffcode47'],
     right_id_name: List[str] = ['tariffcode48'],
+    label_col_name: str = None,
     config_path: str = LINKAGE_CONFIG_PATH,
     training_args: dict = {"num_epochs":10},
     log_wandb: bool = False,
 ) -> str:
     """
     Train the LinkTransformer model.
-
-    :param model_path (str): The name of the model to use.
-    :param dataset_path (str): Path to the dataset in Excel format.
-    :param left_col_names (List[str]): List of column names to use as left side data.
-    :param right_col_names (List[str]): List of column names to use as right side data.
-    :param left_id_name (List[str]): List of column names to use as identifiers for the left data.
-    :param right_id_name (List[str]): List of column names to use as identifiers for the right data.
-    :param config_path (str): Path to the JSON configuration file.
-    :param training_args (dict): Dictionary of training arguments to override the config.
-    :param log_wandb (bool): Whether to log the training run on wandb.
-    :returns: str: The path to the saved best model.
+    :param: model_path (str): The name of the model to use.
+    :param: data (str): Path to the dataset in Excel or CSV format or a dataframe object.
+    :param: left_col_names (List[str]): List of column names to use as left side data.
+    :param: right_col_names (List[str]): List of column names to use as right side data.
+    :param: left_id_name (List[str]): List of column names to use as identifiers for the left data.
+    :param: right_id_name (List[str]): List of column names to use as identifiers for the right data,
+    :param: label_col_name (str): Name of the column to use as labels. Specify this if you have data of the form (left, right, label). This type supports both positive and negative examples.
+    :param: config_path (str): Path to the JSON configuration file.
+    :param: training_args (dict): Dictionary of training arguments to override the config.
+    :param: log_wandb (bool): Whether to log the training run on wandb.
+    :return: The path to the saved best model.
     """
 
 

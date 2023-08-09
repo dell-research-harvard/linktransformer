@@ -5,3 +5,4 @@ current_best_matches.csv
 *.pyc
 dist/
 *.egg-info/
+wandb/**

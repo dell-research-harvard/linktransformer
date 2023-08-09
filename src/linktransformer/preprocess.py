@@ -273,13 +273,16 @@ def prep_paired_label_data(
         ### Split by val perc - we want to split by cluster assignment. Only 20% of the clusters should be in the val set
             train_cluster_assignment, val_cluster_assignment = train_test_split(list(set(data["cluster_assignment"])), test_size=val_perc, random_state=42)
             ###Split val into test and val
-            print("Splitting val into test and val (equally) ")
-            val_cluster_assignment, test_cluster_assignment = train_test_split(val_cluster_assignment, test_size=0.5, random_state=42)
-
-            train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
-            val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
-            test_data = data[data["cluster_assignment"].isin(test_cluster_assignment)]
-        
+            if test_at_end:
+                print("Splitting val into test and val (equally) ")
+                val_cluster_assignment, test_cluster_assignment = train_test_split(val_cluster_assignment, test_size=0.5, random_state=42)
+                train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
+                val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
+                test_data = data[data["cluster_assignment"].isin(test_cluster_assignment)]
+            else:
+                train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
+                val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
+            
         else:
             val_data,left_id_rename, right_id_rename = check_and_prep_data(val_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
             test_data,left_id_rename, right_id_rename = check_and_prep_data(test_data, model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
@@ -306,15 +309,18 @@ def prep_paired_label_data(
         val_labels_list.append(row[label_col_name])
 
     ###Time for test set now.
+    if test_at_end:
     ###Simply make a list of left_text, right_text1, right_text2, right_text3... and make a list of labels
-    test_left_text_list = []
-    test_right_text_list = []
-    test_labels_list = []
+        test_left_text_list = []
+        test_right_text_list = []
+        test_labels_list = []
 
-    for index, row in test_data.iterrows():
-        test_left_text_list.append(row["left_text"])
-        test_right_text_list.append(row["right_text"])
-        test_labels_list.append(row[label_col_name])
+        for index, row in test_data.iterrows():
+            test_left_text_list.append(row["left_text"])
+            test_right_text_list.append(row["right_text"])
+            test_labels_list.append(row[label_col_name])
+    else:
+        test_left_text_list, test_right_text_list, test_labels_list=None,None,None
 
     return train_data_dict, (val_left_text_list, val_right_text_list, val_labels_list), (test_left_text_list, test_right_text_list, test_labels_list)    
 
@@ -360,10 +366,8 @@ def prep_linkage_data(
     ###Check that only data or all of train, val, test are specified
     if data is not None and (train_data is not None or val_data is not None or test_data is not None):
         raise ValueError("Please specify either data or train, val, test data. Not both")
-    # elif data is  None and  (train_data is  None and val_data is  None and test_data is None):
-    #     raise ValueError("Please specify either data or train, val, test data. Not none")
-    elif data is None and (train_data is None or val_data is None or test_data is None):
-        raise ValueError("Please specify either data or all of train, val, test data. Not none")
+    elif data is  None and  (train_data is  None and val_data is  None and test_data is None):
+        raise ValueError("Please specify either data or train, val, test data. Not none")
     elif data is not None:
         ### Load the data if xlsx, else csv
         if isinstance(data, pd.DataFrame):
@@ -374,6 +378,8 @@ def prep_linkage_data(
             data = pd.read_csv(data)
         else:
             raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+    ##Reset indices of data
+        data=data.reset_index(drop=True)
 
     elif train_data is not None and val_data is not None and test_data is not None:
         ### Load the data if xlsx, else csv
@@ -403,6 +409,11 @@ def prep_linkage_data(
             test_data = pd.read_csv(test_data)
         else:
             raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+        
+        ##Reset indices of train, val, test data
+        train_data=train_data.reset_index(drop=True)
+        val_data=val_data.reset_index(drop=True)
+        test_data=test_data.reset_index(drop=True)
         
         data=train_data
 
