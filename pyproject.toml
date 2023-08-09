@@ -20,7 +20,7 @@ dependencies = [
         "openpyxl"
 ]
 authors = [
-  { name="Abhishek Arora, Sam Jones and Melissa Dell", email="llmklinkpython@gmail.com" },
+  { name="Abhishek Arora, Sam Jones and Melissa Dell", email="linktransformer23@gmail.com" },
 ]
 description = "A friendly way to do link, aggregate, cluster and de-duplicate dataframes using large language models."
 readme = "README.md"
