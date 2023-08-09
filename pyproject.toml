@@ -30,7 +30,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent"
 ]
-license = {file = "LICENSE.txt"}
+license = {file = "LICENSE"}
 
 [project.urls]
 Homepage = "https://github.com/dell-research-harvard/linktransformer"
