@@ -68,9 +68,9 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
 
     ## If left_id_name is not specified, we will assume left data is unique and use the index as the id
     if not left_id_name:
-        data["left_id"] = data.index.astype(str) + "_l"
+        data["left_id"] =  data.groupby(left_col_names).ngroup().astype(str) + "_r"
         left_id_name = "left_id"
-        print("Warning: left id column not specified, using index as id - assuming unique left data")
+        print("Warning: left id column not specified, using the left columns to group the data and using the groupby index as the id")
     else:
         ### If left id is specified, we can group by the left id column and use the groupby index as the id
         data["left_id"] = data.groupby(left_id_name).ngroup().astype(str) + "_l" ## Convert to string
@@ -80,6 +80,8 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
     if not right_id_name:
         data["right_id"] = data.groupby(right_col_names).ngroup().astype(str) + "_r"
         right_id_name = "right_id"
+        print("Warning: right id column not specified, using the right columns to group the data and using the groupby index as the id")
+
     else:
         ## If right id is specified, we can group by the right id column and use the groupby index as the id
         data["right_id"] = data.groupby(right_id_name).ngroup().astype(str) + "_r"

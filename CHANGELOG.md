@@ -21,3 +21,4 @@
     + Bug fixes in training pipeline
     + Added a function to do merge k nearest neighbours instead of just one
     + Bug fixes in model card generation and upload to hugging face hub
+    + Preprocessing data for training now gracefully handles cases where an id is not specified for left or right columns. It now groups by the two columns to handle exact duplicates. Id is still recommended. 
