@@ -14,7 +14,6 @@ def convert_to_text(unicode_string):
     return unicode_string.encode('ascii','ignore').decode('ascii')
 
 
-
 def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_name, right_id_name, label_col_name):
 
     ###If *_id_name is a string, convert to list
@@ -68,7 +67,7 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
 
     ## If left_id_name is not specified, we will assume left data is unique and use the index as the id
     if not left_id_name:
-        data["left_id"] =  data.groupby(left_col_names).ngroup().astype(str) + "_r"
+        data["left_id"] =  data.groupby(left_col_names).ngroup().astype(str) + "_l"
         left_id_name = "left_id"
         print("Warning: left id column not specified, using the left columns to group the data and using the groupby index as the id")
     else:
@@ -432,6 +431,7 @@ def prep_linkage_data(
     cluster_assignment = {k: v for v, l in cluster_assignment.items() for k in l}
     data["cluster_assignment"] = data[left_id_rename].map(cluster_assignment)
 
+
     train_data=data
     ### We want to split the data by cluster assignment 
     if val_perc == 1:
@@ -444,24 +444,23 @@ def prep_linkage_data(
             ### Split by val perc - we want to split by cluster assignment. Only 20% of the clusters should be in the val set
             train_cluster_assignment, val_cluster_assignment = train_test_split(list(set(data["cluster_assignment"])), test_size=val_perc, random_state=42)
             
-            train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
-
             ###Split val into test and val
             if test_at_end:
                 print("Splitting val into test and val (equally) ")
                 val_cluster_assignment, test_cluster_assignment = train_test_split(val_cluster_assignment, test_size=0.5, random_state=42)
+                train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
                 val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
                 test_data = data[data["cluster_assignment"].isin(test_cluster_assignment)]
             else:
+                train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
                 val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
-
-            print("Separate train, val and test data not specified, we have split them after clustering them on the left keys")
+            
         else:
-            val_data,left_id_rename, right_id_rename = check_and_prep_data(val_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name=None)
-            if test_at_end:
-                test_data,left_id_rename, right_id_rename = check_and_prep_data(test_data, model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name=None)
-            print("Separate train, val and test data specified, we have used them as is")
-
+            val_data,left_id_rename, right_id_rename = check_and_prep_data(val_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
+            
+            if test_data is not None:
+                test_data,left_id_rename, right_id_rename = check_and_prep_data(test_data, model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
+            
 
     ### Now, group by cluster assignment and make a dict with cluster_assignment:[left_text, right_text1, right_text2, right_text3...]
     train_data_dict = defaultdict(list)

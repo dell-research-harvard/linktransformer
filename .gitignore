@@ -6,3 +6,4 @@ current_best_matches.csv
 dist/
 *.egg-info/
 wandb/**
+wiki_aliases/**

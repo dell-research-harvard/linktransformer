@@ -147,7 +147,6 @@ def train_model(
 
     print("Testing at end: ", config["test_at_end"])
 
-    print("loading wiki comp data - would only work with supcon loss")
     train_data, val_data, test_data = preprocess_any_data(
         data=data,
         train_data=train_data,
