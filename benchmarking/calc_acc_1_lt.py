@@ -67,7 +67,7 @@ def calculate_retrieval_accuracy_gpt(path_to_pickle):
     merged_df = lt.merge(pd.DataFrame.from_dict(val_data[0], orient='index', columns=['query_text']).reset_index(), 
                          pd.DataFrame.from_dict(val_data[1], orient='index', columns=['corpus_text']).reset_index(), 
                          merge_type='1:m', model="text-embedding-ada-002", 
-                         left_on="query_text", right_on="corpus_text", openai_key="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")
+                         left_on="query_text", right_on="corpus_text", openai_key="yourkeyhere")
     
     merged_df=merged_df.reset_index()
 
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     print("Calculating retrieval accuracy for LinkTransformer with GPT")
     # calculate_retrieval_accuracy_gpt(path_to_pickle)
     print("Calculating retrieval accuracy for LinkTransformer with Edit distance")
-    print(calculate_retrieval_accuracy_lt(path_to_pickle,"hiiamsid/sentence_similarity_spanish_es"))
+    # print(calculate_retrieval_accuracy_lt(path_to_pickle,"hiiamsid/sentence_similarity_spanish_es"))
 
     
 
