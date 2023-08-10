@@ -167,7 +167,7 @@ def calculate_retrieval_accuracy_lt(path_to_pickle,model):
 
 ###Run as script
 if __name__ == "__main__":
-    path_to_pickle="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/linkage_es_aliases/test_data.pickle"
+    path_to_pickle="test_data.pickle" ##This is coming from model training
 
     print("Calculating retrieval accuracy for LinkTransformer")
     print(calculate_retrieval_accuracy_edit(path_to_pickle))
