@@ -67,7 +67,7 @@ def calculate_retrieval_accuracy_gpt(path_to_pickle):
     merged_df = lt.merge(pd.DataFrame.from_dict(val_data[0], orient='index', columns=['query_text']).reset_index(), 
                          pd.DataFrame.from_dict(val_data[1], orient='index', columns=['corpus_text']).reset_index(), 
                          merge_type='1:m', model="text-embedding-ada-002", 
-                         left_on="query_text", right_on="corpus_text", openai_key="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")
+                         left_on="query_text", right_on="corpus_text", openai_key="YourKeyHere")
     
     merged_df=merged_df.reset_index()
 
@@ -167,7 +167,7 @@ def calculate_retrieval_accuracy_lt(path_to_pickle,model):
 
 ###Run as script
 if __name__ == "__main__":
-    path_to_pickle="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/linkage_es_aliases/test_data.pickle"
+    path_to_pickle="test_data.pickle" ##This is coming from model training
 
     print("Calculating retrieval accuracy for LinkTransformer")
     print(calculate_retrieval_accuracy_edit(path_to_pickle))
