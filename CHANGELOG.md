@@ -24,3 +24,5 @@
     - Preprocessing data for training now gracefully handles cases where an id is not specified for left or right columns. It now groups by the two columns to handle exact duplicates. Id is still recommended. 
 ## 0.1.5
     - Guardrails added to preprocessing before training to group by keys in case column id is not specified instead of consdiering every pair unique
+## 0.1.6 
+    - Bug fixes in model uploads to the hub (missing training config)

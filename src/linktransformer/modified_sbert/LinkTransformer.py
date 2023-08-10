@@ -54,8 +54,8 @@ class LinkTransformer(SentenceTransformer):
         ##If it is a local path, we need to load the config (LT) from the file FLAG - CLEAN THIS UP
         if os.path.isdir(model_name_or_path):
             ###If config file exists, load it. It will be in the parent folder of the model
-            if os.path.isfile(os.path.join(os.path.dirname(model_name_or_path), 'LT_training_config.json')):
-                with open(os.path.join(os.path.dirname(model_name_or_path), 'LT_training_config.json'), 'r') as fIn:
+            if os.path.isfile(os.path.join(model_name_or_path, 'LT_training_config.json')):
+                with open(os.path.join(model_name_or_path, 'LT_training_config.json'), 'r') as fIn:
                     self._lt_model_config = json.load(fIn)
                     print("Loaded LinkTransformer model config from {}".format(os.path.join(model_name_or_path, 'LT_training_config.json')))
                 self.base_model_name_or_path = self._lt_model_config['base_model_path']

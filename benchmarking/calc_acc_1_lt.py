@@ -59,7 +59,7 @@ def calculate_retrieval_accuracy_edit(path_to_pickle):
 
 
 
-def calculate_retrieval_accuracy_gpt(path_to_pickle):
+def calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key):
     with open(path_to_pickle, 'rb') as handle:
         val_data = pickle.load(handle)
 
@@ -67,7 +67,7 @@ def calculate_retrieval_accuracy_gpt(path_to_pickle):
     merged_df = lt.merge(pd.DataFrame.from_dict(val_data[0], orient='index', columns=['query_text']).reset_index(), 
                          pd.DataFrame.from_dict(val_data[1], orient='index', columns=['corpus_text']).reset_index(), 
                          merge_type='1:m', model="text-embedding-ada-002", 
-                         left_on="query_text", right_on="corpus_text", openai_key="yourkeyhere")
+                         left_on="query_text", right_on="corpus_text", openai_key=openai_key)
     
     merged_df=merged_df.reset_index()
 
@@ -111,6 +111,35 @@ def calculate_retrieval_accuracy_lt(path_to_pickle,model):
     accuracy = merged_df['is_relevant'].mean()
 
     return accuracy
+
+def make_table(model_dict, openai_key):
+    """This function takes a dictionary of models (sbert , lt) and returns a table with edit distance, zs sbert, LT, gpt (ada)"""
+
+    table=pd.DataFrame(columns=["key","edit_distance","sbert","lt","gpt"])
+
+    for key in model_dict.keys():
+        sbert_model=model_dict[key]["SBERT"]
+        lt_model=model_dict[key]["LT"]
+        
+
+        ###if lt model does not exist, skip
+        if os.path.exists(lt_model)==False:
+            continue
+        path_to_pickle=os.path.join(lt_model,"test_data.pickle")
+
+        sbert_accuracy=calculate_retrieval_accuracy_lt(path_to_pickle,sbert_model)
+        lt_accuracy=calculate_retrieval_accuracy_lt(path_to_pickle,lt_model)
+        if openai_key is not None:
+            gpt_accuracy=calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key)
+        else:
+            gpt_accuracy=None
+        editdistance_acc=calculate_retrieval_accuracy_edit(path_to_pickle)
+
+        ##Use pd.concat to add a row to the table
+        table=pd.concat([table,pd.DataFrame([[key,editdistance_acc,sbert_accuracy,lt_accuracy,gpt_accuracy]],columns=["key","edit_distance","sbert","lt","gpt"])],ignore_index=True)
+
+    return table
+
 
 
  
@@ -167,14 +196,22 @@ def calculate_retrieval_accuracy_lt(path_to_pickle,model):
 
 ###Run as script
 if __name__ == "__main__":
-    path_to_pickle="test_data.pickle" ##This is coming from model training
 
-    print("Calculating retrieval accuracy for LinkTransformer")
-    print(calculate_retrieval_accuracy_edit(path_to_pickle))
-    print("Calculating retrieval accuracy for LinkTransformer with GPT")
-    # calculate_retrieval_accuracy_gpt(path_to_pickle)
-    print("Calculating retrieval accuracy for LinkTransformer with Edit distance")
-    # print(calculate_retrieval_accuracy_lt(path_to_pickle,"hiiamsid/sentence_similarity_spanish_es"))
+
+    company_models={
+        "es":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/linkage_es_aliases"},
+        "fr":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/linkage_fr_aliases"},
+        "ja":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/linkage_ja_aliases"},
+        "zh":{"SBERT":"DMetaSoul/sbert-chinese-qmc-domain-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/linkage_zh_aliases"},
+        "de":{"SBERT":"T-Systems-onsite/cross-en-de-roberta-sentence-transformer","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/linkage_de_aliases"},
+        "en":{"SBERT":"multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/linkage_en_aliases"}
+    }
+
+    
+    results_df=make_table(company_models,openai_key=None)
+    print(results_df)
+
+
 
     
 
