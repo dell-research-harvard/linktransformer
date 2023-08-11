@@ -57,6 +57,9 @@ All transformer based models from [HuggingFace](https://huggingface.co/) are sup
 
 The merge function is used to merge two dataframes using language model embeddings. It supports three types of merges: 1:1, 1:m, and m:1. The function takes the following parameters:
 
+![Linkktransformers demo_example](https://github.com/dell-research-harvard/linktransformer/assets/60428420/9f9fb9b8-a82b-4f2f-a111-4ee99baa0818)
+
+
 ```python
 def merge(df1, df2, merge_type='1:1', on=None, model='your-pretrained-model', left_on=None, right_on=None, suffixes=('_x', '_y'),
                  use_gpu=False, batch_size=128, pooling_type='mean', openai_key=None):
