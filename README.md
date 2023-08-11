@@ -82,7 +82,10 @@ def merge(df1, df2, merge_type='1:1', on=None, model='your-pretrained-model', le
 A special case of merging is aggregation (use function: aggregate_rows)- when the left key is a list of items that need aggregation to the right keys. Semantic linking is also allowed with multiple columns as keys in both datasets. For larger datasets, merge_blocking can be used to merge within blocking keys. 
 
 
-### Clustering or Deduplicating Data
+### Clustering or Deduplicating Data!
+
+[Linkktransformers demo_dedup](https://github.com/dell-research-harvard/linktransformer/assets/60428420/c4ca8ea2-7f1c-4171-a9f9-d05c03bbed4b)
+
 ```python
 def dedup_rows(df, model, on, threshold=0.5, openai_key=None):
     """
