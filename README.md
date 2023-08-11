@@ -84,7 +84,8 @@ A special case of merging is aggregation (use function: aggregate_rows)- when th
 
 ### Clustering or Deduplicating Data!
 
-[Linkktransformers demo_dedup](https://github.com/dell-research-harvard/linktransformer/assets/60428420/c4ca8ea2-7f1c-4171-a9f9-d05c03bbed4b)
+![Linkktransformers demo_dedup](https://github.com/dell-research-harvard/linktransformer/assets/60428420/91c71fd3-dfe4-4918-bf4e-61f9189a35ff)
+
 
 ```python
 def dedup_rows(df, model, on, threshold=0.5, openai_key=None):
