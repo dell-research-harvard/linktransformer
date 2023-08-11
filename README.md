@@ -24,11 +24,11 @@ More tutorials are coming soon!
 - Clustering methods for grouping similar data
 - Support for various NLP models available on HuggingFace
 
-## Features coming soon
+## Coming soon
 - Hard negative mining for efficient training
-- FAISS GPU integration
+- FAISS GPU, cuDF, cuML and cuGraph integration
 - Convenience wrapper to use our models (trained on UN products and Wikidata)
-- Integration of other modalities in this framework
+- Integration of other modalities in this framework (Vision/Multimodal models)
 
 
 ## Installation
@@ -82,7 +82,7 @@ def merge(df1, df2, merge_type='1:1', on=None, model='your-pretrained-model', le
 A special case of merging is aggregation (use function: aggregate_rows)- when the left key is a list of items that need aggregation to the right keys. Semantic linking is also allowed with multiple columns as keys in both datasets. For larger datasets, merge_blocking can be used to merge within blocking keys. 
 
 
-### Clustering or Deduplicating Data!
+### Clustering or Deduplicating Data
 
 ![Linkktransformers demo_dedup](https://github.com/dell-research-harvard/linktransformer/assets/60428420/91c71fd3-dfe4-4918-bf4e-61f9189a35ff)
 
