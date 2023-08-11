@@ -23,6 +23,13 @@ More tutorials are coming soon!
 - Clustering methods for grouping similar data
 - Support for various NLP models available on HuggingFace
 
+## Features coming soon
+- Hard negative mining for efficient training
+- FAISS GPU integration
+- Convenience wrapper to use our models (trained on UN products and Wikidata)
+- Integration of other modalities in this framework
+
+
 ## Installation
 
 ```bash
@@ -168,10 +175,10 @@ Contributions are welcome! If you encounter any issues or have suggestions for i
 This project is licensed under the GNU General Public License- see the LICENSE file for details.
 
 ## Acknowledgments
-The sentence-transformers library and HugginFace for providing pre-trained NLP models
-The faiss library for efficient similarity search
-The sklearn and networkx libraries for clustering and graph operations
-OpenAI for providing language model embeddings
+- The sentence-transformers library and HugginFace for providing pre-trained NLP models
+- The faiss library for efficient similarity search
+- The sklearn and networkx libraries for clustering and graph operations
+- OpenAI for providing language model embeddings
 
 
 ## Roadmap 
