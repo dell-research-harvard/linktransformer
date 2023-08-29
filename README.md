@@ -2,7 +2,8 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-## Description
+![Linkktransformers demo](https://github.com/dell-research-harvard/linktransformer/assets/60428420/15162828-b0fb-4ee3-8a0f-fdf3371d10a0)
+
 
 LinkTransformer is a Python library for merging and deduplicating data frames using language model embeddings. It leverages popular Sentence Transformer (or any HuggingFace) models to generate embeddings for text data and provides functions to perform efficient 1:1, 1:m, and m:1 merges based on the similarity of embeddings. Additionally, the package includes utilities for clustering and data preprocessing. It also includes modifications to Sentence Transformers that allow for logging training runs on weights and biases.
 
@@ -23,6 +24,13 @@ More tutorials are coming soon!
 - Efficient 1:1, 1:m, and m:1 merges
 - Clustering methods for grouping similar data
 - Support for various NLP models available on HuggingFace
+
+## Coming soon
+- Hard negative mining for efficient training
+- FAISS GPU, cuDF, cuML and cuGraph integration
+- Convenience wrapper to use our models (trained on UN products and Wikidata)
+- Integration of other modalities in this framework (Vision/Multimodal models)
+
 
 ## Installation
 
@@ -49,6 +57,9 @@ All transformer based models from [HuggingFace](https://huggingface.co/) are sup
 ### Merging Pandas Dataframes
 
 The merge function is used to merge two dataframes using language model embeddings. It supports three types of merges: 1:1, 1:m, and m:1. The function takes the following parameters:
+
+![Linkktransformers demo_example](https://github.com/dell-research-harvard/linktransformer/assets/60428420/9f9fb9b8-a82b-4f2f-a111-4ee99baa0818)
+
 
 ```python
 def merge(df1, df2, merge_type='1:1', on=None, model='your-pretrained-model', left_on=None, right_on=None, suffixes=('_x', '_y'),
@@ -77,6 +88,10 @@ A special case of merging is aggregation (use function: aggregate_rows)- when th
 
 
 ### Clustering or Deduplicating Data
+
+![Linkktransformers demo_dedup](https://github.com/dell-research-harvard/linktransformer/assets/60428420/91c71fd3-dfe4-4918-bf4e-61f9189a35ff)
+
+
 ```python
 def dedup_rows(df, model, on, threshold=0.5, openai_key=None):
     """
@@ -195,10 +210,10 @@ This project is licensed under the GNU General Public License- see the LICENSE f
 
 ## Acknowledgments
 
-- The sentence-transformers library and HugginFace for providing pre-trained NLP models
-- The faiss library for efficient similarity search
-- The sklearn and networkx libraries for clustering and graph operations
-- OpenAI for providing language model embeddings
+- - The sentence-transformers library and HugginFace for providing pre-trained NLP models
+- - The faiss library for efficient similarity search
+- - The sklearn and networkx libraries for clustering and graph operations
+- - OpenAI for providing language model embeddings
 
 
 ## Roadmap 
