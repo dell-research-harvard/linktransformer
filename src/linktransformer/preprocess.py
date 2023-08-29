@@ -14,15 +14,61 @@ def convert_to_text(unicode_string):
     return unicode_string.encode('ascii','ignore').decode('ascii')
 
 
+def check_clust_data(data,model,text_col_names,clus_id_col_name):
+
+    ###If *_id_name is a string, convert to list
+    if isinstance(clus_id_col_name, str):
+        clus_id_col_name = [clus_id_col_name]
+    
+    if isinstance(text_col_names, str):
+        text_col_names = [text_col_names]
+    
+    ### Check if the columns are present in the data or not
+    for col in text_col_names:
+        if col not in data.columns:
+            raise ValueError(f"Column {col} not present in data, please check the left column names")
+    ###Check if the clus_id_col_name column is present in the data
+    if clus_id_col_name:
+        if clus_id_col_name[0] not in data.columns:
+            raise ValueError(f"Column {clus_id_col_name} not present in data, please check the label column name")
+        
+    ### Drop row if all of the left or right columns are empty
+    data = data.dropna(subset=text_col_names, how="all")
+
+    # Drop if any id column is missing
+    data = data.dropna(subset=clus_id_col_name, how="any")
+
+    ### If clus_id_col_name is not empty, check if it is present in the data
+    if clus_id_col_name:
+        if clus_id_col_name[0] not in data.columns:
+            raise ValueError(f"Column {clus_id_col_name} not present in data, please check the left id column name")
+        
+    ## Check if text columns form a unique key
+    if not data[text_col_names].duplicated().any():
+        print(f" Warning text columns do not form a unique key, please check the text column names")
+    
+    ###Make an idcol as group id
+    data["cluster_assignment"] = data.groupby(clus_id_col_name).ngroup().astype(str) + "_g"
+    clus_id_col_name="cluster_assignment"
+
+    ## Serialize if there are more than one columns. Feature plan: Later implement deduplication and expansion to avoid rembedding the same string multiple times
+    if len(text_col_names) > 1:
+        print("Serializing text columns")
+        data["text"] = serialize_columns(data, text_col_names, model=model)
+    else:
+        data["text"] = data[text_col_names[0]]
+    return data, clus_id_col_name
+
+    
+
+
 def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_name, right_id_name, label_col_name):
 
     ###If *_id_name is a string, convert to list
     if isinstance(left_id_name, str):
         left_id_name = [left_id_name]
-        print(left_id_name)
     if isinstance(right_id_name, str):
         right_id_name = [right_id_name]
-        print(right_id_name)
 
     ### Check if the columns are present in the data or not
     for col in left_col_names:
@@ -38,13 +84,16 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
         if label_col_name not in data.columns:
             raise ValueError(f"Column {label_col_name} not present in data, please check the label column name")
     
-
+    
     ### Drop row if all of the left or right columns are empty
-    data = data.dropna(subset=left_col_names, how="all")
-    data = data.dropna(subset=right_col_names, how="all")
+    if not left_col_names:
+        data = data.dropna(subset=left_col_names, how="all")
+    if not right_col_names:
+        data = data.dropna(subset=right_col_names, how="all")
 
     # Drop if any id column is missing
-    data = data.dropna(subset=left_id_name+right_id_name, how="any")
+    if left_id_name and right_id_name:
+        data = data.dropna(subset=left_id_name, how="any")
 
     ### If left_id_names is not empty, check if it is present in the data
     if left_id_name:
@@ -106,13 +155,16 @@ def preprocess_any_data(data: Union[str, pd.DataFrame]=None,
                         train_data: Union[str, pd.DataFrame] = None,
                         val_data: Union[str, pd.DataFrame] = None,
                         test_data: Union[str, pd.DataFrame] = None,
-        left_col_names: List[str] = [],
-        right_col_names: List[str] = [],
-        left_id_name: List[str] = [],
-        right_id_name: List[str] = [],
+        left_col_names: List[str] = None,
+        right_col_names: List[str] = None,
+        left_id_name: List[str] = None,
+        right_id_name: List[str] = None,
         label_col_name: str = None,
-        model: str = "sentence-transformers/paraphrase-xlm-r-multilingual-v1",
+        clus_id_col_name: str = None,
+        clus_text_col_names: List[str] = None,
+        model: str = "sentence-transformers/all-mpnet-base-v2",
         val_perc: float = 0.2,
+        val_query_prop:float =0.5,
         large_val: bool = True,
         test_at_end=True
                         ):
@@ -125,11 +177,23 @@ def preprocess_any_data(data: Union[str, pd.DataFrame]=None,
     :param: left_id_name: List of column names to use as id for the left columns.
     :param: right_id_name: List of column names to use as id for the right columns.
     :param label_col_name: Name of the column to use as label (0 or 1). Specify if you have a label column
+    :param clusterid_col_name: Name of the column to use as cluster id. Specify if you have a cluster id column
+    :param cluster_text_col_name: Name of the column to use as text for the cluster. Specify if you have a cluster text column
     :param: model: Model to use for tokenization.
     :param: val_perc: Percentage of data to use for validation. Defaults to 0.2.
     :param: large_val: If True, use the training data as part of the validation data (in the corpus for information retrieval evaluation)
     :return: A tuple containing the training data dictionary and the validation data, test tuple.
     """
+    #Validate inputs
+    if label_col_name and clus_id_col_name:
+        raise ValueError("Please specify either label_col_name or clusterid_col_name. Not both")
+    elif label_col_name and clus_text_col_names:
+        raise ValueError("Please specify either label_col_name or cluster_text_col_name. Not both")
+    elif clus_id_col_name and not clus_text_col_names:
+        raise ValueError("Please specify cluster_text_col_name if you specify clusterid_col_name")
+    elif clus_text_col_names and not clus_id_col_name:
+        raise ValueError("Please specify clusterid_col_name if you specify cluster_text_col_name")
+        
 
     if label_col_name:
         return prep_paired_label_data(
@@ -146,6 +210,22 @@ def preprocess_any_data(data: Union[str, pd.DataFrame]=None,
             val_perc=val_perc,
             test_at_end=test_at_end
         )
+    elif clus_id_col_name and clus_text_col_names:
+        return prep_clus_data(
+            data = data,
+            train_data=train_data,
+            val_data=val_data,
+            test_data=test_data,
+            text_col_names=clus_text_col_names,
+            clus_id_col_name=clus_id_col_name,
+            model=model,
+            val_perc=val_perc,
+            val_query_prop=val_query_prop,
+            test_at_end=test_at_end,
+            large_val=large_val
+        )
+
+
     else:
         return prep_linkage_data(
             data = data,
@@ -162,6 +242,7 @@ def preprocess_any_data(data: Union[str, pd.DataFrame]=None,
             test_at_end=test_at_end
         )
     
+    
 
 
 def prep_paired_label_data(
@@ -174,7 +255,7 @@ def prep_paired_label_data(
         left_id_name: List[str] = [],
         right_id_name: List[str] = [],
         label_col_name: str = "label",
-        model: str = "sentence-transformers/paraphrase-xlm-r-multilingual-v1",
+        model: str = "sentence-transformers/all-mpnet-base-v2",
         val_perc: float = 0.2,
         test_at_end=True
 ) ->  Tuple[Dict[str, List[str]], Tuple[List[str], List[str], List[str]],Tuple[List[str], List[str], List[str]]]:
@@ -336,7 +417,7 @@ def prep_linkage_data(
     right_col_names: List[str] = [],
     left_id_name: List[str] = [],
     right_id_name: List[str] = [],
-    model: str = "sentence-transformers/paraphrase-xlm-r-multilingual-v1",
+    model: str = "sentence-transformers/all-mpnet-base-v2",
     val_perc: float = 0.2,
     large_val: bool = True,
     test_at_end=True
@@ -534,10 +615,218 @@ def preprocess_mexican_tarrif_data(file_path="/mnt/122a7683-fa4b-45dd-9f13-b18cc
     return df1,df2
 
 
+def prep_clus_data(
+    data: Union[str, pd.DataFrame] = None,
+    train_data: Union[str, pd.DataFrame] =None,
+    val_data: Union[str, pd.DataFrame] =None,
+    test_data: Union[str, pd.DataFrame] =None,
+    text_col_names: List[str] = None,
+    clus_id_col_name: List[str] = None,
+    model: str = "sentence-transformers/all-mpnet-base-v2",
+    val_perc: float = 0.2,
+    val_query_prop: float = 0.5,
+    large_val: bool = True,
+    test_at_end=True
+) -> Tuple[Dict[str, List[str]], Tuple[Dict[str, str], Dict[str, str], Dict[str, set]],Tuple[Dict[str, str], Dict[str, str], Dict[str, set]]] :
+    """
+
+    """
+    
+    ###Check that only data or all of train, val, test are specified
+    if data is not None and (train_data is not None or val_data is not None or test_data is not None):
+        raise ValueError("Please specify either data or train, val, test data. Not both")
+    elif data is  None and  (train_data is  None and val_data is  None and test_data is None):
+        raise ValueError("Please specify either data or train, val, test data. Not none")
+    elif data is not None:
+        ### Load the data if xlsx, else csv
+        if isinstance(data, pd.DataFrame):
+            data = data
+        elif data.endswith(".xlsx"):
+            data = pd.read_excel(data)
+        elif data.endswith(".csv"):
+            data = pd.read_csv(data)
+        else:
+            raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+    ##Reset indices of data
+        data=data.reset_index(drop=True)
+
+    elif train_data is not None and val_data is not None and test_data is not None:
+        ### Load the data if xlsx, else csv
+        if isinstance(train_data, pd.DataFrame):
+            train_data = train_data
+        elif train_data.endswith(".xlsx"):
+            train_data = pd.read_excel(train_data)
+        elif train_data.endswith(".csv"):
+            train_data = pd.read_csv(train_data)
+        else:
+            raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+
+        if isinstance(val_data, pd.DataFrame):
+            val_data = val_data
+        elif val_data.endswith(".xlsx"):
+            val_data = pd.read_excel(val_data)
+        elif val_data.endswith(".csv"):
+            val_data = pd.read_csv(val_data)
+        else:
+            raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+
+        if isinstance(test_data, pd.DataFrame):
+            test_data = test_data
+        elif test_data.endswith(".xlsx"):
+            test_data = pd.read_excel(test_data)
+        elif test_data.endswith(".csv"):
+            test_data = pd.read_csv(test_data)
+        else:
+            raise ValueError("Data should be a path to a csv or excel file or a dataframe")
+        
+        ##Reset indices of train, val, test data
+        train_data=train_data.reset_index(drop=True)
+        val_data=val_data.reset_index(drop=True)
+        test_data=test_data.reset_index(drop=True)
+        
+        data=train_data
+
+    data = data.copy()
+
+    data,cluster_id_rename=check_clust_data(data, model, text_col_names, clus_id_col_name)
+    
+    
+    train_data=data
+    ### We want to split the data by cluster assignment 
+    if val_perc == 1:
+        train_data = data
+        val_data = data
+        ## Throw warning that train=val data
+        print("Warning: train and val data are the same")
+    else:
+        if  val_data is None  and  test_data is None:
+            ### Split by val perc - we want to split by cluster assignment. Only 20% of the clusters should be in the val set
+            train_cluster_assignment, val_cluster_assignment = train_test_split(list(set(data["cluster_assignment"])), test_size=val_perc, random_state=42)
+            
+            ###Split val into test and val
+            if test_at_end:
+                print("Splitting val into test and val (equally) ")
+                val_cluster_assignment, test_cluster_assignment = train_test_split(val_cluster_assignment, test_size=0.5, random_state=42)
+                train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
+                val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
+                test_data = data[data["cluster_assignment"].isin(test_cluster_assignment)]
+            else:
+                train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
+                val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
+            
+        else:
+            val_data,cluster_id_rename  = check_clust_data(val_data, model, text_col_names, clus_id_col_name)
+    
+            if test_data is not None:
+                test_data,cluster_id_rename = check_clust_data(test_data, model, text_col_names, clus_id_col_name)
+    
+
+    ### Now, group by cluster assignment and make a dict with cluster_assignment:[left_text, right_text1, right_text2, right_text3...]
+    train_data_dict = defaultdict(list)
+    for index, row in train_data.iterrows():
+        train_data_dict[row["cluster_assignment"]].append(row["text"])
+    
+    ### Deduplicate the lists
+    train_data_dict = {k: list(set(v)) for k, v in train_data_dict.items()}
+
+    queries = {}
+    corpus = {}
+    relevant_docs = defaultdict(set)
+
+    ###We want 10% of the cluster to form queries, the rest corpus. 
+    ###We should iterate over groups for this
+    for cluster_id, group in val_data.groupby(cluster_id_rename):
+        query_portion=int(len(group)*val_query_prop)
+        query_group=group.iloc[:query_portion].reset_index(drop=True)
+        corpus_group=group.iloc[query_portion:].reset_index(drop=True)
+        query_group_ids=query_group[cluster_id_rename].tolist()
+        query_group_ids=[query_group_ids[i]+str(i) for i in range(len(query_group_ids))]
+        ###Add an index after each query_group_id
+        # for index,group_id in enumerate(query_group_ids) :
+        #     query_group_ids[index]=query_group_ids[index]+"_"+str(index)
+        
+        corpus_group_ids=corpus_group[cluster_id_rename].tolist()
+        corpus_group_ids=[corpus_group_ids[i]+str(i)+"c" for i in range(len(corpus_group_ids))]
+
+        ##Relevant docs contain all corpus ids for each query
+        for qindex, query_id in enumerate(query_group_ids):
+            queries[query_id]=query_group["text"].iloc[qindex]
+            relevant_docs[query_id]=set(corpus_group_ids)
+
+        for cindex,corpus_id in enumerate(corpus_group_ids):
+            corpus[corpus_id]=corpus_group["text"].iloc[cindex]
+        #     print(query_group["text"].iloc[query_id].values)
+        #     queries[query]=(query_group["text"].iloc[qindex].values)
+        #     relevant_docs[query_id]=set(corpus_group_ids)
+        # for cindex,corpus_id in enumerate(corpus_group_ids):
+        #     corpus[corpus_id]=(corpus_group["text"].iloc[cindex].values)
+        
+
+
+
+    if large_val:
+        ##ADd train data to the corpus 
+        for cluster_id, group in train_data.groupby(cluster_id_rename):
+            group=group.reset_index(drop=True)
+            corpus_group_ids=group[cluster_id_rename].tolist()
+            corpus_group_ids=[corpus_group_ids[i]+str(i)+"ct" for i in range(len(corpus_group_ids))]
+
+
+            for cindex,corpus_id in enumerate(corpus_group_ids):
+                corpus[corpus_id]=group["text"].iloc[cindex]
+
+    val_data = queries, corpus, relevant_docs ## Needed for the evaluation function
+
+    ##Now, prepare the test data
+    if test_at_end:
+        queries = {}
+        corpus = {}
+        relevant_docs = defaultdict(set)
+        for cluster_id, group in test_data.groupby(cluster_id_rename):
+            query_portion=int(len(group)*val_query_prop)
+            query_group=group.iloc[:query_portion]
+            corpus_group=group.iloc[query_portion:]
+            query_group_ids=query_group[cluster_id_rename].tolist()
+            query_group_ids=[query_group_ids[i]+str(i) for i in range(len(query_group_ids))]
+            ###Add an index after each query_group_id
+            # for index,group_id in enumerate(query_group_ids) :
+            #     query_group_ids[index]=query_group_ids[index]+"_"+str(index)
+            
+            corpus_group_ids=corpus_group[cluster_id_rename].tolist()
+            corpus_group_ids=[corpus_group_ids[i]+str(i)+"c" for i in range(len(corpus_group_ids))]
+
+            ##Relevant docs contain all corpus ids for each query
+            for qindex, query_id in enumerate(query_group_ids):
+                queries[query_id]=query_group["text"].iloc[qindex]
+                relevant_docs[query_id]=set(corpus_group_ids)
+
+            for cindex,corpus_id in enumerate(corpus_group_ids):
+                corpus[corpus_id]=corpus_group["text"].iloc[cindex]
+            
+        test_data = queries, corpus, relevant_docs
+    else:
+        test_data = None
+
+
+    return train_data_dict, val_data, test_data
+    
+
+
+
 
 
 
 ##Run as script
 if __name__ == "__main__":
    
-    train_data,val_data=prep_linkage_data("/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/wiki_data/es_mexican_products.xlsx",left_col_names=["description47"],right_col_names=['description48'],left_id_name=['tariffcode47'],right_id_name=['tariffcode48'],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
+    # train_data,val_data=prep_linkage_data("/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/wiki_data/es_mexican_products.xlsx",left_col_names=["description47"],right_col_names=['description48'],left_id_name=['tariffcode47'],right_id_name=['tariffcode48'],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
+
+    train_data,val_data,test_data=prep_clus_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
+    # train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
+    print(train_data)
+    print(val_data)
+    print(test_data)
+    train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",clus_text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=True)
+    print(train_data)
+    print(val_data)
+    print(test_data)

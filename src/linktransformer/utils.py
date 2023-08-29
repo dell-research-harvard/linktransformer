@@ -99,10 +99,29 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
             raise ValueError(f"Invalid model type: {type(model)}")
     else:
         openai.api_key = openai_key
-        response = openai.Embedding.create(input=strings, model=model)["data"]
-        f = lambda x: x["embedding"]
-        embeddings = list(map(f, response))
-        embeddings = np.array(list(map(f, response)), dtype=np.float32)
+        ###Open ai has a token limit on  max number of tokens per request
+        char_count_string=[len(x) for x in strings]
+        ##Based on character count, split the list into multiple lists - each with a max of 5000 characters
+        ##This is a very rough approximation - we can do better
+        ##But this is a good starting point
+        ##Get the indices of the list where the split should happen. Aggregate the character count list and split when the sum is greater than 5000
+        split_indices=[0]
+        char_count_sum=0
+        for i in range(len(char_count_string)):
+            char_count_sum+=char_count_string[i]
+            if char_count_sum>5000:
+                split_indices.append(i)
+                char_count_sum=0
+        split_indices.append(len(char_count_string))
+        ##Split the list of strings into multiple lists
+        split_strings=[strings[split_indices[i]:split_indices[i+1]] for i in range(len(split_indices)-1)]
+        ##Get the embeddings for each of the split lists
+        embeddings=[]
+        for i in range(len(split_strings)):
+            response = openai.Embedding.create(input=split_strings[i], model=model)["data"]
+            f = lambda x: x["embedding"]
+            embeddings.append(np.array(list(map(f, response)), dtype=np.float32))
+        embeddings=np.concatenate(embeddings,axis=0)
 
     return embeddings
 

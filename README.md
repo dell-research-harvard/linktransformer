@@ -6,6 +6,7 @@
 
 LinkTransformer is a Python library for merging and deduplicating data frames using language model embeddings. It leverages popular Sentence Transformer (or any HuggingFace) models to generate embeddings for text data and provides functions to perform efficient 1:1, 1:m, and m:1 merges based on the similarity of embeddings. Additionally, the package includes utilities for clustering and data preprocessing. It also includes modifications to Sentence Transformers that allow for logging training runs on weights and biases.
 
+- [Website](https://linktransformer.github.io/)
 - [Demo Video](https://www.youtube.com/watch?v=Sn47nmCvV9M)
 - Tutorials
   + [Link Records with LinkTransformer](https://colab.research.google.com/drive/1OqUB8sqpUvrnC8oa_1RoOUzV6DaAKL4N?usp=sharing)
@@ -53,16 +54,20 @@ The merge function is used to merge two dataframes using language model embeddin
 def merge(df1, df2, merge_type='1:1', on=None, model='your-pretrained-model', left_on=None, right_on=None, suffixes=('_x', '_y'),
                  use_gpu=False, batch_size=128, pooling_type='mean', openai_key=None):
     """
-    Merge two dataframes using language model embeddings
-    :param df1: first dataframe (left) 
-    :param df2: second dataframe (right)
-    :param merge_type: type of merge to perform 1:m or m:1 or 1:1
-    :param model: language model to use
-    :param on: column to join on in df1
-    :param left_on: column to join on in df1
-    :param right_on: column to join on in df2
-    :param suffixes: suffixes to use for overlapping columns
-    :return: merged dataframe
+    Merge two dataframes using language model embeddings.
+
+    :param df1 (DataFrame): First dataframe (left).
+    :param df2 (DataFrame): Second dataframe (right).
+    :param merge_type (str): Type of merge to perform (1:m or m:1 or 1:1).
+    :param model (str): Language model to use.
+    :param on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+    :param left_on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+    :param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
+    :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
+    :param use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
+    :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
+    :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
+    :return: DataFrame: The merged dataframe.
     """
 
 
@@ -75,24 +80,43 @@ A special case of merging is aggregation (use function: aggregate_rows)- when th
 ```python
 def dedup_rows(df, model, on, threshold=0.5, openai_key=None):
     """
-    A function to deduplicate a dataframe based on a similarity threshold
-    :param df: dataframe to deduplicate
-    :param model: language model to use
-    :param on: column to deduplicate on
-    :param threshold: similarity threshold for clustering
-    :param openai_key: Open ai key. 
-    :return: deduplicated dataframe
+    Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
+    Refer to the docs for the cluster_rows function for more details.
+
+    :param df (DataFrame): Dataframe to deduplicate.
+    :param model (str): Language model to use.
+    :param on (Union[str, List[str]]): Column(s) to deduplicate on.
+    :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
+    :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
+    :param openai_key (str): OpenAI API key
+    :return: DataFrame: The deduplicated dataframe.
     """
 
 def cluster_rows(df, model, on, threshold=0.5, openai_key=None):
     """
-    A function to deduplicate a dataframe based on a similarity threshold
-    :param df: dataframe to deduplicate
-    :param model: language model to use
-    :param on: column to deduplicate on
-    :param threshold: similarity threshold for clustering
-    :param openai_key: Open ai key. 
-    :return: deduplicated dataframe
+    Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.         
+    "agglomerative": {
+            "threshold": 0.5,
+            "clustering linkage": "ward",  # You can choose a default linkage method
+            "metric": "euclidean",  # You can choose a default metric
+        },
+        "HDBScan": {
+            "min cluster size": 5,
+            "min samples": 1,
+        },
+        "SLINK": {
+            "min cluster size": 2,
+            "threshold": 0.1,
+        },
+    }
+
+    :param df (DataFrame): Dataframe to deduplicate.
+    :param model (str): Language model to use.
+    :param on (Union[str, List[str]]): Column(s) to deduplicate on.
+    :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
+    :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
+    :param openai_key (str): OpenAI API key
+    :return: DataFrame: The deduplicated dataframe.
     """
 
 ```
@@ -142,6 +166,7 @@ def train_model(
 ) -> str:
     """
     Train the LinkTransformer model.
+
     :param: model_path (str): The name of the model to use.
     :param: data (str): Path to the dataset in Excel or CSV format or a dataframe object.
     :param: left_col_names (List[str]): List of column names to use as left side data.
@@ -149,12 +174,13 @@ def train_model(
     :param: left_id_name (List[str]): List of column names to use as identifiers for the left data.
     :param: right_id_name (List[str]): List of column names to use as identifiers for the right data,
     :param: label_col_name (str): Name of the column to use as labels. Specify this if you have data of the form (left, right, label). This type supports both positive and negative examples.
+    :param: clusterid_col_name (str): Name of the column to use as cluster ids. Specify this if you have data of the form (text, cluster_id). 
+    :param: cluster_text_col_name (str): Name of the column to use as cluster text. Specify this if you have data of the form (text, cluster_id).
     :param: config_path (str): Path to the JSON configuration file.
     :param: training_args (dict): Dictionary of training arguments to override the config.
     :param: log_wandb (bool): Whether to log the training run on wandb.
     :return: The path to the saved best model.
     """
-
 
 ```
 
@@ -168,10 +194,11 @@ Contributions are welcome! If you encounter any issues or have suggestions for i
 This project is licensed under the GNU General Public License- see the LICENSE file for details.
 
 ## Acknowledgments
-The sentence-transformers library and HugginFace for providing pre-trained NLP models
-The faiss library for efficient similarity search
-The sklearn and networkx libraries for clustering and graph operations
-OpenAI for providing language model embeddings
+
+- The sentence-transformers library and HugginFace for providing pre-trained NLP models
+- The faiss library for efficient similarity search
+- The sklearn and networkx libraries for clustering and graph operations
+- OpenAI for providing language model embeddings
 
 
 ## Roadmap 

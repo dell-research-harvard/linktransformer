@@ -7,3 +7,4 @@ dist/
 *.egg-info/
 wandb/**
 wiki_aliases/**
+historicjapanese/**

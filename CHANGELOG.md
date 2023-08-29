@@ -26,3 +26,9 @@
     - Guardrails added to preprocessing before training to group by keys in case column id is not specified instead of consdiering every pair unique
 ## 0.1.6 
     - Bug fixes in model uploads to the hub (missing training config)
+## 0.1.7
+    - Default param changes in train model function
+    - Added splitting string arrays before feeding to OpenAI embeddings API to account for token limits
+    - Doc changes
+    - bug fixes in the function evaluate_pairs
+    - Added an option to train on a dataset of cluster text and labels

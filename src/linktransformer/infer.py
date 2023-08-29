@@ -309,7 +309,8 @@ def evaluate_pairs(df,model,left_on,right_on,openai_key=None):
         strings_right = df[right_on].tolist()
 
     ## Load the model
-    model = load_model(model)
+    if openai_key is None:
+        model = load_model(model)
 
     ## Infer embeddings for df1
     embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key)
@@ -651,6 +652,4 @@ def merge_knn(
 
 
 
-
-
-
+##Add a function to test nn of each row within a df. 

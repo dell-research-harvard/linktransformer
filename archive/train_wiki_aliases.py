@@ -64,11 +64,11 @@ def train_aliases(input_tuple):
 ###Run as script
 if __name__ == "__main__":
   train_inputs = [
-        # ("es_aliases.json","hiiamsid/sentence_similarity_spanish_es",100,"linkage_es_aliases"),
+        ("es_aliases.json","hiiamsid/sentence_similarity_spanish_es",100,"linkage_es_aliases"),
         ("fr_aliases.json", "dangvantuan/sentence-camembert-large",100,"linkage_fr_aliases"),
       ("ja_aliases.json", "oshizo/sbert-jsnli-luke-japanese-base-lite", 100,"linkage_ja_aliases"),
       ("zh_aliases.json", "DMetaSoul/sbert-chinese-qmc-domain-v1", 100,"linkage_zh_aliases"),
-      ("de_aliases.json", "T-Systems-onsite/cross-en-de-roberta-sentence-transformer", 100,"linkage_de_aliases"),
+      ("de_aliases.json", "Sahajtomar/German-semantic", 100,"linkage_de_aliases"),
               ("en_aliases.json", "multi-qa-mpnet-base-dot-v1",100,"linkage_en_aliases" )
 
       ]

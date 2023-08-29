@@ -149,7 +149,10 @@ class LinkTransformer(SentenceTransformer):
                 
             ##ADd optional model language
             if self.opt_model_lang is not None:
-                model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in [self.opt_model_lang]]))
+                if isinstance(self.opt_model_lang,list):
+                    model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in self.opt_model_lang]))
+                else:
+                    model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in [self.opt_model_lang]]))
             else:
                 model_card = model_card.replace("language: \n{LANGUAGE}", "")
                 model_card = model_card.replace("It is pretrained for the language : {LANGUAGE}.", "")

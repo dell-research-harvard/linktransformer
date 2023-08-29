@@ -18,5 +18,6 @@
   "large_val": true,
   "eval_steps_perc": 0.1,
   "test_at_end": true,
-  "save_val_test_pickles": false
+  "save_val_test_pickles": false,
+  "val_query_prop": 0.5
 }

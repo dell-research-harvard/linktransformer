@@ -22,7 +22,8 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
                             opt_model_description:str=None,
                             opt_model_lang:str=None,
                             test_at_end:bool=None,
-                            save_val_test_pickles:bool=None
+                            save_val_test_pickles:bool=None,
+                            val_query_prop:float=None
                             ):
     """
     Function to create a training config
@@ -75,6 +76,8 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
         config["test_at_end"]=test_at_end
     if save_val_test_pickles is not None:
         config["save_val_test_pickles"]=save_val_test_pickles
+    if val_query_prop is not None:
+        config["val_query_prop"]=val_query_prop
 
     
 
@@ -97,11 +100,13 @@ def train_model(
     val_data: Union[str, pd.DataFrame] = None,
     test_data: Union[str, pd.DataFrame] = None,
     model_path: str="sentence-transformers/paraphrase-xlm-r-multilingual-v1",
-    left_col_names: List[str] = ["description47"],
-    right_col_names: List[str] = ['description48'],
-    left_id_name: List[str] = ['tariffcode47'],
-    right_id_name: List[str] = ['tariffcode48'],
+    left_col_names: List[str] = None,
+    right_col_names: List[str] = None,
+    left_id_name: Union[str,List[str]] = None,
+    right_id_name: Union[str,List[str]] = None,
     label_col_name: str = None,
+    clus_id_col_name: Union[str,List[str]] = None,
+    clus_text_col_names: List[str] = None,
     config_path: str = LINKAGE_CONFIG_PATH,
     training_args: dict = {"num_epochs":10},
     log_wandb: bool = False,
@@ -117,6 +122,8 @@ def train_model(
     :param: left_id_name (List[str]): List of column names to use as identifiers for the left data.
     :param: right_id_name (List[str]): List of column names to use as identifiers for the right data,
     :param: label_col_name (str): Name of the column to use as labels. Specify this if you have data of the form (left, right, label). This type supports both positive and negative examples.
+    :param: clusterid_col_name (str): Name of the column to use as cluster ids. Specify this if you have data of the form (text, cluster_id). 
+    :param: cluster_text_col_name (str): Name of the column to use as cluster text. Specify this if you have data of the form (text, cluster_id).
     :param: config_path (str): Path to the JSON configuration file.
     :param: training_args (dict): Dictionary of training arguments to override the config.
     :param: log_wandb (bool): Whether to log the training run on wandb.
@@ -157,8 +164,11 @@ def train_model(
         left_id_name=left_id_name,
         right_id_name=right_id_name,
         label_col_name=label_col_name,
+        clus_id_col_name=clus_id_col_name,
+        clus_text_col_names=clus_text_col_names,
         model=model_path,
         val_perc=config["val_perc"],
+        val_query_prop=config["val_query_prop"],
         large_val=config["large_val"],
         test_at_end=config["test_at_end"]
     )
@@ -177,6 +187,8 @@ def train_model(
     ##If label_col_name is not None, specify that the eval type is classification
     if label_col_name is not None:
         config["eval_type"]="classification"
+    elif clus_id_col_name is not None:
+        config["eval_type"]="retrieval"
     else:
         config["eval_type"]="retrieval"
 
