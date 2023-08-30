@@ -110,7 +110,7 @@ def test_train_model_clustering():
     )
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # test_train_model_jp()
-    test_train_model_mexican()
+    # test_train_model_mexican()
     # test_train_model_clustering()
