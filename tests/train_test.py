@@ -9,7 +9,7 @@ def test_train_model_mexican():
     ###Test for positive pairs datasets
     # Define the path to the test dataset
     dataset_path = os.path.join(DATA_DIR_PATH, "es_mexican_products.xlsx")
-
+    # ##Load the df
     # Call the train_model function
     saved_model_path = lt.train_model(
         model_path="hiiamsid/sentence_similarity_spanish_es",
@@ -90,14 +90,13 @@ def test_train_model_clustering():
     #Test for cluster datasets
     dataset_path = os.path.join(DATA_DIR_PATH, "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv")
     ##Load the data
-    df = pd.read_csv(dataset_path)
 
     saved_model_path = lt.train_model(
         model_path="sentence-transformers/all-mpnet-base-v2",
-        data=df,
+        data=dataset_path,
         clus_id_col_name=["cluster_id"],
         clus_text_col_names=["company_name"],
-        log_wandb=True,
+        log_wandb=False,
         training_args={"num_epochs": 1,
                           "test_at_end": True,
                             "save_val_test_pickles": True,
@@ -111,6 +110,7 @@ def test_train_model_clustering():
     )
 
 
-# if __name__ == "__main__":
-#     # test_train_model_jp()
-#     # test_train_model_mexican()
+if __name__ == "__main__":
+    # test_train_model_jp()
+    test_train_model_mexican()
+    # test_train_model_clustering()

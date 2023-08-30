@@ -86,14 +86,20 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
     
     
     ### Drop row if all of the left or right columns are empty
-    if not left_col_names:
+    if  left_col_names:
         data = data.dropna(subset=left_col_names, how="all")
-    if not right_col_names:
+    if  right_col_names:
         data = data.dropna(subset=right_col_names, how="all")
 
     # Drop if any id column is missing
-    if left_id_name and right_id_name:
+    if left_id_name:
         data = data.dropna(subset=left_id_name, how="any")
+    if right_id_name:
+        data = data.dropna(subset=right_id_name, how="any")
+
+    # Drop if any id column is missing
+    if left_id_name and right_id_name:
+        data = data.dropna(subset=left_id_name+right_id_name, how="any")
 
     ### If left_id_names is not empty, check if it is present in the data
     if left_id_name:
@@ -821,12 +827,22 @@ if __name__ == "__main__":
    
     # train_data,val_data=prep_linkage_data("/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/wiki_data/es_mexican_products.xlsx",left_col_names=["description47"],right_col_names=['description48'],left_id_name=['tariffcode47'],right_id_name=['tariffcode48'],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
 
-    train_data,val_data,test_data=prep_clus_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
-    # train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
-    print(train_data)
-    print(val_data)
-    print(test_data)
-    train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",clus_text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=True)
+    # train_data,val_data,test_data=prep_clus_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
+    # # train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
+    # print(train_data)
+    # print(val_data)
+    # print(test_data)
+    # train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",clus_text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=True)
+    # print(train_data)
+    # print(val_data)
+    # print(test_data)
+    train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/es_mexican_products.xlsx",
+                                                      left_col_names=["description47"],
+                                                        right_col_names=['description48'],
+                                                        left_id_name=['tariffcode47'],
+                                                        right_id_name=['tariffcode48'],
+                                                      model="all-mpnet-base-v2",
+                                                      val_perc=0.2,large_val=True)
     print(train_data)
     print(val_data)
     print(test_data)
