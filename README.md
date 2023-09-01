@@ -218,3 +218,7 @@ This project is licensed under the GNU General Public License- see the LICENSE f
 
 ## Roadmap 
 We will continue to come up with more feature-rich updates and introduce more modalities like images using support for vision and multimodal models within this framework to make those accessible to those with a non-technical background. 
+
+## Package Maintainers
+- Sam Jones (samuelcaronnajones)
+- Abhishek Arora (econabhishek)
