@@ -8,4 +8,4 @@ authors:
   given-names: "Melissa"
 title: "LinkTransformer: A Unified Package for Record Linkage with Transformer Language Models"
 date-released: 2023-07-31
-url: "https://github.com/github-linguist/linguist"
+url: "https://github.com/dell-research-harvard/linktransformer"
