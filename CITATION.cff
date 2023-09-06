@@ -1,12 +1,11 @@
 cff-version: 1.0.0
-message: If you use this software, please cite it as below.
-
-title: LinkTransformer: A Unified Package for Record Linkage with Transformer Language Models
+message: "If you use this software, please cite it as below."
 doi: 10.48550/arXiv.2309.00789
 authors:
 - family-names: "Arora"
   given-names: "Abhishek"
 - family-names: "Dell"
   given-names: "Melissa"
+title: "LinkTransformer: A Unified Package for Record Linkage with Transformer Language Models"
 date-released: 2023-07-31
-repository-code: https://github.com/dell-research-harvard/linktransformer/
+url: "https://github.com/github-linguist/linguist"
