@@ -1,6 +1,7 @@
 # LinkTransformer
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![arXiv](https://img.shields.io/badge/arXiv-2309.00789-b31b1b.svg)](https://arxiv.org/abs/2309.00789)
 
 ![Linkktransformers demo](https://github.com/dell-research-harvard/linktransformer/assets/60428420/15162828-b0fb-4ee3-8a0f-fdf3371d10a0)
 
