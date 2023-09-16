@@ -8,3 +8,4 @@ dist/
 wandb/**
 wiki_aliases/**
 historicjapanese/**
+.idea
