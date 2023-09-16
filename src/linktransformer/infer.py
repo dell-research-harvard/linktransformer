@@ -1,5 +1,7 @@
 ###Inference and Linkage script
 ###We want to link dfs together using embeddings
+import warnings
+
 import numpy as np
 import pandas as pd
 import faiss
@@ -7,12 +9,11 @@ from typing import Union, List, Optional, Tuple,Dict, Any
 from pandas import DataFrame
 
 from linktransformer.modified_sbert.cluster_fns import cluster
-from linktransformer.utils import serialize_columns, infer_embeddings, load_model, cosine_similarity_corresponding_pairs
+# from linktransformer.utils import serialize_columns, infer_embeddings, load_model, load_clf, cosine_similarity_corresponding_pairs, tokenize_data_for_inference, predict_rows_with_openai
+from utils import *
 from sklearn.metrics.pairwise import cosine_similarity
 from itertools import combinations
-
-
-
+from transformers import TrainingArguments, Trainer
 
 
 
@@ -648,6 +649,114 @@ def merge_knn(
         print(f"Dropped rows with similarity below {drop_sim_threshold}")
 
     return df_lm_matched
+
+
+def classify_rows(
+    df: DataFrame,
+    on: Optional[Union[str, List[str]]] = None,
+    model: str = None,
+    tokenization_model: str = "distilroberta-base",
+    num_labels: int = 2,
+    label_dict: Optional[dict] = None,
+    use_gpu: bool = False,
+    batch_size: int = 128,
+    openai_key: Optional[str] = None,
+    openai_topic: Optional[str] = None,
+    openai_prompt: Optional[str] = None,
+    openai_params: Optional[dict] = None
+):
+    """
+    Classify texts in all rows of one or more columns whether they are relevant to a certain topic. The function uses
+    either a trained classifier to make predictions or an OpenAI API key to send requests and retrieve classification
+    results from ChatCompletion endpoint. The function returns a copy of the input dataframe with a new column "clf_preds_{on}" that stores the
+    classification results.
+
+    :param df: (DataFrame) the dataframe.
+    :param on: (Union[str, List[str]], optional) Column(s) to classify (if multiple columns are passed in, they will be joined).
+    :param model: (str) filepath to the model to use (to use OpenAI, see "https://platform.openai.com/docs/models").
+    :param tokenization_model: (str) the tokenization model to use. Defaults to 'distilroberta-base'.
+    :param num_labels: (int) number of labels to predict. Defaults to 2.
+    :param label_dict: (dict) a dictionary that maps text labels to numeric labels. Used for OpenAI predictions.
+    :param use_gpu: (bool) Whether to use GPU. Defaults to False.
+    :param batch_size: (int) Batch size for inferencing embeddings. Defaults to 128.
+    :param openai_key: (str, optional) OpenAI API key for InferKit API. Defaults to None.
+    :param openai_topic: (str, optional) The topic predict whether the text is relevant or not. Defaults to None.
+    :param openai_prompt: (str, optional) Custom system prompt for OpenAI ChatCompletion endpoint. Defaults to None.
+    :param openai_params: (str, optional) Custom parameters for OpenAI ChatCompletion endpoint. Defaults to None.
+    :returns: DataFrame: The dataframe with a new column "clf_preds_{on}" that stores the classification results.
+    """
+
+    # check if label dict is compatible with num of labels
+    if label_dict is not None and len(label_dict) != num_labels:
+        raise ValueError(f"label_dict has {label_dict} entries, but num_labels is {num_labels}. ")
+
+    # check if the parameters for any inference method is properly specified
+    if openai_key is None and model is None:
+        raise ValueError("Must either specify a model or use an OpenAI key")
+
+
+    if openai_key is None:
+        model = load_clf(model, num_labels=num_labels)
+
+        # join texts in columns if needed
+        if isinstance(on, list):
+            strings_col = serialize_columns(df, on, model=tokenization_model)
+        else:
+            strings_col = df[on].tolist()
+
+        # tokenize data
+        tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", tokenization_model)
+
+        # initialize trainer
+        inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size, use_cpu=not use_gpu)
+        trainer = Trainer(model=model, args=inference_args)
+
+        # predict and save results
+        predictions = trainer.predict(tokenized_data)
+        preds = np.argmax(predictions.predictions, axis=-1)
+
+        assert len(preds) == df.shape[0], "Length mismatch"
+
+        df[f"clf_preds_{on}"] = preds
+
+
+    else:
+        if openai_topic is None and openai_prompt is None:
+            raise ValueError("Must provide either openai_topic or openai_prompt to use OpenAI classification")
+
+        # use default label dict if it is not provided
+        if label_dict is None:
+            label_dict = {"Yes": 1, "No": 0}
+
+        # check if label dict is compatible with num of labels
+        if len(label_dict) != num_labels:
+            raise ValueError(f"label_dict has {label_dict} entries, but num_labels is {num_labels}. ")
+
+        # join texts in columns if needed
+        if isinstance(on, list):
+            strings_col = serialize_columns(df, on, model=tokenization_model)
+        else:
+            strings_col = df[on].tolist()
+
+        # get predictions from openai
+        preds = predict_rows_with_openai(
+            strings_col, model, openai_topic, openai_prompt, openai_params, label_dict
+        )
+
+        assert len(preds) == df.shape[0], "Length mismatch"
+
+        df[f"clf_preds_{on}"] = preds
+
+    return df
+
+
+
+
+
+
+
+
+
 
 
 
