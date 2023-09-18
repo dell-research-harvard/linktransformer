@@ -1,7 +1,7 @@
 import os
 import pandas as pd
-from src.linktransformer import DATA_DIR_PATH
-import src.linktransformer as lt
+from linktransformer import DATA_DIR_PATH
+import linktransformer as lt
 
 
 def test_data_dir_path():
