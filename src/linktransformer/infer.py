@@ -655,7 +655,7 @@ def classify_rows(
     df: DataFrame,
     on: Optional[Union[str, List[str]]] = None,
     model: str = None,
-    tokenization_model: str = "distilroberta-base",
+    # tokenization_model: str = "distilroberta-base",
     num_labels: int = 2,
     label_dict: Optional[dict] = None,
     use_gpu: bool = False,
@@ -700,12 +700,12 @@ def classify_rows(
 
         # join texts in columns if needed
         if isinstance(on, list):
-            strings_col = serialize_columns(df, on, model=tokenization_model)
+            strings_col = serialize_columns(df, on, model=model)
         else:
             strings_col = df[on].tolist()
 
         # tokenize data
-        tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", tokenization_model)
+        tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", model)
 
         # initialize trainer
         inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size, use_cpu=not use_gpu)
@@ -717,7 +717,7 @@ def classify_rows(
 
         assert len(preds) == df.shape[0], "Length mismatch"
 
-        df[f"clf_preds_{on}"] = preds
+        df[f"clf_preds_{'-'.join(on)}"] = preds
 
 
     else:
@@ -734,7 +734,7 @@ def classify_rows(
 
         # join texts in columns if needed
         if isinstance(on, list):
-            strings_col = serialize_columns(df, on, model=tokenization_model)
+            strings_col = serialize_columns(df, on, model=model)
         else:
             strings_col = df[on].tolist()
 
@@ -745,7 +745,7 @@ def classify_rows(
 
         assert len(preds) == df.shape[0], "Length mismatch"
 
-        df[f"clf_preds_{on}"] = preds
+        df[f"clf_preds_{'-'.join(on)}"] = preds
 
     return df
 
