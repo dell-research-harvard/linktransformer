@@ -10,7 +10,7 @@ from pandas import DataFrame
 
 from linktransformer.modified_sbert.cluster_fns import cluster
 # from linktransformer.utils import serialize_columns, infer_embeddings, load_model, load_clf, cosine_similarity_corresponding_pairs, tokenize_data_for_inference, predict_rows_with_openai
-from utils import *
+from linktransformer.utils import *
 from sklearn.metrics.pairwise import cosine_similarity
 from itertools import combinations
 from transformers import TrainingArguments, Trainer
