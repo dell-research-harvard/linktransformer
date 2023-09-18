@@ -1,7 +1,7 @@
 import os
 import pandas as pd
-from linktransformer import DATA_DIR_PATH
-import linktransformer as lt
+from src.linktransformer import DATA_DIR_PATH
+import src.linktransformer as lt
 
 
 def test_data_dir_path():
@@ -114,6 +114,28 @@ def test_knn():
 
 
     assert df_lm_matched.equals(df_lm_matched2)
+
+
+def test_clf_single_col_bin():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
+
+    df_clf_output = lt.classify_rows(df, on="article", model="distilroberta-base", use_gpu=True)
+    assert isinstance(df_clf_output, pd.DataFrame)
+    assert "clf_preds_article" in df_clf_output
+    assert df_clf_output["clf_preds_article"].isin([0, 1]).all()
+
+    print(df_clf_output)
+
+
+def test_clf_multi_col_bin():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
+
+    df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="distilroberta-base", use_gpu=True)
+    assert isinstance(df_clf_output, pd.DataFrame)
+    assert "clf_preds_article-image_id" in df_clf_output
+    assert df_clf_output["clf_preds_article-image_id"].isin([0, 1]).all()
+
+    print(df_clf_output)
     
 
 
@@ -126,4 +148,8 @@ if __name__ == "__main__":
     # test_french_to_english_crosslingual()
     # test_dedup()
     #merge_knn
-    test_knn()
+    # test_knn()
+
+    # test classification
+    test_clf_single_col_bin()
+    test_clf_multi_col_bin()
