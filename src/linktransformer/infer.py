@@ -655,7 +655,7 @@ def classify_rows(
     df: DataFrame,
     on: Optional[Union[str, List[str]]] = None,
     model: str = None,
-    # tokenization_model: str = "distilroberta-base",
+    tokenization_model: str = "distilroberta-base",
     num_labels: int = 2,
     label_dict: Optional[dict] = None,
     use_gpu: bool = False,
@@ -663,7 +663,7 @@ def classify_rows(
     openai_key: Optional[str] = None,
     openai_topic: Optional[str] = None,
     openai_prompt: Optional[str] = None,
-    openai_params: Optional[dict] = None
+    openai_params: Optional[dict] = {}
 ):
     """
     Classify texts in all rows of one or more columns whether they are relevant to a certain topic. The function uses
@@ -700,15 +700,15 @@ def classify_rows(
 
         # join texts in columns if needed
         if isinstance(on, list):
-            strings_col = serialize_columns(df, on, model=model)
+            strings_col = serialize_columns(df, on, model=tokenization_model)
         else:
             strings_col = df[on].tolist()
 
         # tokenize data
-        tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", model)
+        tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", tokenization_model)
 
         # initialize trainer
-        inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size, use_cpu=not use_gpu)
+        inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size)
         trainer = Trainer(model=model, args=inference_args)
 
         # predict and save results
@@ -717,7 +717,10 @@ def classify_rows(
 
         assert len(preds) == df.shape[0], "Length mismatch"
 
-        df[f"clf_preds_{'-'.join(on)}"] = preds
+        if isinstance(on, str):
+            df[f"clf_preds_{on}"] = preds
+        else:
+            df[f"clf_preds_{'-'.join(on)}"] = preds
 
 
     else:
@@ -734,18 +737,21 @@ def classify_rows(
 
         # join texts in columns if needed
         if isinstance(on, list):
-            strings_col = serialize_columns(df, on, model=model)
+            strings_col = serialize_columns(df, on, sep_token=" ")
         else:
             strings_col = df[on].tolist()
 
         # get predictions from openai
         preds = predict_rows_with_openai(
-            strings_col, model, openai_topic, openai_prompt, openai_params, label_dict
+            strings_col, model, openai_key, openai_topic, openai_prompt, openai_params, label_dict
         )
 
         assert len(preds) == df.shape[0], "Length mismatch"
 
-        df[f"clf_preds_{'-'.join(on)}"] = preds
+        if isinstance(on, str):
+            df[f"clf_preds_{on}"] = preds
+        else:
+            df[f"clf_preds_{'-'.join(on)}"] = preds
 
     return df
 

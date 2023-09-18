@@ -1,4 +1,6 @@
+import os
 import time
+import warnings
 from typing import List, Optional
 
 from linktransformer.modified_sbert.LinkTransformer import LinkTransformer
@@ -55,11 +57,7 @@ def cosine_similarity_corresponding_pairs(vector1, vector2):
     return cosine_sim
 
 
-    
-
-
-
-def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str=None, model: str = None) -> list:
+def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = None, model: str = None) -> list:
     """
     Serialize columns of a DataFrame into a single string.
 
@@ -72,7 +70,8 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str=None, mode
     if model is not None:
         if "/" not in model:
             print("No base organization specified, if there is an error, it is likely because of that.")
-            print(f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!" )
+            print(
+                f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!")
             ###Error handling
             try:
                 tokenizer = transformers.AutoTokenizer.from_pretrained(model)
@@ -80,18 +79,15 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str=None, mode
             except:
                 try:
                     print(f"Trying sentence-transformers/{model}...")
-                    tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/"+model)
+                    tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/" + model)
                     sep_token = tokenizer.sep_token
                 except:
                     print(f"Trying linktransformers/{model}...")
-                    tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/"+model)
+                    tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/" + model)
                     sep_token = tokenizer.sep_token
         else:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model)
-            sep_token = tokenizer.sep_token            
-
-        
-
+            sep_token = tokenizer.sep_token
 
     return df[columns].apply(lambda x: sep_token.join(x.astype(str)), axis=1).tolist()
 
@@ -123,34 +119,33 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
     else:
         openai.api_key = openai_key
         ###Open ai has a token limit on  max number of tokens per request
-        char_count_string=[len(x) for x in strings]
+        char_count_string = [len(x) for x in strings]
         ##Based on character count, split the list into multiple lists - each with a max of 5000 characters
         ##This is a very rough approximation - we can do better
         ##But this is a good starting point
         ##Get the indices of the list where the split should happen. Aggregate the character count list and split when the sum is greater than 5000
-        split_indices=[0]
-        char_count_sum=0
+        split_indices = [0]
+        char_count_sum = 0
         for i in range(len(char_count_string)):
-            char_count_sum+=char_count_string[i]
-            if char_count_sum>5000:
+            char_count_sum += char_count_string[i]
+            if char_count_sum > 5000:
                 split_indices.append(i)
-                char_count_sum=0
+                char_count_sum = 0
         split_indices.append(len(char_count_string))
         ##Split the list of strings into multiple lists
-        split_strings=[strings[split_indices[i]:split_indices[i+1]] for i in range(len(split_indices)-1)]
+        split_strings = [strings[split_indices[i]:split_indices[i + 1]] for i in range(len(split_indices) - 1)]
         ##Get the embeddings for each of the split lists
-        embeddings=[]
+        embeddings = []
         for i in range(len(split_strings)):
             response = openai.Embedding.create(input=split_strings[i], model=model)["data"]
             f = lambda x: x["embedding"]
             embeddings.append(np.array(list(map(f, response)), dtype=np.float32))
-        embeddings=np.concatenate(embeddings,axis=0)
+        embeddings = np.concatenate(embeddings, axis=0)
 
     return embeddings
 
 
 def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
-
     dataset = Dataset.from_dict({name: corpus})
 
     # Instantiate tokenizer
@@ -184,31 +179,32 @@ def get_completion_from_messages(text, model, openai_topic=None, openai_prompt=N
         model=model,
         messages=[
             {
-              "role": "system",
-              "content": sys_prompt
+                "role": "system",
+                "content": sys_prompt
             },
             {
-              "role": "user",
-              "content": text
+                "role": "user",
+                "content": text
             }
         ],
-        temperature=      openai_params["temperature"] if "temperature" in openai_params             else 0,
-        max_tokens=       openai_params["max_tokens"] if "max_tokens" in openai_params               else 1,
-        top_p=            openai_params["top_p"] if "top_p" in openai_params                         else 0,
+        temperature=openai_params["temperature"] if "temperature" in openai_params else 0,
+        max_tokens=openai_params["max_tokens"] if "max_tokens" in openai_params else 1,
+        top_p=openai_params["top_p"] if "top_p" in openai_params else 0,
         frequency_penalty=openai_params["frequency_penalty"] if "frequency_penalty" in openai_params else 0,
-        presence_penalty= openai_params["presence_penalty"] if "presence_penalty" in openai_params   else 0,
-        request_timeout=  openai_params["request_timeout"] if "request_timeout" in openai_params     else 10,
+        presence_penalty=openai_params["presence_penalty"] if "presence_penalty" in openai_params else 0,
+        request_timeout=openai_params["request_timeout"] if "request_timeout" in openai_params else 10,
     )
     return response.choices[0].message["content"], response.usage["total_tokens"]
 
 
 def predict_rows_with_openai(
-    strings_col: List[str],
-    model: str = "gpt-3.5-turbo",
-    openai_topic: Optional[str] = None,
-    openai_prompt: Optional[str] = None,
-    openai_params: Optional[dict] = None,
-    label_dict: Optional[dict] = None
+        strings_col: List[str],
+        model: str = "gpt-3.5-turbo",
+        openai_key: str = None,
+        openai_topic: Optional[str] = None,
+        openai_prompt: Optional[str] = None,
+        openai_params: Optional[dict] = None,
+        label_dict: Optional[dict] = None
 ):
     """
     This function takes a list of texts and run the texts through the API. The first part of the function
@@ -217,12 +213,15 @@ def predict_rows_with_openai(
 
     :param strings_col: (List[str]) a list of texts to classify
     :param model: (str) name of the model to use (see "https://platform.openai.com/docs/models")
+    :param openai_key: (str) OpenAI API key
     :param openai_topic: (str) topic to classify
     :param openai_prompt: (str) custom system prompt for OpenAI API
     :param openai_params: (dict) a dictionary to set custom parameters for OpenAI API (temperature, top_p, max_tokens, etc.)
     :param label_dict: (dict) a dictionary map text labels to numeric labels
     :returns: (List[int]) a list of labels from OpenAI API
     """
+
+    openai.api_key = openai_key
 
     preds = []
 
@@ -279,14 +278,12 @@ def predict_rows_with_openai(
 
     if label_dict is None:
         label_dict = {"Yes": 1, "No": 0}
-    preds = [label_dict[x] for x in preds]
 
-    return preds
-
-
-
-
-
-
-
-
+    try:
+        preds_numeric = [label_dict[x] for x in preds]
+        return preds_numeric
+    except:
+        warnings.warn(
+            "Failed to convert OpenAI text labels to numeric labels. Text labels are kept. \
+            You may want to modify the prompt or the label dict. ")
+        return preds
