@@ -111,7 +111,17 @@ We have provided a few datasets in the package for you to try out. We plan to ho
 
 ## Citing & Authors
 
-{CITING}
+```
+@misc{arora2023linktransformer,
+                  title={LinkTransformer: A Unified Package for Record Linkage with Transformer Language Models},
+                  author={Abhishek Arora and Melissa Dell},
+                  year={2023},
+                  eprint={2309.00789},
+                  archivePrefix={arXiv},
+                  primaryClass={cs.CL}
+                }
+
+```
 
 """
 
@@ -150,3 +160,7 @@ saved_model_path = train_model(
 
 
 """
+
+
+class ModelCardTemplateCLF:
+    pass

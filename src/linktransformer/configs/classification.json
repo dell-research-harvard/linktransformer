@@ -1,0 +1,16 @@
+{
+  "evaluation_strategy": "steps",
+  "eval_steps": 30,
+  "save_steps": 30,
+  "per_device_eval_batch_size": 8,
+  "per_device_train_batch_size": 8,
+  "learning_rate": 2e-5,
+  "num_train_epochs": 1,
+  "output_dir": ".",
+  "overwrite_output_dir": true,
+  "load_best_model_at_end": true,
+  "metric_for_best_model": "f1",
+  "save_total_limit": 1,
+  "report_to": null,
+  "warmup_ratio": 0
+}

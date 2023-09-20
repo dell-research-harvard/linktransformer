@@ -220,7 +220,9 @@ def train_model(
         optimizer_params={'lr': config["learning_rate"]},
         eval_type=config["eval_type"],
         opt_model_description=config["opt_model_description"],
-        opt_model_lang=config["opt_model_lang"]
+        opt_model_lang=config["opt_model_lang"],
+        eval_steps_perc=config["eval_steps_perc"],
+
     )
     print(f"Best model saved on the path: {best_model_path} ")
 

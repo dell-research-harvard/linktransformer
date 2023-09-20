@@ -11,7 +11,7 @@ import logging
 from transformers import logging as lg
 import wandb    
 
-from linktransformer.modified_sbert.LinkTransformer import LinkTransformer
+from linktransformer.modelling.LinkTransformer import LinkTransformer
 
 currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
@@ -135,7 +135,7 @@ def train_biencoder(
         epochs=num_epochs,
         warmup_steps=math.ceil(len(train_dataloader) * num_epochs * warm_up_perc),
         output_path=model_save_path,
-        evaluation_steps= math.ceil(len(train_dataloader)/eval_steps_perc),
+        evaluation_steps= math.ceil(len(train_dataloader)*eval_steps_perc),
         checkpoint_save_steps=None,
         checkpoint_path=None,
         save_best_model=True,

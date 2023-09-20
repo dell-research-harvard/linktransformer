@@ -32,3 +32,8 @@
     - Doc changes
     - bug fixes in the function evaluate_pairs
     - Added an option to train on a dataset of cluster text and labels
+## 0.1.8 
+    - More fixes; performance improvements
+    - Added classification features - infer using HF transformers, OpenAI (Chat), and train custom transformer models in 1 line
+    - More demo datasets
+    

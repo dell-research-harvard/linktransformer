@@ -3,7 +3,7 @@ import time
 import warnings
 from typing import List, Optional
 
-from linktransformer.modified_sbert.LinkTransformer import LinkTransformer
+from linktransformer.modelling.LinkTransformer import LinkTransformer
 import numpy as np
 import pandas as pd
 import transformers

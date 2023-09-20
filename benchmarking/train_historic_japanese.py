@@ -42,7 +42,7 @@ if __name__ == "__main__":
         training_args={"num_epochs": 100,
                        "test_at_end": True,
                        "save_val_test_pickles": True,
-                       "model_save_name": "lt-historicjapanesecompanies-comp-prod-ind",
+                       "model_save_name": "lt-historicjapanesecompanies-comp-prod-ind_test",
                        "opt_model_description": "This model was trained on a dataset of historic Japanese companies, products, industry, addresses, and shareholders. Take a look at our paper for more details. The task is to link indices of japanese companies",
                        "opt_model_lang":"ja",
                        "val_perc":0.2,
@@ -56,17 +56,17 @@ if __name__ == "__main__":
 
 
 
-    # ###Save the model to hub
-    best_model=lt.load_model(saved_model_path)
+    # # ###Save the model to hub
+    # best_model=lt.load_model(saved_model_path)
 
-    best_model.save_to_hub(repo_name = "lt-wikidata-comp-prod-ind-ja", ##Write model name here
-            organization= "dell-research-harvard",
-            private = None,
-            commit_message = "Add new LinkTransformer model.",
-            local_model_path = None,
-            exist_ok = True,
-            replace_model_card = True,
-            )
+    # best_model.save_to_hub(repo_name = "lt-wikidata-comp-prod-ind-ja", ##Write model name here
+    #         organization= "dell-research-harvard",
+    #         private = None,
+    #         commit_message = "Add new LinkTransformer model.",
+    #         local_model_path = None,
+    #         exist_ok = True,
+    #         replace_model_card = True,
+    #         )
 
 
     

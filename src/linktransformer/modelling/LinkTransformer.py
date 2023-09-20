@@ -1,7 +1,7 @@
 ###Modifications to the Base SentenceTransformers class. We need to re-write the saving functions to make LinkTransformer models out of them.
 import logging
 from sentence_transformers import SentenceTransformer
-from typing import Optional, List, OrderedDict, Iterable, Union
+from typing import Optional, List, Iterable, Union
 from huggingface_hub import HfApi, HfFolder, Repository
 import transformers
 from sentence_transformers import __version__ 
@@ -12,8 +12,6 @@ from linktransformer.model_card_templates import ModelCardTemplate
 import shutil
 import stat
 from sentence_transformers.models import Transformer
-from sentence_transformers.util import  snapshot_download
-from sentence_transformers.models.Pooling import Pooling
 from torch import nn
 from linktransformer import __MODEL_HUB_ORGANIZATION__
 import tempfile

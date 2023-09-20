@@ -35,7 +35,6 @@ def eval_pairs_using_edit_distance(df, left_on="left_text", right_on="right_text
 def calculate_total_queries_in_split(path_to_pickle):
     with open(path_to_pickle, 'rb') as handle:
         val_data = pickle.load(handle)
-        print(val_data)
 
         query_df=pd.DataFrame.from_dict(val_data[0], orient='index', columns=['query_text']).reset_index()
         print("query_df shape",query_df.shape)
@@ -252,6 +251,27 @@ def evaluate_f1_score(val_pickle,test_pickle,model,openai_key=None,edit_distance
 
  
 
+def get_size_of_japanese_data(val_pickle,test_pickle):
+    ##Load the data
+    with open(val_pickle, 'rb') as handle:
+        val_data = pickle.load(handle)
+    with open(test_pickle, 'rb') as handle:
+        test_data = pickle.load(handle)
+
+    ###EEach pikcle was a tuple - (left_text,right_text,label)
+    ###Convert to a dataframe
+    ##Structure (val_left_text_list, val_right_text_list, val_labels_list), (test_left_text_list, test_right_text_list, test_labels_list)   
+    val_df=pd.DataFrame({"left_text":val_data[0],"right_text":val_data[1],"label":val_data[2]})
+    test_df=pd.DataFrame({"left_text":test_data[0],"right_text":test_data[1],"label":test_data[2]})
+
+    ##Get number of positiveees
+    val_positives=val_df[val_df["label"]==1].shape[0]
+    test_positives=test_df[test_df["label"]==1].shape[0]
+
+    return val_positives, test_positives
+    
+
+
 ###Run as script
 if __name__ == "__main__":
 
@@ -259,33 +279,34 @@ if __name__ == "__main__":
 
 
     all_models={
-        "wiki-es":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_es_aliases"},
-        "wiki-fr":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_fr_aliases"},
-        "wiki-ja":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_ja_aliases"},
-        "wiki-zh":{"SBERT":"DMetaSoul/sbert-chinese-qmc-domain-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_zh_aliases"},
-        "wiki-de":{"SBERT":"Sahajtomar/German-semantic","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_de_aliases"},
-        "wiki-en":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_en_aliases"},
-        "wiki_data_ja_comp_prod_industry":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/historicjapanese/models/lt-wikidata-comp-prod-ind-ja"},
-        "wiki-multi":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_multi_aliases"},
-        "un-en-fine-fine":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_fine"},
-        "un-en-fine-coarse":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_coarse"},
-        "un-en-fine-industry":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_industry"},
-        "un-es-fine-fine":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_fine"},
-        "un-es-fine-coarse":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_coarse"},
-        "un-es-fine-industry":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_industry"},
-        "un-fr-fine-fine":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_fine"},
-        "un-fr-fine-coarse":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_coarse"},
-        "un-fr-fine-industry":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_industry"},
-        "un-multi-fine-fine":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_fine"},
-        "un-multi-fine-coarse":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_coarse"},
-        "un-multi-fine-industry":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_industry"},
+        # "wiki-es":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_es_aliases"},
+        # "wiki-fr":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_fr_aliases"},
+        # "wiki-ja":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_ja_aliases"},
+        # "wiki-zh":{"SBERT":"DMetaSoul/sbert-chinese-qmc-domain-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_zh_aliases"},
+        # "wiki-de":{"SBERT":"Sahajtomar/German-semantic","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_de_aliases"},
+        # "wiki-en":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_en_aliases"},
+        # "wiki_data_ja_comp_prod_industry":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/historicjapanese/models/lt-wikidata-comp-prod-ind-ja"},
+        # "wiki-multi":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_multi_aliases"},
+        # "un-en-fine-fine":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_fine"},
+        # "un-en-fine-coarse":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_coarse"},
+        # "un-en-fine-industry":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_industry"},
+        # "un-es-fine-fine":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_fine"},
+        # "un-es-fine-coarse":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_coarse"},
+        # "un-es-fine-industry":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_industry"},
+        # "un-fr-fine-fine":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_fine"},
+        # "un-fr-fine-coarse":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_coarse"},
+        # "un-fr-fine-industry":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_industry"},
+        # "un-multi-fine-fine":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_fine"},
+        # "un-multi-fine-coarse":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_coarse"},
+        # "un-multi-fine-industry":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_industry"},
+        "mexicantrad4748" : {"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/mexicandata/models/lt-mexicantrade4748"}
               }
     
 
     
-    results_df_companies=make_table(all_models,openai_key=myopenaikey)
+    # results_df_companies=make_table(all_models,openai_key=myopenaikey)
 
-    results_df_companies.to_csv("results_df_wiki_multi_only.csv")
+    # results_df_companies.to_csv("results_df_wiki_multi_only.csv")
     val_test_size_by_model=make_val_test_query_size_table(all_models)
     val_test_size_by_model.to_csv("val_test_by_model.csv")
     ###Check on historic japanese data
@@ -297,33 +318,36 @@ if __name__ == "__main__":
     open_ai_model="text-embedding-ada-002"
     
     ##Make a table of results - Edit distance, SBERT, LT ZS Wiki, LT, OpenAI
-
+    
     # evaluate_f1_score(val_pickle,test_pickle,model,openai_key=None,edit_distance=False)
 
-    results_df_japanese=pd.DataFrame({
-        "edit_distance":[evaluate_f1_score(val_pickle,test_pickle,None,openai_key=None,edit_distance=True)[0]],
-        "SBERT":[evaluate_f1_score(val_pickle,test_pickle,sbert_model,openai_key=None,edit_distance=False)[0]],
-        "LT ZS Wiki":[evaluate_f1_score(val_pickle,test_pickle,lt_wiki_model,openai_key=None,edit_distance=False)[0]],
-        "LT":[evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)[0]],
-        "OpenAI":[evaluate_f1_score(val_pickle,test_pickle,open_ai_model,openai_key=myopenaikey,edit_distance=False)[0]],
-    })
+    # results_df_japanese=pd.DataFrame({
+    #     "edit_distance":[evaluate_f1_score(val_pickle,test_pickle,None,openai_key=None,edit_distance=True)[0]],
+    #     "SBERT":[evaluate_f1_score(val_pickle,test_pickle,sbert_model,openai_key=None,edit_distance=False)[0]],
+    #     "LT ZS Wiki":[evaluate_f1_score(val_pickle,test_pickle,lt_wiki_model,openai_key=None,edit_distance=False)[0]],
+    #     "LT":[evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)[0]],
+    #     "OpenAI":[evaluate_f1_score(val_pickle,test_pickle,open_ai_model,openai_key=myopenaikey,edit_distance=False)[0]],
+    # })
 
-    results_df_japanese.to_csv("results_df_japanese.csv")
+    ###Get size of japanese data
+    print(get_size_of_japanese_data(val_pickle,test_pickle))
+
+    # results_df_japanese.to_csv("results_df_japanese.csv")
 
     #Let's run this for mexican data now
 
-    mexican_model_dict={
+    # mexican_model_dict={
 
-                ##Multilingual models for LT_UN
-                "fine-fine-multi":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-                             "LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/mexicandata/models/lt-mexicantrade4748",
-                               "LT_UN":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_multi_fine_fine"},
+    #             ##Multilingual models for LT_UN
+    #             "fine-fine-multi":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+    #                          "LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/mexicandata/models/lt-mexicantrade4748",
+    #                            "LT_UN":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_multi_fine_fine"},
 
 
-    }
+    # }
 
-    mexican_results=(make_mexican_table(mexican_model_dict,openai_key=myopenaikey))
-    mexican_results.to_csv("results_df_mexican.csv")
+    # mexican_results=(make_mexican_table(mexican_model_dict,openai_key=myopenaikey))
+    # mexican_results.to_csv("results_df_mexican.csv")
 
 
 

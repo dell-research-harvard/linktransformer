@@ -9,3 +9,7 @@ wandb/**
 wiki_aliases/**
 historicjapanese/**
 .idea
+extra_data/**
+un_data/**
+wiki_aliases_copy/**
+*.csv

@@ -728,12 +728,16 @@ def prep_clus_data(
     
 
     ### Now, group by cluster assignment and make a dict with cluster_assignment:[left_text, right_text1, right_text2, right_text3...]
-    train_data_dict = defaultdict(list)
-    for index, row in train_data.iterrows():
-        train_data_dict[row["cluster_assignment"]].append(row["text"])
+    # print("Preparing train data")
+    # train_data_dict = defaultdict(list)
+    # for index, row in train_data.iterrows():
+    #     train_data_dict[row["cluster_assignment"]].append(row["text"])
     
-    ### Deduplicate the lists
-    train_data_dict = {k: list(set(v)) for k, v in train_data_dict.items()}
+    # ### Deduplicate the lists
+    # train_data_dict = {k: list(set(v)) for k, v in train_data_dict.items()}
+    train_data_dict = train_data.groupby("cluster_assignment")["text"].apply(set).apply(list).to_dict()
+
+    print("Preparing val data")
 
     queries = {}
     corpus = {}
@@ -747,10 +751,7 @@ def prep_clus_data(
         corpus_group=group.iloc[query_portion:].reset_index(drop=True)
         query_group_ids=query_group[cluster_id_rename].tolist()
         query_group_ids=[query_group_ids[i]+str(i) for i in range(len(query_group_ids))]
-        ###Add an index after each query_group_id
-        # for index,group_id in enumerate(query_group_ids) :
-        #     query_group_ids[index]=query_group_ids[index]+"_"+str(index)
-        
+
         corpus_group_ids=corpus_group[cluster_id_rename].tolist()
         corpus_group_ids=[corpus_group_ids[i]+str(i)+"c" for i in range(len(corpus_group_ids))]
 
@@ -761,12 +762,7 @@ def prep_clus_data(
 
         for cindex,corpus_id in enumerate(corpus_group_ids):
             corpus[corpus_id]=corpus_group["text"].iloc[cindex]
-        #     print(query_group["text"].iloc[query_id].values)
-        #     queries[query]=(query_group["text"].iloc[qindex].values)
-        #     relevant_docs[query_id]=set(corpus_group_ids)
-        # for cindex,corpus_id in enumerate(corpus_group_ids):
-        #     corpus[corpus_id]=(corpus_group["text"].iloc[cindex].values)
-        
+
 
 
 
@@ -785,6 +781,8 @@ def prep_clus_data(
 
     ##Now, prepare the test data
     if test_at_end:
+        print("Preparing test data")
+
         queries = {}
         corpus = {}
         relevant_docs = defaultdict(set)

@@ -30,14 +30,14 @@ def test_train_model_mexican():
 
     model=lt.load_model(saved_model_path)
 
-    # model.save_to_hub(repo_name = "linktransformer-models-test", ##Write model name here
-    #                 organization= "dell-research-harvard",
-    #                 private = None,
-    #                 commit_message = "Add new LinkTransformer model.",
-    #                 local_model_path = None,
-    #                 exist_ok = True,
-    #                 replace_model_card = True,
-    #                 )
+    model.save_to_hub(repo_name = "linktransformer-models-test", ##Write model name here
+                    organization= "dell-research-harvard",
+                    private = None,
+                    commit_message = "Add new LinkTransformer model.",
+                    local_model_path = None,
+                    exist_ok = True,
+                    replace_model_card = True,
+                    )
 
     # Add assertions to check if the training was successful and the model was saved
     assert os.path.exists(saved_model_path), "Model not saved"
