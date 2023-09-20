@@ -1,5 +1,7 @@
 ###Inference and Linkage script
 ###We want to link dfs together using embeddings
+import json
+import os
 import warnings
 
 import numpy as np
@@ -655,9 +657,8 @@ def classify_rows(
     df: DataFrame,
     on: Optional[Union[str, List[str]]] = None,
     model: str = None,
-    tokenization_model: str = "distilroberta-base",
     num_labels: int = 2,
-    label_dict: Optional[dict] = None,
+    label_map: Optional[dict] = None,
     use_gpu: bool = False,
     batch_size: int = 128,
     openai_key: Optional[str] = None,
@@ -674,10 +675,9 @@ def classify_rows(
     :param df: (DataFrame) the dataframe.
     :param on: (Union[str, List[str]], optional) Column(s) to classify (if multiple columns are passed in, they will be joined).
     :param model: (str) filepath to the model to use (to use OpenAI, see "https://platform.openai.com/docs/models").
-    :param tokenization_model: (str) the tokenization model to use. Defaults to 'distilroberta-base'.
     :param num_labels: (int) number of labels to predict. Defaults to 2.
-    :param label_dict: (dict) a dictionary that maps text labels to numeric labels. Used for OpenAI predictions.
-    :param use_gpu: (bool) Whether to use GPU. Defaults to False.
+    :param label_map: (dict) a dictionary that maps text labels to numeric labels. Used for OpenAI predictions.
+    :param use_gpu: (bool) Whether to use GPU. Not supported yet. Defaults to False.
     :param batch_size: (int) Batch size for inferencing embeddings. Defaults to 128.
     :param openai_key: (str, optional) OpenAI API key for InferKit API. Defaults to None.
     :param openai_topic: (str, optional) The topic predict whether the text is relevant or not. Defaults to None.
@@ -686,54 +686,69 @@ def classify_rows(
     :returns: DataFrame: The dataframe with a new column "clf_preds_{on}" that stores the classification results.
     """
 
+    # load label dict from model path if exists
+    if os.path.exists(os.path.join(model, "label_map.json")):
+        with open(os.path.join(model, "label_map.json"), encoding="utf-8") as f:
+            label_map = json.load(f)
+
     # check if label dict is compatible with num of labels
-    if label_dict is not None and len(label_dict) != num_labels:
-        raise ValueError(f"label_dict has {label_dict} entries, but num_labels is {num_labels}. ")
+    if label_map is not None and len(label_map) != num_labels:
+        raise ValueError(f"label_dict has {label_map} entries, but num_labels is {num_labels}. ")
 
     # check if the parameters for any inference method is properly specified
     if openai_key is None and model is None:
         raise ValueError("Must either specify a model or use an OpenAI key")
 
-
+    # infer using HF or local models
     if openai_key is None:
-        model = load_clf(model, num_labels=num_labels)
+        clf = load_clf(model, num_labels=num_labels)
 
         # join texts in columns if needed
         if isinstance(on, list):
-            strings_col = serialize_columns(df, on, model=tokenization_model)
+            strings_col = serialize_columns(df, on, model=model)
         else:
             strings_col = df[on].tolist()
 
         # tokenize data
-        tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", tokenization_model)
+        tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", model)
 
         # initialize trainer
         inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size)
-        trainer = Trainer(model=model, args=inference_args)
+        trainer = Trainer(model=clf, args=inference_args)
 
         # predict and save results
         predictions = trainer.predict(tokenized_data)
         preds = np.argmax(predictions.predictions, axis=-1)
 
-        assert len(preds) == df.shape[0], "Length mismatch"
+        # convert numeric labels to text labels according to label_map if exists
+        if label_map is not None:
+            reversed_label_map = {val: key for (key, val) in label_map.items()}
+            try:
+                preds = [reversed_label_map[pred] for pred in preds]
+            except:
+                warnings.warn("Failed to convert from numeric labels to text labels. Text labels are kept. ")
+
+        assert len(preds) == df.shape[0], "DEBUG: Length mismatch"
 
         if isinstance(on, str):
             df[f"clf_preds_{on}"] = preds
         else:
             df[f"clf_preds_{'-'.join(on)}"] = preds
 
-
+    # infer using OpenAI GPT API
     else:
         if openai_topic is None and openai_prompt is None:
             raise ValueError("Must provide either openai_topic or openai_prompt to use OpenAI classification")
 
         # use default label dict if it is not provided
-        if label_dict is None:
-            label_dict = {"Yes": 1, "No": 0}
+        if label_map is None:
+            label_map = {"Yes": 1, "No": 0}
+            if openai_prompt is not None:
+                warnings.warn("You are using a customized prompt but a default label map (Yes/No mapping). ")
 
         # check if label dict is compatible with num of labels
-        if len(label_dict) != num_labels:
-            raise ValueError(f"label_dict has {label_dict} entries, but num_labels is {num_labels}. ")
+        if len(label_map) != num_labels:
+            raise ValueError(f"label_dict has {label_map} entries, but num_labels is {num_labels}. ")
 
         # join texts in columns if needed
         if isinstance(on, list):
@@ -743,10 +758,10 @@ def classify_rows(
 
         # get predictions from openai
         preds = predict_rows_with_openai(
-            strings_col, model, openai_key, openai_topic, openai_prompt, openai_params, label_dict
+            strings_col, model, openai_key, openai_topic, openai_prompt, openai_params, label_map
         )
 
-        assert len(preds) == df.shape[0], "Length mismatch"
+        assert len(preds) == df.shape[0], "DEBUG: Length mismatch"
 
         if isinstance(on, str):
             df[f"clf_preds_{on}"] = preds

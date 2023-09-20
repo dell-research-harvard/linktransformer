@@ -250,7 +250,7 @@ def predict_rows_with_openai(
 
         # sleep at when accumulated token is approaching rate-limiting threshold
         if accm_tokens > 0.8 * max_tokens:
-            print(f"Sleeping to avoid rate-limiting")
+            tqdm.write(f"Sleeping to avoid rate-limiting")
             time.sleep(ratelimit_sleep_time)
             accm_tokens = 0
 
@@ -264,8 +264,8 @@ def predict_rows_with_openai(
             accm_tokens += num_tokens
             time.sleep(iteration_sleep_time)
         except Exception as e:  # handles RateLimit or Timeout Error
-            print(repr(e))
-            print(f"Encountered error: will retry after sleeping")
+            tqdm.write(repr(e))
+            tqdm.write(f"Encountered error: will retry after sleeping")
             time.sleep(ratelimit_sleep_time)
             accm_tokens = 0
 
