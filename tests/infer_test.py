@@ -5,6 +5,7 @@ import linktransformer as lt
 
 import pytest
 
+
 def test_data_dir_path():
     print(DATA_DIR_PATH)
     assert os.path.exists(DATA_DIR_PATH)
@@ -182,7 +183,7 @@ def test_clf_multi_col_ter_openai():
     openai_prompt = "Determine whether the text is about protests, riots or neither. Protest/Riot/Neither: "
     df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="gpt-3.5-turbo", num_labels=3,
                                      openai_key=os.getenv("OPENAI_API_KEY"),
-                                     openai_prompt=openai_prompt, label_dict=label_dict)
+                                     openai_prompt=openai_prompt, label_map=label_dict)
     assert isinstance(df_clf_output, pd.DataFrame)
     assert "clf_preds_article-image_id" in df_clf_output
     # assert df_clf_output["clf_preds_article-image_id"].isin([0, 1, 2]).all()
