@@ -3,6 +3,8 @@ import pandas as pd
 from linktransformer import DATA_DIR_PATH
 import linktransformer as lt
 
+import pytest
+
 
 def test_data_dir_path():
     print(DATA_DIR_PATH)
@@ -114,6 +116,79 @@ def test_knn():
 
 
     assert df_lm_matched.equals(df_lm_matched2)
+
+
+def test_clf_single_col_bin():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
+
+    df_clf_output = lt.classify_rows(df, on="article", model="distilroberta-base")
+    assert isinstance(df_clf_output, pd.DataFrame)
+    assert "clf_preds_article" in df_clf_output
+    assert df_clf_output["clf_preds_article"].isin([0, 1]).all()
+
+    print(df_clf_output)
+
+
+def test_clf_multi_col_bin():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
+
+    df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="distilroberta-base")
+    assert isinstance(df_clf_output, pd.DataFrame)
+    assert "clf_preds_article-image_id" in df_clf_output
+    assert df_clf_output["clf_preds_article-image_id"].isin([0, 1]).all()
+
+    print(df_clf_output)
+
+
+def test_clf_single_col_ter():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_ternary.csv"))
+
+    df_clf_output = lt.classify_rows(df, on="article", model="distilroberta-base", num_labels=3)
+    assert isinstance(df_clf_output, pd.DataFrame)
+    assert "clf_preds_article" in df_clf_output
+    assert df_clf_output["clf_preds_article"].isin([0, 1, 2]).all()
+
+    print(df_clf_output)
+
+
+def test_clf_multi_col_ter():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_ternary.csv"))
+
+    df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="distilroberta-base", num_labels=3)
+    assert isinstance(df_clf_output, pd.DataFrame)
+    assert "clf_preds_article-image_id" in df_clf_output
+    assert df_clf_output["clf_preds_article-image_id"].isin([0, 1, 2]).all()
+
+    print(df_clf_output)
+
+
+@pytest.mark.skipif("OPENAI_API_KEY" not in os.environ, reason="OpenAI API keys not found in environment variable")
+def test_clf_single_col_bin_openai():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
+
+    df_clf_output = lt.classify_rows(df, on="article", model="gpt-3.5-turbo", num_labels=2,
+                                     openai_key=os.getenv("OPENAI_API_KEY"), openai_topic="protests")
+    assert isinstance(df_clf_output, pd.DataFrame)
+    assert "clf_preds_article" in df_clf_output
+    assert df_clf_output["clf_preds_article"].isin([0, 1]).all()
+
+    print(df_clf_output)
+
+
+@pytest.mark.skipif("OPENAI_API_KEY" not in os.environ, reason="OpenAI API keys not found in environment variable")
+def test_clf_multi_col_ter_openai():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_ternary.csv"))
+
+    label_dict = {"Protest": 1, "Riot": 2, "Neither": 0}
+    openai_prompt = "Determine whether the text is about protests, riots or neither. Protest/Riot/Neither: "
+    df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="gpt-3.5-turbo", num_labels=3,
+                                     openai_key=os.getenv("OPENAI_API_KEY"),
+                                     openai_prompt=openai_prompt, label_map=label_dict)
+    assert isinstance(df_clf_output, pd.DataFrame)
+    assert "clf_preds_article-image_id" in df_clf_output
+    # assert df_clf_output["clf_preds_article-image_id"].isin([0, 1, 2]).all()
+
+    print(df_clf_output)
     
 
 
@@ -126,4 +201,8 @@ if __name__ == "__main__":
     # test_french_to_english_crosslingual()
     # test_dedup()
     #merge_knn
-    test_knn()
+    # test_knn()
+
+    # test classification
+    test_clf_single_col_bin()
+    test_clf_multi_col_bin()

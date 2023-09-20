@@ -1,12 +1,14 @@
 # LinkTransformer
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![arXiv](https://img.shields.io/badge/arXiv-2309.00789-b31b1b.svg)](https://arxiv.org/abs/2309.00789)
 
 ![Linkktransformers demo](https://github.com/dell-research-harvard/linktransformer/assets/60428420/15162828-b0fb-4ee3-8a0f-fdf3371d10a0)
 
 
 LinkTransformer is a Python library for merging and deduplicating data frames using language model embeddings. It leverages popular Sentence Transformer (or any HuggingFace) models to generate embeddings for text data and provides functions to perform efficient 1:1, 1:m, and m:1 merges based on the similarity of embeddings. Additionally, the package includes utilities for clustering and data preprocessing. It also includes modifications to Sentence Transformers that allow for logging training runs on weights and biases.
 
+- [Paper](https://arxiv.org/abs/2309.00789)
 - [Website](https://linktransformer.github.io/)
 - [Demo Video](https://www.youtube.com/watch?v=Sn47nmCvV9M)
 - Tutorials
@@ -218,3 +220,8 @@ This project is licensed under the GNU General Public License- see the LICENSE f
 
 ## Roadmap 
 We will continue to come up with more feature-rich updates and introduce more modalities like images using support for vision and multimodal models within this framework to make those accessible to those with a non-technical background. 
+
+## Package Maintainers
+- Sam Jones (samuelcaronnajones)
+- Abhishek Arora (econabhishek)
+- Yiyang Chen (oooyiyangc)
