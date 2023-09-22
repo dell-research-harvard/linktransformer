@@ -236,10 +236,11 @@ def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=
             print("*****")
 
     print("***Test results***")
-    metric0 = load_metric("accuracy")
-    metric1 = load_metric("recall")
-    metric2 = load_metric("precision")
-    metric3= load_metric("f1")
+    metric0 = evaluate.load("accuracy")
+    metric1 = evaluate.load("precision")
+    metric2 = evaluate.load("recall")
+    metric3 = evaluate.load("f1")
+
 
     results_dict={}
     results_dict["test/accuracy"]=metric0.compute(predictions=preds, references=predictions.label_ids)["accuracy"]

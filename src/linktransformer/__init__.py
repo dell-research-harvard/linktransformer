@@ -8,5 +8,7 @@ from .preprocess import *
 from .train_model import *
 from .modified_sbert import *
 from .train_clf_model import train_clf_model
+from .modelling.LinkTransformer import LinkTransformer
+from .modelling.LinkTransformerClassifier import LinkTransformerClassifier
 
 

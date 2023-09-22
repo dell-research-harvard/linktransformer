@@ -1,6 +1,3 @@
-import logging
-
-from sentence_transformers.util import fullname
 
 class ModelCardTemplate:
     __TAGS__ = ["linktransformer","sentence-transformers", "sentence-similarity","tabular-classification"]
@@ -25,7 +22,7 @@ tags:
 
 # {MODEL_NAME}
 
-This is a [LinkTransformer](https://github.com/dell-research-harvard/linktransformer) model. At its core this model this is a sentence transformer model [sentence-transformers](https://www.SBERT.net) model- it just wraps around the class. 
+This is a [LinkTransformer](https://linktransformer.github.io/) model. At its core this model this is a sentence transformer model [sentence-transformers](https://www.SBERT.net) model- it just wraps around the class. 
 It is designed for quick and easy record linkage (entity-matching) through the LinkTransformer package. The tasks include clustering, deduplication, linking, aggregation and more.
 Notwithstanding that, it can be used for any sentence similarity task within the sentence-transformers framework as well. 
 It maps sentences & paragraphs to a {NUM_DIMENSIONS} dimensional dense vector space and can be used for tasks like clustering or semantic search.
@@ -162,5 +159,120 @@ saved_model_path = train_model(
 """
 
 
-class ModelCardTemplateCLF:
-    pass
+class ClassificationModelCardTemplate:
+    __TAGS__ = ["linktransformer", "transformers", "text-classification", "tabular-classification"]
+    __DEFAULT_VARS__ = {
+        "{PIPELINE_TAG}": "text-classification",
+        "{MODEL_DESCRIPTION}": "<!--- Describe your model here -->",
+        "{TRAINING_SECTION}": "",
+        "{USAGE_TRANSFORMERS_SECTION}": "",
+        "{EVALUATION}": "<!--- Describe how your model was evaluated -->",
+        "{CITING}": "<!--- Describe where people can find more information -->"
+    }
+
+    __MODEL_CARD__ = """
+---
+pipeline_tag: {PIPELINE_TAG}
+language: 
+{LANGUAGE}
+tags:
+{TAGS}
+{DATASETS}
+---
+
+# {MODEL_NAME}
+
+This model is part of the [LinkTransformer](https://linktransformer.github.io/) ecosystem. While rooted in the a standard HuggingFace Transformer, this specific instance is tailored for text classification tasks. It classifies input sentences or paragraphs into specific categories or labels, leveraging the power of transformer architectures.
+
+The base model for this classifier is: {BASE_MODEL}. It is pretrained for the language: {LANGUAGE}.
+
+Labels are mapped to integers as follows: 
+
+{LABEL_MAP}
+
+{MODEL_DESCRIPTION}
+
+## Usage with LinkTransformer
+
+After installing [LinkTransformer](https://linktransformer.github.io/):
+
+```python
+pip install -U linktransformer
+```
+
+Employ the model for text classification tasks:
+
+```python
+import linktransformer as lt
+df_clf_output = lt.classify_rows(df, on=["col_of_interest"], model="{MODEL_NAME}")
+```
+
+
+## Training
+
+### Training your own LinkTransformer Classification Model
+
+With the provided tools, you can train a custom classification model:
+
+```python
+from linktransformer import train_clf_model
+
+best_model_path, best_metric, label_map = train_clf_model(
+    data="path_to_dataset.csv",
+    model="you-model-path-or-name",
+    on=["col_of_interest"],
+    label_col_name="label_column_name",
+    lr=5e-5,
+    batch_size=16,
+    epochs=3
+)
+```
+
+{TRAINING_SECTION}
+
+{USAGE_TRANSFORMERS_SECTION}
+
+## Evaluation Results
+
+{EVALUATION}
+
+Evaluation is typically based on metrics like accuracy, F1-score, precision, and recall.
+
+## Citing & Authors
+
+```
+@misc{arora2023linktransformer,
+                  title={LinkTransformer: A Unified Package for Record Linkage with Transformer Language Models},
+                  author={Abhishek Arora and Melissa Dell},
+                  year={2023},
+                  eprint={2309.00789},
+                  archivePrefix={arXiv},
+                  primaryClass={cs.CL}
+}
+```
+
+"""
+
+    __TRAINING_SECTION__ = """
+## Training
+
+### Training your own LinkTransformer Classification Model
+
+With the provided tools, you can train a custom classification model:
+
+```python
+from linktransformer import train_clf_model
+
+best_model_path, best_metric, label_map = train_clf_model(
+    data="path_to_dataset.csv",
+    on=["text_column_name"],
+    label_col_name="label_column_name",
+    lr=5e-5,
+    batch_size=16,
+    epochs=3
+)
+```
+
+More information on configurations can be found in the [LinkTransformer documentation](https://linktransformer.github.io/).
+"""
+

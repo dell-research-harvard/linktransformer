@@ -30,14 +30,14 @@ def test_train_model_mexican():
 
     model=lt.load_model(saved_model_path)
 
-    model.save_to_hub(repo_name = "linktransformer-models-test", ##Write model name here
-                    organization= "dell-research-harvard",
-                    private = None,
-                    commit_message = "Add new LinkTransformer model.",
-                    local_model_path = None,
-                    exist_ok = True,
-                    replace_model_card = True,
-                    )
+    # model.save_to_hub(repo_name = "linktransformer-models-test", ##Write model name here
+    #                 organization= "dell-research-harvard",
+    #                 private = None,
+    #                 commit_message = "Add new LinkTransformer model.",
+    #                 local_model_path = None,
+    #                 exist_ok = True,
+    #                 replace_model_card = True,
+    #                 )
 
     # Add assertions to check if the training was successful and the model was saved
     assert os.path.exists(saved_model_path), "Model not saved"
@@ -88,7 +88,7 @@ def test_train_model_jp():
 
 def test_train_model_clustering():
     #Test for cluster datasets
-    dataset_path = os.path.join(DATA_DIR_PATH, "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv")
+    dataset_path = os.path.join(DATA_DIR_PATH, "company_clusters.csv")
     ##Load the data
 
     saved_model_path = lt.train_model(
