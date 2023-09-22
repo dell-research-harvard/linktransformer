@@ -686,6 +686,8 @@ def classify_rows(
     :returns: DataFrame: The dataframe with a new column "clf_preds_{on}" that stores the classification results.
     """
 
+    df = df.copy()
+
     # load label dict from model path if exists
     if os.path.exists(os.path.join(model, "label_map.json")):
         with open(os.path.join(model, "label_map.json"), encoding="utf-8") as f:
