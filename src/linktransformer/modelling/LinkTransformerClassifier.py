@@ -50,13 +50,17 @@ class LinkTransformerClassifier:
                 with open(label_map_path, 'r') as fIn:
                     self.label_map = json.load(fIn)
         
-    def save(self, save_directory: str,model_name: Optional[str] = None):
+    def save(self, save_directory: str,model_name: Optional[str] = None,override_model_description: Optional[str] = None, override_model_lang: Optional[str] = None,train_datasets=None):
         """
         Saves the model and tokenizer to the specified directory.
         """
+        if override_model_description is not None:
+            self.opt_model_description = override_model_description
+        if override_model_lang is not None:
+            self.opt_model_lang = override_model_lang
         self.tokenizer.save_pretrained(save_directory)
         self.model.save_pretrained(save_directory)
-        self._create_model_card(save_directory, model_name=model_name,label_map=self.label_map,train_datasets=None)
+        self._create_model_card(save_directory, model_name=model_name,label_map=self.label_map,train_datasets=train_datasets)
         
     def _create_model_card(self, path: str, model_name: Optional[str] = None,label_map=None,train_datasets: Optional[List[str]] = None):
             """
@@ -127,6 +131,8 @@ class LinkTransformerClassifier:
                     commit_message: str = "Add new LinkTransformer model.",
                     local_model_path: Optional[str] = None,
                     exist_ok: bool = False,
+                    override_model_description: Optional[str] = None, 
+                    override_model_lang: Optional[str] = None,
                     train_datasets: Optional[List[str]] = None):
         """
         Uploads all elements of this LinkTransformer (for classification) to a new HuggingFace Hub repository.
@@ -175,7 +181,7 @@ class LinkTransformerClassifier:
             if local_model_path:
                 copy_tree(local_model_path, tmp_dir)
             else:  # Else, save model directly into local repo.
-                self.save(tmp_dir, model_name=full_model_name)
+                self.save(tmp_dir, full_model_name,override_model_description, override_model_lang,train_datasets)
 
             ##Save the model config (_lt_model_config) to the repo if it exists
             if hasattr(self, '_lt_model_config'):

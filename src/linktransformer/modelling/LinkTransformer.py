@@ -69,7 +69,8 @@ class LinkTransformer(SentenceTransformer):
 
 
 
-    def save(self, path: str, model_name: Optional[str] = None, create_model_card: bool = True, train_datasets: Optional[List[str]] = None):
+    def save(self, path: str, model_name: Optional[str] = None, create_model_card: bool = True, train_datasets: Optional[List[str]] = None,override_model_description: Optional[str] = None, 
+                    override_model_lang: Optional[str] = None):
         """
         Saves all elements for this seq. sentence embedder into different sub-folders
         :param path: Path on disc
@@ -79,6 +80,11 @@ class LinkTransformer(SentenceTransformer):
         """
         if path is None:
             return
+        
+        if override_model_description is not None:
+            self.opt_model_description = override_model_description
+        if override_model_lang is not None:
+            self.opt_model_lang = override_model_lang
 
         os.makedirs(path, exist_ok=True)
 
@@ -180,7 +186,9 @@ class LinkTransformer(SentenceTransformer):
                     local_model_path: Optional[str] = None,
                     exist_ok: bool = False,
                     replace_model_card: bool = False,
-                    train_datasets: Optional[List[str]] = None):
+                    train_datasets: Optional[List[str]] = None,
+                    override_model_description: Optional[str] = None, 
+                    override_model_lang: Optional[str] = None):
         """
         Uploads all elements of this LinkTransformer (inherited Sentence Transformer) to a new HuggingFace Hub repository.
 
