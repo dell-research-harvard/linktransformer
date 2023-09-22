@@ -237,8 +237,8 @@ def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=
 
     print("***Test results***")
     metric0 = evaluate.load("accuracy")
-    metric1 = evaluate.load("precision")
-    metric2 = evaluate.load("recall")
+    metric2 = evaluate.load("precision")
+    metric1 = evaluate.load("recall")
     metric3 = evaluate.load("f1")
 
 

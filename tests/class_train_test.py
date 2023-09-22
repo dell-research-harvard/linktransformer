@@ -67,6 +67,6 @@ def test_class_train_3_labels_weighted():
 ##Run as script
 if __name__ == "__main__":
     test_class_train_splits()
-    test_class_train_nosplits()
-    test_class_train_3_labels()
-    test_class_train_3_labels_weighted()
+    # test_class_train_nosplits()
+    # test_class_train_3_labels()
+    # test_class_train_3_labels_weighted()
