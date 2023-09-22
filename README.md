@@ -14,6 +14,7 @@ LinkTransformer is a Python library for merging and deduplicating data frames us
 - Tutorials
   + [Link Records with LinkTransformer](https://colab.research.google.com/drive/1OqUB8sqpUvrnC8oa_1RoOUzV6DaAKL4N?usp=sharing)
   + [Train your own LinkTransformer Model](https://colab.research.google.com/drive/1tHitPGjMMI2Nvh4wwA8rdcbYfbLaJDvg?usp=sharing)
+  + [Classify text with LinkTransformer](https://colab.research.google.com/drive/1hSh_p8j7LP2RfdtxrPslOfnogC_CbYw5?usp=sharing)
 - [Feature Deck](https://www.dropbox.com/scl/fi/dquxru8bndlyf9na14cw6/A-python-package-to-do-easy-record-linkage-using-Transformer-models.pdf?rlkey=fiv7j6c0vgl901y940054eptk&dl=0)
 
 More tutorials are coming soon!
@@ -26,12 +27,13 @@ More tutorials are coming soon!
 - Efficient 1:1, 1:m, and m:1 merges
 - Clustering methods for grouping similar data
 - Support for various NLP models available on HuggingFace
+- Classification - prediction and training in one line of code!
 
 ## Coming soon
-- Hard negative mining for efficient training
 - FAISS GPU, cuDF, cuML and cuGraph integration
 - Convenience wrapper to use our models (trained on UN products and Wikidata)
 - Integration of other modalities in this framework (Vision/Multimodal models)
+- Hard negative mining for efficient training
 
 
 ## Installation
@@ -201,7 +203,94 @@ def train_model(
 
 ```
 
+### You can even Classify rows of text into predefined classes! 
 
+#### Use pretrained models (ChatGPT or HuggingFace!)
+
+```python
+
+def classify_rows(
+    df: DataFrame,
+    on: Optional[Union[str, List[str]]] = None,
+    model: str = None,
+    num_labels: int = 2,
+    label_map: Optional[dict] = None,
+    use_gpu: bool = False,
+    batch_size: int = 128,
+    openai_key: Optional[str] = None,
+    openai_topic: Optional[str] = None,
+    openai_prompt: Optional[str] = None,
+    openai_params: Optional[dict] = {}
+):
+    """
+    Classify texts in all rows of one or more columns whether they are relevant to a certain topic. The function uses
+    either a trained classifier to make predictions or an OpenAI API key to send requests and retrieve classification
+    results from ChatCompletion endpoint. The function returns a copy of the input dataframe with a new column "clf_preds_{on}" that stores the
+    classification results.
+
+    :param df: (DataFrame) the dataframe.
+    :param on: (Union[str, List[str]], optional) Column(s) to classify (if multiple columns are passed in, they will be joined).
+    :param model: (str) filepath to the model to use (to use OpenAI, see "https://platform.openai.com/docs/models").
+    :param num_labels: (int) number of labels to predict. Defaults to 2.
+    :param label_map: (dict) a dictionary that maps text labels to numeric labels. Used for OpenAI predictions.
+    :param use_gpu: (bool) Whether to use GPU. Not supported yet. Defaults to False.
+    :param batch_size: (int) Batch size for inferencing embeddings. Defaults to 128.
+    :param openai_key: (str, optional) OpenAI API key for InferKit API. Defaults to None.
+    :param openai_topic: (str, optional) The topic predict whether the text is relevant or not. Defaults to None.
+    :param openai_prompt: (str, optional) Custom system prompt for OpenAI ChatCompletion endpoint. Defaults to None.
+    :param openai_params: (str, optional) Custom parameters for OpenAI ChatCompletion endpoint. Defaults to None.
+    :returns: DataFrame: The dataframe with a new column "clf_preds_{on}" that stores the classification results.
+    """
+
+```
+
+
+#### Train your own model! 
+
+```python
+def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="label",train_data=None,val_data=None,test_data=None,data_dir=".",
+                    training_args={},config=CLF_CONFIG_PATH,
+                    eval_steps=None,save_steps=None,batch_size=None,lr=None,
+                    epochs=None,model_save_dir=".", weighted_loss=False,weight_list=None,
+                    wandb_log=False,wandb_name="topic",
+                    print_test_mistakes=False):
+    """
+    Trains a text classification model using Hugging Face's Transformers library.
+    
+    :param data: (str/DataFrame, optional) Path to the CSV file or a DataFrame object containing the training data.
+    :param model: (str, default="distilroberta-base") The name of the Hugging Face model to be used.
+    :param on: (list, default=[]) List of column names that are used as input features.
+    :param label_col_name: (str, default="label") The column name in the data that contains the labels.
+    :param train_data: (str/DataFrame, optional) Training dataset if `data` is not provided.
+    :param val_data: (str/DataFrame, optional) Validation dataset if `data` is not provided.
+    :param test_data: (str/DataFrame, optional) Test dataset if `data` is not provided.
+    :param data_dir: (str, default=".") Directory where training data splits are saved.
+    :param training_args: (dict, default={}) Training arguments for the Hugging Face Trainer.
+    :param config: (str, default=CLF_CONFIG_PATH) Path to the default config file.
+    :param eval_steps: (int, optional) Evaluation interval in terms of steps.
+    :param save_steps: (int, optional) Model saving interval in terms of steps.
+    :param batch_size: (int, optional) Batch size for training and evaluation.
+    :param lr: (float, optional) Learning rate.
+    :param epochs: (int, optional) Number of training epochs.
+    :param model_save_dir: (str, default=".") Directory where the trained model will be saved.
+    :param weighted_loss: (bool, default=False) If true, uses weighted loss based on class frequencies.
+    :param weight_list: (list, optional) Weights for each class in the loss function.
+    :param wandb_log: (bool, default=False) If true, logs metrics to Weights & Biases.
+    :param wandb_name: (str, default="topic") Name of the Weights & Biases project.
+    :param print_test_mistakes: (bool, default=False) If true, prints the misclassified samples in the test dataset.
+    
+    :return: 
+        - best_model_path (str): Path to the directory of the best saved model.
+        - best_metric (float): The best metric value achieved during training.
+        - label_map (dict): Mapping of labels to their respective integer values.
+        
+    Note:
+        Either the `data` parameter or all of `train_data`, `val_data`, and `test_data` should be provided. If only
+        `data` is provided, it will be split into train, validation, and test sets.
+    """
+
+
+```
 
 
 ## Contributing
