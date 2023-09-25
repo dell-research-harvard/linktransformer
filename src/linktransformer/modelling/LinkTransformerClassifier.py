@@ -59,6 +59,8 @@ class LinkTransformerClassifier:
         :param override_model_description: Override the model description in the model card.
         :param override_model_lang: Override the model language in the model card.
         :param train_datasets: Datasets used to train the model. If set, the datasets will be added to the model card in the Hub.
+
+        :return: None
         """
         if override_model_description is not None:
             self.opt_model_description = override_model_description
@@ -151,6 +153,7 @@ class LinkTransformerClassifier:
         :param exist_ok: If true, saving to an existing repository is OK. If false, saving only to a new repository is possible
         :param replace_model_card: If true, replace an existing model card in the hub with the automatically created model card
         :param train_datasets: Datasets used to train the model. If set, the datasets will be added to the model card in the Hub.
+        
         :return: The url of the commit of your model in the given repository.
         """
         token = HfFolder.get_token()

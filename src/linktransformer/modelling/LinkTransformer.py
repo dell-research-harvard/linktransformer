@@ -76,6 +76,10 @@ class LinkTransformer(SentenceTransformer):
         :param model_name: Optional model name
         :param create_model_card: If True, create a README.md with basic information about this model
         :param train_datasets: Optional list with the names of the datasets used to to train the model
+        :param override_model_description: Optional model description to override the default model description in the model card
+        :param override_model_lang: Optional model language to override the default model language in the model card
+
+        :return: None
         """
         if path is None:
             return
