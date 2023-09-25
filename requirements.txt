@@ -25,7 +25,7 @@ fonttools==4.41.0
 frozenlist==1.4.0
 fsspec==2023.6.0
 gitdb==4.0.10
-GitPython==3.1.33
+GitPython==3.1.35
 hdbscan==0.8.33
 huggingface-hub==0.16.4
 humanfriendly==10.0
@@ -80,12 +80,12 @@ PyYAML==6.0
 qudida==0.0.4
 rdflib==6.3.2
 regex==2023.6.3
-requests==2.26.0
+requests==2.31.0
 responses==0.18.0
 safetensors==0.3.1
 scikit-image==0.19.1
 scikit-learn==1.3.0
-scipy==1.7.2
+scipy==1.10.0
 seaborn==0.12.2
 sentence-transformers==2.2.2
 sentencepiece==0.1.99
