@@ -13,6 +13,13 @@ Linkage Model Training
 
 Classification Model Training
 ------------------------------
-.. automodule:: linktransformer.train_clf_model
+.. autofunction:: linktransformer.train_clf_model.train_clf_model
+
+Model Classes
+------------------------------
+.. automodule:: linktransformer.modelling.LinkTransformer
    :members:
+.. automodule:: linktransformer.modelling.LinkTransformerClassifier
+    :members:
+    
 

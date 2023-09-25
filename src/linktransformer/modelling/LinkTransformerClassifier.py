@@ -53,6 +53,12 @@ class LinkTransformerClassifier:
     def save(self, save_directory: str,model_name: Optional[str] = None,override_model_description: Optional[str] = None, override_model_lang: Optional[str] = None,train_datasets=None):
         """
         Saves the model and tokenizer to the specified directory.
+
+        :param save_directory: Directory to save to.
+        :param model_name: Name of the model to save.
+        :param override_model_description: Override the model description in the model card.
+        :param override_model_lang: Override the model language in the model card.
+        :param train_datasets: Datasets used to train the model. If set, the datasets will be added to the model card in the Hub.
         """
         if override_model_description is not None:
             self.opt_model_description = override_model_description

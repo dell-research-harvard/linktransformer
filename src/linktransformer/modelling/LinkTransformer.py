@@ -26,9 +26,7 @@ logger = logging.getLogger(__name__)
 class LinkTransformer(SentenceTransformer):
     """
     Modified SentenceTransformer class for LinkTransformers models as a wrapper around the SentenceTransformer class.
-    """
 
-    """
     Loads or create a LinkTransformers model, that can be used to map sentences / text to embeddings which in-turn can be used for LM based record linkage.
 
     :param model_name_or_path: If it is a filepath on disc, it loads the model from that path. If it is not a path, it first tries to download a pre-trained SentenceTransformer model. If that fails, tries to construct a model from Huggingface models repository with that name.

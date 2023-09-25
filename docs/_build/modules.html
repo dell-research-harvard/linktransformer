@@ -343,75 +343,133 @@ Merge is a special case of this function when k=1.
 </dd></dl>
 
 </section>
-<section id="module-0">
-<span id="classification-model-training"></span><h2>Classification Model Training<a class="headerlink" href="#module-0" title="Permalink to this heading">¶</a></h2>
+<section id="classification-model-training">
+<h2>Classification Model Training<a class="headerlink" href="#classification-model-training" title="Permalink to this heading">¶</a></h2>
 <dl class="py function">
-<dt class="sig sig-object py" id="id0">
-<span class="sig-prename descclassname"><span class="pre">linktransformer.train_model.</span></span><span class="sig-name descname"><span class="pre">create_new_train_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">base_config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'/home/abhishekarora/.conda/envs/test_lt/lib/python3.8/site-packages/linktransformer/configs/linkage.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_save_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'myconfig.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_save_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_save_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warm_up_perc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learning_rate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_perc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wandb_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_pooling_layer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_at_end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_val_test_pickles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_query_prop</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#id0" title="Permalink to this definition">¶</a></dt>
-<dd><p>Function to create a training config
-:param config_save_path (str): Path to save the config
-:param base_config_path (str): Path to the base config
-:param model_save_dir (str): Path to save the model
-:param model_save_name (str): Name of the model
-:param train_batch_size (int): Batch size for training
-:param num_epochs (int): Number of epochs
-:param warm_up_perc (float): Percentage of warmup steps
-:param learning_rate (float): Learning rate
-:param val_perc (float): Percentage of validation data
-:param wandb_names (dict): Dictionary of wandb names
-:param add_pooling_layer (bool): Whether to add pooling layer
-:param language (str): Language of the model
-:return: Path to the saved config</p>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="id1">
-<span class="sig-prename descclassname"><span class="pre">linktransformer.train_model.</span></span><span class="sig-name descname"><span class="pre">train_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sentence-transformers/paraphrase-xlm-r-multilingual-v1'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_id_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_id_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_col_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clus_id_col_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clus_text_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'/home/abhishekarora/.conda/envs/test_lt/lib/python3.8/site-packages/linktransformer/configs/linkage.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">training_args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'num_epochs':</span> <span class="pre">10}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_wandb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#id1" title="Permalink to this definition">¶</a></dt>
-<dd><p>Train the LinkTransformer model.</p>
+<dt class="sig sig-object py" id="linktransformer.train_clf_model.train_clf_model">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.train_clf_model.</span></span><span class="sig-name descname"><span class="pre">train_clf_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'distilroberta-base'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_col_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'label'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'.'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">training_args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'/home/abhishekarora/.conda/envs/test_lt/lib/python3.8/site-packages/linktransformer/configs/classification.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eval_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_steps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epochs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_save_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'.'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weighted_loss</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight_list</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wandb_log</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wandb_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'topic'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_test_mistakes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.train_clf_model.train_clf_model" title="Permalink to this definition">¶</a></dt>
+<dd><p>Trains a text classification model using Hugging Face’s Transformers library.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Param<span class="colon">:</span></dt>
-<dd class="field-odd"><p>model_path (str): The name of the model to use.</p>
-</dd>
-<dt class="field-even">Param<span class="colon">:</span></dt>
-<dd class="field-even"><p>data (str): Path to the dataset in Excel or CSV format or a dataframe object.</p>
-</dd>
-<dt class="field-odd">Param<span class="colon">:</span></dt>
-<dd class="field-odd"><p>left_col_names (List[str]): List of column names to use as left side data.</p>
-</dd>
-<dt class="field-even">Param<span class="colon">:</span></dt>
-<dd class="field-even"><p>right_col_names (List[str]): List of column names to use as right side data.</p>
-</dd>
-<dt class="field-odd">Param<span class="colon">:</span></dt>
-<dd class="field-odd"><p>left_id_name (List[str]): List of column names to use as identifiers for the left data.</p>
-</dd>
-<dt class="field-even">Param<span class="colon">:</span></dt>
-<dd class="field-even"><p>right_id_name (List[str]): List of column names to use as identifiers for the right data,</p>
-</dd>
-<dt class="field-odd">Param<span class="colon">:</span></dt>
-<dd class="field-odd"><p>label_col_name (str): Name of the column to use as labels. Specify this if you have data of the form (left, right, label). This type supports both positive and negative examples.</p>
-</dd>
-<dt class="field-even">Param<span class="colon">:</span></dt>
-<dd class="field-even"><p>clusterid_col_name (str): Name of the column to use as cluster ids. Specify this if you have data of the form (text, cluster_id).</p>
-</dd>
-<dt class="field-odd">Param<span class="colon">:</span></dt>
-<dd class="field-odd"><p>cluster_text_col_name (str): Name of the column to use as cluster text. Specify this if you have data of the form (text, cluster_id).</p>
-</dd>
-<dt class="field-even">Param<span class="colon">:</span></dt>
-<dd class="field-even"><p>config_path (str): Path to the JSON configuration file.</p>
-</dd>
-<dt class="field-odd">Param<span class="colon">:</span></dt>
-<dd class="field-odd"><p>training_args (dict): Dictionary of training arguments to override the config.</p>
-</dd>
-<dt class="field-even">Param<span class="colon">:</span></dt>
-<dd class="field-even"><p>log_wandb (bool): Whether to log the training run on wandb.</p>
-</dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – (str/DataFrame, optional) Path to the CSV file or a DataFrame object containing the training data.</p></li>
+<li><p><strong>model</strong> – (str, default=”distilroberta-base”) The name of the Hugging Face model to be used.</p></li>
+<li><p><strong>on</strong> – (list, default=[]) List of column names that are used as input features.</p></li>
+<li><p><strong>label_col_name</strong> – (str, default=”label”) The column name in the data that contains the labels.</p></li>
+<li><p><strong>train_data</strong> – (str/DataFrame, optional) Training dataset if <cite>data</cite> is not provided.</p></li>
+<li><p><strong>val_data</strong> – (str/DataFrame, optional) Validation dataset if <cite>data</cite> is not provided.</p></li>
+<li><p><strong>test_data</strong> – (str/DataFrame, optional) Test dataset if <cite>data</cite> is not provided.</p></li>
+<li><p><strong>data_dir</strong> – (str, default=”.”) Directory where training data splits are saved.</p></li>
+<li><p><strong>training_args</strong> – (dict, default={}) Training arguments for the Hugging Face Trainer.</p></li>
+<li><p><strong>config</strong> – (str, default=CLF_CONFIG_PATH) Path to the default config file.</p></li>
+<li><p><strong>eval_steps</strong> – (int, optional) Evaluation interval in terms of steps.</p></li>
+<li><p><strong>save_steps</strong> – (int, optional) Model saving interval in terms of steps.</p></li>
+<li><p><strong>batch_size</strong> – (int, optional) Batch size for training and evaluation.</p></li>
+<li><p><strong>lr</strong> – (float, optional) Learning rate.</p></li>
+<li><p><strong>epochs</strong> – (int, optional) Number of training epochs.</p></li>
+<li><p><strong>model_save_dir</strong> – (str, default=”.”) Directory where the trained model will be saved.</p></li>
+<li><p><strong>weighted_loss</strong> – (bool, default=False) If true, uses weighted loss based on class frequencies.</p></li>
+<li><p><strong>weight_list</strong> – (list, optional) Weights for each class in the loss function.</p></li>
+<li><p><strong>wandb_log</strong> – (bool, default=False) If true, logs metrics to Weights &amp; Biases.</p></li>
+<li><p><strong>wandb_name</strong> – (str, default=”topic”) Name of the Weights &amp; Biases project.</p></li>
+<li><p><strong>print_test_mistakes</strong> – (bool, default=False) If true, prints the misclassified samples in the test dataset.</p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The path to the saved best model.</p>
+<dd class="field-even"><p><ul class="simple">
+<li><p>best_model_path (str): Path to the directory of the best saved model.</p></li>
+<li><p>best_metric (float): The best metric value achieved during training.</p></li>
+<li><p>label_map (dict): Mapping of labels to their respective integer values.</p></li>
+</ul>
+</p>
 </dd>
 </dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Either the <cite>data</cite> parameter or all of <cite>train_data</cite>, <cite>val_data</cite>, and <cite>test_data</cite> should be provided. If only
+<cite>data</cite> is provided, it will be split into train, validation, and test sets.</p>
+</div>
+</dd></dl>
+
+</section>
+<section id="module-linktransformer.modelling.LinkTransformer">
+<span id="model-classes"></span><h2>Model Classes<a class="headerlink" href="#module-linktransformer.modelling.LinkTransformer" title="Permalink to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="linktransformer.modelling.LinkTransformer.LinkTransformer">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">linktransformer.modelling.LinkTransformer.</span></span><span class="sig-name descname"><span class="pre">LinkTransformer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_name_or_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modules</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_auth_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.modelling.LinkTransformer.LinkTransformer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Modified SentenceTransformer class for LinkTransformers models as a wrapper around the SentenceTransformer class.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="linktransformer.modelling.LinkTransformer.LinkTransformer.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">create_model_card</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_datasets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">override_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">override_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.modelling.LinkTransformer.LinkTransformer.save" title="Permalink to this definition">¶</a></dt>
+<dd><p>Saves all elements for this seq. sentence embedder into different sub-folders
+:type path: <code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>
+:param path: Path on disc
+:type model_name: <code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]
+:param model_name: Optional model name
+:type create_model_card: <code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>
+:param create_model_card: If True, create a README.md with basic information about this model
+:type train_datasets: <code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]]
+:param train_datasets: Optional list with the names of the datasets used to to train the model</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="linktransformer.modelling.LinkTransformer.LinkTransformer.save_to_hub">
+<span class="sig-name descname"><span class="pre">save_to_hub</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">repo_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">organization</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">private</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">commit_message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Add</span> <span class="pre">new</span> <span class="pre">LinkTransformer</span> <span class="pre">model.'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">local_model_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exist_ok</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">replace_model_card</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_datasets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">override_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">override_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.modelling.LinkTransformer.LinkTransformer.save_to_hub" title="Permalink to this definition">¶</a></dt>
+<dd><p>Uploads all elements of this LinkTransformer (inherited Sentence Transformer) to a new HuggingFace Hub repository.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>repo_name</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Repository name for your model in the Hub.</p></li>
+<li><p><strong>organization</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]) – Organization in which you want to push your model or tokenizer (you must be a member of this organization).</p></li>
+<li><p><strong>private</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>]) – Set to true, for hosting a prive model</p></li>
+<li><p><strong>commit_message</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Message to commit while pushing.</p></li>
+<li><p><strong>local_model_path</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]) – Path of the model locally. If set, this file path will be uploaded. Otherwise, the current model will be uploaded</p></li>
+<li><p><strong>exist_ok</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>) – If true, saving to an existing repository is OK. If false, saving only to a new repository is possible</p></li>
+<li><p><strong>replace_model_card</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>) – If true, replace an existing model card in the hub with the automatically created model card</p></li>
+<li><p><strong>train_datasets</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]]) – Datasets used to train the model. If set, the datasets will be added to the model card in the Hub.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The url of the commit of your model in the given repository.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<span class="target" id="module-linktransformer.modelling.LinkTransformerClassifier"></span><dl class="py class">
+<dt class="sig sig-object py" id="linktransformer.modelling.LinkTransformerClassifier.LinkTransformerClassifier">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">linktransformer.modelling.LinkTransformerClassifier.</span></span><span class="sig-name descname"><span class="pre">LinkTransformerClassifier</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">model_name_or_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_card_text</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.modelling.LinkTransformerClassifier.LinkTransformerClassifier" title="Permalink to this definition">¶</a></dt>
+<dd><p>Modified Sequence Classification model and tokenizer to implement model card generation and save to hub functions</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="linktransformer.modelling.LinkTransformerClassifier.LinkTransformerClassifier.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">save_directory</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">override_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">override_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_datasets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.modelling.LinkTransformerClassifier.LinkTransformerClassifier.save" title="Permalink to this definition">¶</a></dt>
+<dd><p>Saves the model and tokenizer to the specified directory.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="linktransformer.modelling.LinkTransformerClassifier.LinkTransformerClassifier.save_to_hub">
+<span class="sig-name descname"><span class="pre">save_to_hub</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">repo_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">organization</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">private</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">commit_message</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Add</span> <span class="pre">new</span> <span class="pre">LinkTransformer</span> <span class="pre">model.'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">local_model_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exist_ok</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">override_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">override_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_datasets</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.modelling.LinkTransformerClassifier.LinkTransformerClassifier.save_to_hub" title="Permalink to this definition">¶</a></dt>
+<dd><p>Uploads all elements of this LinkTransformer (for classification) to a new HuggingFace Hub repository.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>repo_name</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Repository name for your model in the Hub.</p></li>
+<li><p><strong>organization</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]) – Organization in which you want to push your model or tokenizer (you must be a member of this organization).</p></li>
+<li><p><strong>private</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>]) – Set to true, for hosting a prive model</p></li>
+<li><p><strong>commit_message</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>) – Message to commit while pushing.</p></li>
+<li><p><strong>local_model_path</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]) – Path of the model locally. If set, this file path will be uploaded. Otherwise, the current model will be uploaded</p></li>
+<li><p><strong>exist_ok</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>) – If true, saving to an existing repository is OK. If false, saving only to a new repository is possible</p></li>
+<li><p><strong>replace_model_card</strong> – If true, replace an existing model card in the hub with the automatically created model card</p></li>
+<li><p><strong>train_datasets</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]]) – Datasets used to train the model. If set, the datasets will be added to the model card in the Hub.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The url of the commit of your model in the given repository.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </dd></dl>
 
 </section>
@@ -439,7 +497,8 @@ Merge is a special case of this function when k=1.
 <li class="toctree-l1 current"><a class="current reference internal" href="#">linktransformer</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#module-linktransformer.infer">Linkage and Classification Inference</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#module-linktransformer.train_model">Linkage Model Training</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#module-0">Classification Model Training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#classification-model-training">Classification Model Training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-linktransformer.modelling.LinkTransformer">Model Classes</a></li>
 </ul>
 </li>
 </ul>
