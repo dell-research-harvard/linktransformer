@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>linktransformer &#8212; linktransformer  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=4f649999" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=039e1c02" />
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=b3ba4146"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=4825356b"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Welcome to linktransformer’s documentation!" href="index.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="linktransformer">
+<h1>linktransformer<a class="headerlink" href="#linktransformer" title="Permalink to this heading">¶</a></h1>
+<section id="module-linktransformer.infer">
+<span id="linkage-and-classification-inference"></span><h2>Linkage and Classification Inference<a class="headerlink" href="#module-linktransformer.infer" title="Permalink to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.aggregate_rows">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">aggregate_rows</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ref_df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.aggregate_rows" title="Permalink to this definition">¶</a></dt>
+<dd><p>Aggregate the dataframe based on a reference dataframe using a language model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> (<em>ref_df</em>) – Dataframe to aggregate.</p></li>
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> – Reference dataframe to aggregate on.</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> (<em>model</em>) – Language model to use.</p></li>
+<li><p><strong>List</strong><strong>[</strong><strong>str</strong><strong>]</strong><strong>]</strong><strong>)</strong> (<em>right_on</em><em> (</em><em>Union</em><em>[</em><em>str</em><em>,</em>) – Column(s) to aggregate on in df.</p></li>
+<li><p><strong>List</strong><strong>[</strong><strong>str</strong><strong>]</strong><strong>]</strong><strong>)</strong> – Reference column(s) to aggregate on in ref_df.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>DataFrame: The aggregated dataframe.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.all_pair_combos_evaluate">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">all_pair_combos_evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.all_pair_combos_evaluate" title="Permalink to this definition">¶</a></dt>
+<dd><p>Get similarity scores for every pair of rows in a dataframe.
+We make this efficient by only embedding each string once and get all possible pairwise distances
+and add the expanded rows and their scores to the dataframe
+:param df (DataFrame): Dataframe to evaluate.
+:param model (str): Language model to use.
+:param left_on (Union[str, List[str]]): Column(s) to evaluate on in df.
+:param right_on (Union[str, List[str]]): Reference column(s) to evaluate on in df.
+:param openai_key (str): OpenAI API key
+:return: DataFrame: The evaluated dataframe.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.classify_rows">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">classify_rows</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_labels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_gpu</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_topic</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_prompt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{}</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.classify_rows" title="Permalink to this definition">¶</a></dt>
+<dd><p>Classify texts in all rows of one or more columns whether they are relevant to a certain topic. The function uses
+either a trained classifier to make predictions or an OpenAI API key to send requests and retrieve classification
+results from ChatCompletion endpoint. The function returns a copy of the input dataframe with a new column “clf_preds_{on}” that stores the
+classification results.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>) – (DataFrame) the dataframe.</p></li>
+<li><p><strong>on</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Union</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>, <code class="xref py py-class docutils literal notranslate"><span class="pre">List</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>], <code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code>]) – (Union[str, List[str]], optional) Column(s) to classify (if multiple columns are passed in, they will be joined).</p></li>
+<li><p><strong>model</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]) – (str) filepath to the model to use (to use OpenAI, see “<a class="reference external" href="https://platform.openai.com/docs/models">https://platform.openai.com/docs/models</a>”).</p></li>
+<li><p><strong>num_labels</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – (int) number of labels to predict. Defaults to 2.</p></li>
+<li><p><strong>label_map</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code>]) – (dict) a dictionary that maps text labels to numeric labels. Used for OpenAI predictions.</p></li>
+<li><p><strong>use_gpu</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code>) – (bool) Whether to use GPU. Not supported yet. Defaults to False.</p></li>
+<li><p><strong>batch_size</strong> (<code class="xref py py-class docutils literal notranslate"><span class="pre">int</span></code>) – (int) Batch size for inferencing embeddings. Defaults to 128.</p></li>
+<li><p><strong>openai_key</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]) – (str, optional) OpenAI API key for InferKit API. Defaults to None.</p></li>
+<li><p><strong>openai_topic</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]) – (str, optional) The topic predict whether the text is relevant or not. Defaults to None.</p></li>
+<li><p><strong>openai_prompt</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code>]) – (str, optional) Custom system prompt for OpenAI ChatCompletion endpoint. Defaults to None.</p></li>
+<li><p><strong>openai_params</strong> (<code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code>[<code class="xref py py-class docutils literal notranslate"><span class="pre">dict</span></code>]) – (str, optional) Custom parameters for OpenAI ChatCompletion endpoint. Defaults to None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>DataFrame: The dataframe with a new column “clf_preds_{on}” that stores the classification results.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.cluster_rows">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">cluster_rows</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'SLINK'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'metric':</span> <span class="pre">'cosine',</span> <span class="pre">'min</span> <span class="pre">cluster</span> <span class="pre">size':</span> <span class="pre">2,</span> <span class="pre">'threshold':</span> <span class="pre">0.5}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.cluster_rows" title="Permalink to this definition">¶</a></dt>
+<dd><p>Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.
+“agglomerative”: {</p>
+<blockquote>
+<div><blockquote>
+<div><p>“threshold”: 0.5,
+“clustering linkage”: “ward”,  # You can choose a default linkage method
+“metric”: “euclidean”,  # You can choose a default metric</p>
+</div></blockquote>
+<p>},
+“HDBScan”: {</p>
+<blockquote>
+<div><p>“min cluster size”: 5,
+“min samples”: 1,</p>
+</div></blockquote>
+<p>},
+“SLINK”: {</p>
+<blockquote>
+<div><p>“min cluster size”: 2,
+“threshold”: 0.1,</p>
+</div></blockquote>
+<p>},</p>
+</div></blockquote>
+<p>}</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> (<em>df</em>) – Dataframe to deduplicate.</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> (<em>openai_key</em>) – Language model to use.</p></li>
+<li><p><strong>List</strong><strong>[</strong><strong>str</strong><strong>]</strong><strong>]</strong><strong>)</strong> (<em>on</em><em> (</em><em>Union</em><em>[</em><em>str</em><em>,</em>) – Column(s) to deduplicate on.</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> – Clustering method to use. Defaults to “SLINK”.</p></li>
+<li><p><strong>Any</strong><strong>]</strong><strong>)</strong> (<em>cluster_params</em><em> (</em><em>Dict</em><em>[</em><em>str</em><em>,</em>) – Parameters for clustering method. Defaults to {‘threshold’: 0.5, “min cluster size”: 2, “metric”: “cosine”}.</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> – OpenAI API key</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>DataFrame: The deduplicated dataframe.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.dedup_rows">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">dedup_rows</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'SLINK'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'metric':</span> <span class="pre">'cosine',</span> <span class="pre">'min</span> <span class="pre">cluster</span> <span class="pre">size':</span> <span class="pre">2,</span> <span class="pre">'threshold':</span> <span class="pre">0.5}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.dedup_rows" title="Permalink to this definition">¶</a></dt>
+<dd><p>Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
+Refer to the docs for the cluster_rows function for more details.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> (<em>df</em>) – Dataframe to deduplicate.</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> (<em>openai_key</em>) – Language model to use.</p></li>
+<li><p><strong>List</strong><strong>[</strong><strong>str</strong><strong>]</strong><strong>]</strong><strong>)</strong> (<em>on</em><em> (</em><em>Union</em><em>[</em><em>str</em><em>,</em>) – Column(s) to deduplicate on.</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> – Clustering method to use. Defaults to “SLINK”.</p></li>
+<li><p><strong>Any</strong><strong>]</strong><strong>)</strong> (<em>cluster_params</em><em> (</em><em>Dict</em><em>[</em><em>str</em><em>,</em>) – Parameters for clustering method. Defaults to {‘threshold’: 0.5, “min cluster size”: 2, “metric”: “cosine”}.</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> – OpenAI API key</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>DataFrame: The deduplicated dataframe.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.evaluate_pairs">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">evaluate_pairs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_on</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.evaluate_pairs" title="Permalink to this definition">¶</a></dt>
+<dd><p>This function evaluates paired columns in a dataframe and gives a match score (cosine similarity).
+Typically, this can be though of as a way to evaluate already merged in dataframes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> (<em>df</em>) – Dataframe to evaluate.</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> (<em>model</em>) – Language model to use.</p></li>
+<li><p><strong>List</strong><strong>[</strong><strong>str</strong><strong>]</strong><strong>]</strong><strong>)</strong> (<em>right_on</em><em> (</em><em>Union</em><em>[</em><em>str</em><em>,</em>) – Column(s) to evaluate on in df.</p></li>
+<li><p><strong>List</strong><strong>[</strong><strong>str</strong><strong>]</strong><strong>]</strong><strong>)</strong> – Reference column(s) to evaluate on in df.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>DataFrame: The evaluated dataframe.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.merge">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">merge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">df2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'1:1'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'all-MiniLM-L6-v2'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffixes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">('_x',</span> <span class="pre">'_y')</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_gpu</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.merge" title="Permalink to this definition">¶</a></dt>
+<dd><p>Merge two dataframes using language model embeddings.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> (<em>df2</em>) – First dataframe (left).</p></li>
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> – Second dataframe (right).</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> (<em>model</em>) – Type of merge to perform (1:m or m:1 or 1:1).</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> – Language model to use.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> (<em>openai_key</em><em> (</em><em>str</em><em>,</em>) – Column(s) to join on in df1. Defaults to None.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> – Column(s) to join on in df1. Defaults to None.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> – Column(s) to join on in df2. Defaults to None.</p></li>
+<li><p><strong>str</strong><strong>]</strong><strong>)</strong> (<em>suffixes</em><em> (</em><em>Tuple</em><em>[</em><em>str</em><em>,</em>) – Suffixes to use for overlapping columns. Defaults to (‘_x’, ‘_y’).</p></li>
+<li><p><strong>(</strong><strong>bool</strong><strong>)</strong> (<em>use_gpu</em>) – Whether to use GPU. Not supported yet. Defaults to False.</p></li>
+<li><p><strong>(</strong><strong>int</strong><strong>)</strong> (<em>batch_size</em>) – Batch size for inferencing embeddings. Defaults to 128.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> – OpenAI API key for InferKit API. Defaults to None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>DataFrame: The merged dataframe.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.merge_blocking">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">merge_blocking</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">df2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'1:1'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'all-MiniLM-L6-v2'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blocking_vars</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffixes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">('_x',</span> <span class="pre">'_y')</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_gpu</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.merge_blocking" title="Permalink to this definition">¶</a></dt>
+<dd><p>Merge two dataframes using language model embeddings with optional blocking.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> (<em>df2</em>) – First dataframe (left).</p></li>
+<li><p><strong>(</strong><strong>DataFrame</strong><strong>)</strong> – Second dataframe (right).</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> (<em>model</em>) – Type of merge to perform (1:m or m:1 or 1:1).</p></li>
+<li><p><strong>(</strong><strong>str</strong><strong>)</strong> – Language model to use.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> (<em>openai_key</em><em> (</em><em>str</em><em>,</em>) – Column(s) to join on in df1. Defaults to None.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> – Column(s) to join on in df1. Defaults to None.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> – Column(s) to join on in df2. Defaults to None.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> – Columns to use for blocking. Defaults to None.</p></li>
+<li><p><strong>str</strong><strong>]</strong><strong>)</strong> (<em>suffixes</em><em> (</em><em>Tuple</em><em>[</em><em>str</em><em>,</em>) – Suffixes to use for overlapping columns. Defaults to (‘_x’, ‘_y’).</p></li>
+<li><p><strong>(</strong><strong>bool</strong><strong>)</strong> (<em>use_gpu</em>) – Whether to use GPU. Not supported yet. Defaults to False.</p></li>
+<li><p><strong>(</strong><strong>int</strong><strong>)</strong> (<em>batch_size</em>) – Batch size for inferencing embeddings. Defaults to 128.</p></li>
+<li><p><strong>optional</strong><strong>)</strong> – OpenAI API key for InferKit API. Defaults to None.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></p>
+</dd>
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>DataFrame: The merged dataframe.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.infer.merge_knn">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.infer.</span></span><span class="sig-name descname"><span class="pre">merge_knn</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">df2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">merge_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'1:1'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'all-MiniLM-L6-v2'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_on</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffixes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">('_x',</span> <span class="pre">'_y')</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_gpu</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">128</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">openai_key</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">drop_sim_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.infer.merge_knn" title="Permalink to this definition">¶</a></dt>
+<dd><p>Merge two dataframes using language model embeddings. This function would support k nearest neighbors matching for each row in df1.
+Merge is a special case of this function when k=1.
+:param df1 (DataFrame): First dataframe (left).
+:param df2 (DataFrame): Second dataframe (right).
+:param on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+:param model (str): Language model to use.
+:param left_on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+:param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
+:param k (int): Number of nearest neighbors to match for each row in df1. Defaults to 1.
+:param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to (‘_x’, ‘_y’).
+:param use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
+:param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
+:param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
+:rtype: <code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code>
+:return: DataFrame: The merged dataframe.</p>
+</dd></dl>
+
+</section>
+<section id="module-linktransformer.train_model">
+<span id="linkage-model-training"></span><h2>Linkage Model Training<a class="headerlink" href="#module-linktransformer.train_model" title="Permalink to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.train_model.create_new_train_config">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.train_model.</span></span><span class="sig-name descname"><span class="pre">create_new_train_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">base_config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'/home/abhishekarora/.conda/envs/test_lt/lib/python3.8/site-packages/linktransformer/configs/linkage.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_save_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'myconfig.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_save_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_save_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warm_up_perc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learning_rate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_perc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wandb_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_pooling_layer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_at_end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_val_test_pickles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_query_prop</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.train_model.create_new_train_config" title="Permalink to this definition">¶</a></dt>
+<dd><p>Function to create a training config
+:param config_save_path (str): Path to save the config
+:param base_config_path (str): Path to the base config
+:param model_save_dir (str): Path to save the model
+:param model_save_name (str): Name of the model
+:param train_batch_size (int): Batch size for training
+:param num_epochs (int): Number of epochs
+:param warm_up_perc (float): Percentage of warmup steps
+:param learning_rate (float): Learning rate
+:param val_perc (float): Percentage of validation data
+:param wandb_names (dict): Dictionary of wandb names
+:param add_pooling_layer (bool): Whether to add pooling layer
+:param language (str): Language of the model
+:return: Path to the saved config</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="linktransformer.train_model.train_model">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.train_model.</span></span><span class="sig-name descname"><span class="pre">train_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sentence-transformers/paraphrase-xlm-r-multilingual-v1'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_id_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_id_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_col_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clus_id_col_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clus_text_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'/home/abhishekarora/.conda/envs/test_lt/lib/python3.8/site-packages/linktransformer/configs/linkage.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">training_args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'num_epochs':</span> <span class="pre">10}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_wandb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#linktransformer.train_model.train_model" title="Permalink to this definition">¶</a></dt>
+<dd><p>Train the LinkTransformer model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>model_path (str): The name of the model to use.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>data (str): Path to the dataset in Excel or CSV format or a dataframe object.</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>left_col_names (List[str]): List of column names to use as left side data.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>right_col_names (List[str]): List of column names to use as right side data.</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>left_id_name (List[str]): List of column names to use as identifiers for the left data.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>right_id_name (List[str]): List of column names to use as identifiers for the right data,</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>label_col_name (str): Name of the column to use as labels. Specify this if you have data of the form (left, right, label). This type supports both positive and negative examples.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>clusterid_col_name (str): Name of the column to use as cluster ids. Specify this if you have data of the form (text, cluster_id).</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>cluster_text_col_name (str): Name of the column to use as cluster text. Specify this if you have data of the form (text, cluster_id).</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>config_path (str): Path to the JSON configuration file.</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>training_args (dict): Dictionary of training arguments to override the config.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>log_wandb (bool): Whether to log the training run on wandb.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The path to the saved best model.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-0">
+<span id="classification-model-training"></span><h2>Classification Model Training<a class="headerlink" href="#module-0" title="Permalink to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="id0">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.train_model.</span></span><span class="sig-name descname"><span class="pre">create_new_train_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">base_config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'/home/abhishekarora/.conda/envs/test_lt/lib/python3.8/site-packages/linktransformer/configs/linkage.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_save_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'myconfig.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_save_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_save_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_batch_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_epochs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">warm_up_perc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learning_rate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_perc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">wandb_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_pooling_layer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_description</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">opt_model_lang</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_at_end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_val_test_pickles</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_query_prop</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#id0" title="Permalink to this definition">¶</a></dt>
+<dd><p>Function to create a training config
+:param config_save_path (str): Path to save the config
+:param base_config_path (str): Path to the base config
+:param model_save_dir (str): Path to save the model
+:param model_save_name (str): Name of the model
+:param train_batch_size (int): Batch size for training
+:param num_epochs (int): Number of epochs
+:param warm_up_perc (float): Percentage of warmup steps
+:param learning_rate (float): Learning rate
+:param val_perc (float): Percentage of validation data
+:param wandb_names (dict): Dictionary of wandb names
+:param add_pooling_layer (bool): Whether to add pooling layer
+:param language (str): Language of the model
+:return: Path to the saved config</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="id1">
+<span class="sig-prename descclassname"><span class="pre">linktransformer.train_model.</span></span><span class="sig-name descname"><span class="pre">train_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">train_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">val_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sentence-transformers/paraphrase-xlm-r-multilingual-v1'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">left_id_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_id_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">label_col_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clus_id_col_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clus_text_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'/home/abhishekarora/.conda/envs/test_lt/lib/python3.8/site-packages/linktransformer/configs/linkage.json'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">training_args</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'num_epochs':</span> <span class="pre">10}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">log_wandb</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#id1" title="Permalink to this definition">¶</a></dt>
+<dd><p>Train the LinkTransformer model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>model_path (str): The name of the model to use.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>data (str): Path to the dataset in Excel or CSV format or a dataframe object.</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>left_col_names (List[str]): List of column names to use as left side data.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>right_col_names (List[str]): List of column names to use as right side data.</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>left_id_name (List[str]): List of column names to use as identifiers for the left data.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>right_id_name (List[str]): List of column names to use as identifiers for the right data,</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>label_col_name (str): Name of the column to use as labels. Specify this if you have data of the form (left, right, label). This type supports both positive and negative examples.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>clusterid_col_name (str): Name of the column to use as cluster ids. Specify this if you have data of the form (text, cluster_id).</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>cluster_text_col_name (str): Name of the column to use as cluster text. Specify this if you have data of the form (text, cluster_id).</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>config_path (str): Path to the JSON configuration file.</p>
+</dd>
+<dt class="field-odd">Param<span class="colon">:</span></dt>
+<dd class="field-odd"><p>training_args (dict): Dictionary of training arguments to override the config.</p>
+</dd>
+<dt class="field-even">Param<span class="colon">:</span></dt>
+<dd class="field-even"><p>log_wandb (bool): Whether to log the training run on wandb.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The path to the saved best model.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">linktransformer</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">linktransformer</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#module-linktransformer.infer">Linkage and Classification Inference</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-linktransformer.train_model">Linkage Model Training</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#module-0">Classification Model Training</a></li>
+</ul>
+</li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="index.html" title="previous chapter">Welcome to linktransformer’s documentation!</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2023, Abhishek Arora and Melissa Dell.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 7.1.2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.13</a>
+      
+      |
+      <a href="_sources/modules.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

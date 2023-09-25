@@ -115,18 +115,18 @@ def train_model(
     """
     Train the LinkTransformer model.
 
-    :param: model_path (str): The name of the model to use.
-    :param: data (str): Path to the dataset in Excel or CSV format or a dataframe object.
-    :param: left_col_names (List[str]): List of column names to use as left side data.
-    :param: right_col_names (List[str]): List of column names to use as right side data.
-    :param: left_id_name (List[str]): List of column names to use as identifiers for the left data.
-    :param: right_id_name (List[str]): List of column names to use as identifiers for the right data,
-    :param: label_col_name (str): Name of the column to use as labels. Specify this if you have data of the form (left, right, label). This type supports both positive and negative examples.
-    :param: clusterid_col_name (str): Name of the column to use as cluster ids. Specify this if you have data of the form (text, cluster_id). 
-    :param: cluster_text_col_name (str): Name of the column to use as cluster text. Specify this if you have data of the form (text, cluster_id).
-    :param: config_path (str): Path to the JSON configuration file.
-    :param: training_args (dict): Dictionary of training arguments to override the config.
-    :param: log_wandb (bool): Whether to log the training run on wandb.
+    :param model_path (str): The name of the model to use.
+    :param data (str): Path to the dataset in Excel or CSV format or a dataframe object.
+    :param left_col_names (List[str]): List of column names to use as left side data.
+    :param right_col_names (List[str]): List of column names to use as right side data.
+    :param left_id_name (List[str]): List of column names to use as identifiers for the left data.
+    :param right_id_name (List[str]): List of column names to use as identifiers for the right data,
+    :param label_col_name (str): Name of the column to use as labels. Specify this if you have data of the form (left, right, label). This type supports both positive and negative examples.
+    :param clusterid_col_name (str): Name of the column to use as cluster ids. Specify this if you have data of the form (text, cluster_id). 
+    :param cluster_text_col_name (str): Name of the column to use as cluster text. Specify this if you have data of the form (text, cluster_id).
+    :param config_path (str): Path to the JSON configuration file.
+    :param training_args (dict): Dictionary of training arguments to override the config.
+    :param log_wandb (bool): Whether to log the training run on wandb.
     :return: The path to the saved best model.
     """
 

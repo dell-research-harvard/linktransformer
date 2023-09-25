@@ -7,15 +7,13 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'linktransformer'
-copyright = '2023, Abhishek Arora and  Melissa Dell'
-author = 'Abhishek Arora and  Melissa Dell'
-release = '0.1.9'
+copyright = '2023, Abhishek Arora and Melissa Dell'
+author = 'Abhishek Arora and Melissa Dell'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ['sphinx.ext.autodoc']
-
+extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'sphinx_autodoc_typehints']
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
