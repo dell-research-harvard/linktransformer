@@ -410,8 +410,15 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
             hf_model=model
         )
 
+    specified_training_args = training_args
+
     ##Load config as training args
     training_args = load_default_training_args(config)
+    
+    ##Override if training_args is not empty
+    if len(training_args)>0:
+        training_args.update(specified_training_args)
+    print("Updating training args with: ", specified_training_args)
     
     ##Override some args
     if lr is not None:
@@ -426,6 +433,8 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
         training_args["eval_steps"] = eval_steps
     if save_steps is not None:
         training_args["save_steps"] = save_steps
+
+    
     
 
     ##Get weight list from data if needed
