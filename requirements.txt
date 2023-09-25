@@ -25,7 +25,7 @@ fonttools==4.41.0
 frozenlist==1.4.0
 fsspec==2023.6.0
 gitdb==4.0.10
-GitPython==3.1.33
+GitPython==3.1.35
 hdbscan==0.8.33
 huggingface-hub==0.16.4
 humanfriendly==10.0
