@@ -36,4 +36,6 @@
     - More fixes; performance improvements
     - Added classification features - infer using HF transformers, OpenAI (Chat), and train custom transformer models in 1 line
     - More demo datasets
+## 0.1.9 
+    - Minor bug fixes
     
