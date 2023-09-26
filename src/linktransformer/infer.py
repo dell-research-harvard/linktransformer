@@ -664,7 +664,8 @@ def classify_rows(
     openai_key: Optional[str] = None,
     openai_topic: Optional[str] = None,
     openai_prompt: Optional[str] = None,
-    openai_params: Optional[dict] = {}
+    openai_params: Optional[dict] = {},
+    progress_bar: bool = True
 ):
     """
     Classify texts in all rows of one or more columns whether they are relevant to a certain topic. The function uses
@@ -683,6 +684,7 @@ def classify_rows(
     :param openai_topic: (str, optional) The topic predict whether the text is relevant or not. Defaults to None.
     :param openai_prompt: (str, optional) Custom system prompt for OpenAI ChatCompletion endpoint. Defaults to None.
     :param openai_params: (str, optional) Custom parameters for OpenAI ChatCompletion endpoint. Defaults to None.
+    :param progress_bar: (bool) Whether to show progress bar. Defaults to True.
     :returns: DataFrame: The dataframe with a new column "clf_preds_{on}" that stores the classification results.
     """
 
@@ -713,9 +715,9 @@ def classify_rows(
 
         # tokenize data
         tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", model)
-
+        disable_tqdm = not progress_bar
         # initialize trainer
-        inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size)
+        inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size,disable_tqdm=disable_tqdm)
         trainer = Trainer(model=clf, args=inference_args)
 
         # predict and save results

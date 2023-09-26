@@ -38,4 +38,6 @@
     - More demo datasets
 ## 0.1.9 
     - Minor bug fixes
+## 0.1.10
+    - Allowed a progress bar for classification inference
     
