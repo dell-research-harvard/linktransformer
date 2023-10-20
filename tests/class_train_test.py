@@ -17,7 +17,7 @@ def test_class_train_splits():
     lt.train_clf_model(model=model,on=["article"],label_col_name="label",train_data=train_data,val_data=eval_data,test_data=test_data,data_dir=".",
                     training_args={},
                     eval_steps=None,batch_size=None,lr=2e-6,
-                    epochs=10,model_save_dir="test_lt_clf", weighted_loss=False,weight_list=None,
+                    epochs=3,model_save_dir="test_lt_clf", weighted_loss=False,weight_list=None,
                     wandb_log=False)
 
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linktransformer"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
        "scikit-learn",
         "faiss-cpu",

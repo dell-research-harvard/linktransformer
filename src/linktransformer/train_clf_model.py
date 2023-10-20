@@ -455,7 +455,11 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
     
     print("Note the path to the best model: ", best_model_path)
 
+    ##Saving tokenizer to the same directory as the model
 
+    if not os.path.exists(f"{best_model_path}/tokenizer"):
+        tokenizer = AutoTokenizer.from_pretrained(model)
+        tokenizer.save_pretrained(best_model_path)
 
 
     ###Save label map 
@@ -465,16 +469,15 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
         ##Evaluate model (test)
         test_results=evaluate_test(best_model_path,datasets["test"],data_dir,num_labels=num_labels,print_mistakes=print_test_mistakes)
 
+        ###Save test results
+        pd.DataFrame(test_results,index=[0]).to_csv(f"{best_model_path}/test_results.csv")
+
         ##Log test results to wandb
         if wandb_log:
             wandb.log(test_results)
         with open(f"{best_model_path}/label_map.json","w") as f:
             json.dump(label_map,f)
-        ##Saving tokenizer to the same directory as the model
     
-        if not os.path.exists(f"{best_model_path}/tokenizer"):
-            tokenizer = AutoTokenizer.from_pretrained(model)
-            tokenizer.save_pretrained(best_model_path)
 
     
     return best_model_path, best_metric, label_map

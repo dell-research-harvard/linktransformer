@@ -40,4 +40,7 @@
     - Minor bug fixes
 ## 0.1.10
     - Allowed a progress bar for classification inference
+## 0.1.11 
+    - Allowed a progress bar for training inference 
+    - Fixed a bug in tokenizer saving 
     
