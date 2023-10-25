@@ -97,7 +97,7 @@ A special case of merging is aggregation (use function: aggregate_rows)- when th
 
 
 ```python
-def dedup_rows(df, model, on, threshold=0.5, openai_key=None):
+def dedup_rows(df, model='your-pretrained-model', on='text_column', cluster_type='preferred_cluster_type', cluster_params= {'threshold': 0.8}, openai_key=None):
     """
     Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
     Refer to the docs for the cluster_rows function for more details.
@@ -111,7 +111,7 @@ def dedup_rows(df, model, on, threshold=0.5, openai_key=None):
     :return: DataFrame: The deduplicated dataframe.
     """
 
-def cluster_rows(df, model, on, threshold=0.5, openai_key=None):
+def cluster_rows(df, model='your-pretrained-model', on='text_column', cluster_type='preferred_cluster_type', cluster_params= {'threshold': 0.8}, openai_key=None):
     """
     Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.         
     "agglomerative": {
