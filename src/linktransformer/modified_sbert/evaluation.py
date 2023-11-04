@@ -5,7 +5,7 @@ import pandas as pd
 from typing import List
 from sentence_transformers import evaluation, LoggingHandler
 import logging
-from transformers import logging as lg
+from transformers.utils import logging as lg
 import wandb
 from typing import List, Dict, Set, Callable
 from torch import Tensor
