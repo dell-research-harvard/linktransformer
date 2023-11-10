@@ -1,7 +1,7 @@
 import os
 import time
 import warnings
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 
 from linktransformer.modelling.LinkTransformer import LinkTransformer
 import numpy as np
@@ -160,13 +160,24 @@ def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
     return tokenized_dataset
 
 
-def get_completion_from_messages(text, model, openai_topic=None, openai_prompt=None, openai_params=None):
+def get_completion_from_messages(
+        text: str,
+        model: str,
+        openai_key: str,
+        openai_topic: str = None,
+        openai_prompt: str = None,
+        openai_params: Dict = None
+) -> Tuple[str, int]:
     """
     This function takes text of an article and send it to OpenAI API as user input and
     collects the content of the API response and the total number of tokens used
 
     :param text: (str) user input to API
     :param model: (str) name of the model to use (see "https://platform.openai.com/docs/models")
+    :param openai_key: (str) OpenAI API key
+    :param openai_topic: (str) topic to use for the API prompt
+    :param openai_prompt: (str) prompt to use for the API
+    :param openai_params: (dict) parameters to use for the API
     :returns: tuple ((str, int)): response text from API and number of tokens used
     """
 
@@ -175,26 +186,55 @@ def get_completion_from_messages(text, model, openai_topic=None, openai_prompt=N
     else:
         sys_prompt = openai_prompt
 
-    response = openai.ChatCompletion.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": sys_prompt
-            },
-            {
-                "role": "user",
-                "content": text
-            }
-        ],
-        temperature=openai_params["temperature"] if "temperature" in openai_params else 0,
-        max_tokens=openai_params["max_tokens"] if "max_tokens" in openai_params else 1,
-        top_p=openai_params["top_p"] if "top_p" in openai_params else 0,
-        frequency_penalty=openai_params["frequency_penalty"] if "frequency_penalty" in openai_params else 0,
-        presence_penalty=openai_params["presence_penalty"] if "presence_penalty" in openai_params else 0,
-        request_timeout=openai_params["request_timeout"] if "request_timeout" in openai_params else 10,
-    )
-    return response.choices[0].message["content"], response.usage["total_tokens"]
+    os.environ["OPENAI_API_KEY"] = openai_key
+
+    if openai.__version__ >= "1.0.0":
+        client = openai.OpenAI(
+            api_key=openai_key,
+            timeout=openai_params["request_timeout"] if "request_timeout" in openai_params else 10
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": sys_prompt
+                },
+                {
+                    "role": "user",
+                    "content": text
+                }
+            ],
+            temperature=openai_params["temperature"] if "temperature" in openai_params else 0,
+            max_tokens=openai_params["max_tokens"] if "max_tokens" in openai_params else 1,
+            top_p=openai_params["top_p"] if "top_p" in openai_params else 0,
+            frequency_penalty=openai_params["frequency_penalty"] if "frequency_penalty" in openai_params else 0,
+            presence_penalty=openai_params["presence_penalty"] if "presence_penalty" in openai_params else 0,
+        )
+        return response.choices[0].message.content, response.usage.total_tokens
+    else:
+        # this supports the deprecated version of the OpenAI API
+        openai.api_key = openai_key
+        response = openai.ChatCompletion.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": sys_prompt
+                },
+                {
+                    "role": "user",
+                    "content": text
+                }
+            ],
+            temperature=openai_params["temperature"] if "temperature" in openai_params else 0,
+            max_tokens=openai_params["max_tokens"] if "max_tokens" in openai_params else 1,
+            top_p=openai_params["top_p"] if "top_p" in openai_params else 0,
+            frequency_penalty=openai_params["frequency_penalty"] if "frequency_penalty" in openai_params else 0,
+            presence_penalty=openai_params["presence_penalty"] if "presence_penalty" in openai_params else 0,
+            request_timeout=openai_params["request_timeout"] if "request_timeout" in openai_params else 10,
+        )
+        return response.choices[0].message["content"], response.usage["total_tokens"]
 
 
 def predict_rows_with_openai(
@@ -221,60 +261,30 @@ def predict_rows_with_openai(
     :returns: (List[int]) a list of labels from OpenAI API
     """
 
-    openai.api_key = openai_key
+    if openai.__version__ < "1.0.0":
+        warnings.warn('Old version of openai SDK (openai<1.0.0) is deprecated and will not be supported in the next major update. ', DeprecationWarning, stacklevel=2)
 
     preds = []
 
     # set parameters
-    if model == "gpt-3.5-turbo":
-        max_tokens = 90000
-        iteration_sleep_time = 0
-        ratelimit_sleep_time = 60
-    elif model == "gpt-4":
-        max_tokens = 10000
-        iteration_sleep_time = 1
-        ratelimit_sleep_time = 60
-    else:
-        if "gpt-3.5" in model:
-            max_tokens = 90000
-        elif "gpt-4" in model:
-            max_tokens = 10000
-        else:
-            max_tokens = 250000  # ada, baggage, curie, davinci (default limit)
-        iteration_sleep_time = 0
-        ratelimit_sleep_time = 60
+    ratelimit_sleep_time = 15
 
     # get results from api
-    accm_tokens = 0
     for i in tqdm(range(len(strings_col))):
 
-        # sleep at when accumulated token is approaching rate-limiting threshold
-        if accm_tokens > 0.8 * max_tokens:
-            tqdm.write(f"Sleeping to avoid rate-limiting")
-            time.sleep(ratelimit_sleep_time)
-            accm_tokens = 0
-
         # send text at row i and fetch response
-        try:
-            r, num_tokens = get_completion_from_messages(
-                strings_col[i], model, openai_topic, openai_prompt, openai_params
-            )
-            preds.append(r)
-
-            accm_tokens += num_tokens
-            time.sleep(iteration_sleep_time)
-        except Exception as e:  # handles RateLimit or Timeout Error
-            tqdm.write(repr(e))
-            tqdm.write(f"Encountered error: will retry after sleeping")
-            time.sleep(ratelimit_sleep_time)
-            accm_tokens = 0
-
-            r, num_tokens = get_completion_from_messages(
-                strings_col[i], model, openai_topic, openai_prompt, openai_params
-            )
-            preds.append(r)
-
-            accm_tokens += num_tokens
+        for num_retry in range(5):
+            try:
+                # you need to change the following two lines if your dataframe looks different from example
+                r, num_tokens = get_completion_from_messages(
+                    strings_col[i], model, openai_key, openai_topic, openai_prompt, openai_params
+                )
+                preds.append(r)
+                break
+            except Exception as e:  # handles RateLimit or Timeout Error
+                tqdm.write(
+                    f"Encountered error: {repr(e)}. Will retry after sleeping for {ratelimit_sleep_time * (2 ** num_retry)} seconds (attempt {num_retry + 1}/5)")
+                time.sleep(ratelimit_sleep_time * (2 ** num_retry))
 
     if label_dict is None:
         label_dict = {"Yes": 1, "No": 0}
