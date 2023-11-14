@@ -191,14 +191,25 @@ def test_clf_multi_col_ter_openai():
 
     print(df_clf_output)
     
+##Test a merge using openai
+@pytest.mark.skipif("OPENAI_API_KEY" not in os.environ, reason="OpenAI API keys not found in environment variable")
+def test_lm_merge_openai():
+    df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
+    df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
+    # Test your function here
+    df_lm_matched = lt.merge(df2, df1, merge_type='1:m', on=["CompanyName","Country"], 
+                             model="text-embedding-ada-002", left_on=None, right_on=None
+                             ,openai_key=os.getenv("OPENAI_API_KEY"))
+    print(df_lm_matched)
+    assert isinstance(df_lm_matched, pd.DataFrame)
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
     # test_data_dir_path()
     # test_lm_merge()
     # test_lm_aggregate()
     # test_lm_merge_with_multiple_columns()
-    # test_lm_merge_with_blocking_df()
+    # test_lm_merge_with_blocking_df()s
     # test_french_to_english_crosslingual()
     # test_dedup()
     #merge_knn
@@ -207,3 +218,4 @@ def test_clf_multi_col_ter_openai():
     # # test classification
     # test_clf_single_col_bin()
     # test_clf_multi_col_bin()
+    test_lm_merge_openai()

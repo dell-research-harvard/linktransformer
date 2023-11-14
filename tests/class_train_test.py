@@ -33,7 +33,7 @@ def test_class_train_nosplits():
     lt.train_clf_model(data=train_data,model=model,on=["article"],label_col_name="label",data_dir=".",
                     training_args={},
                     eval_steps=None,batch_size=None,lr=2e-6,
-                    epochs=2,model_save_dir="test_lt_clf", weighted_loss=False,weight_list=None,
+                    epochs=10,model_save_dir="test_lt_clf", weighted_loss=False,weight_list=None,
                     wandb_log=False)
 
 def test_class_train_3_labels():
@@ -45,7 +45,7 @@ def test_class_train_3_labels():
     model="distilroberta-base"
 
     lt.train_clf_model(data=train_data,model=model,on=["headline","byline","text"],label_col_name="label",data_dir=".",
-                    training_args={"num_train_epochs":3},
+                    training_args={"num_train_epochs":10},
                     eval_steps=None,batch_size=None,lr=2e-5,model_save_dir="test_lt_clf", weighted_loss=False,weight_list=None,
                     wandb_log=False)
 
@@ -61,7 +61,7 @@ def test_class_train_3_labels_weighted():
     lt.train_clf_model(data=train_data,model=model,on=["headline","byline","text"],label_col_name="label",data_dir=".",
                     training_args={},
                     eval_steps=None,batch_size=None,lr=2e-5,
-                    epochs=2,model_save_dir="test_lt_clf", weighted_loss=True,weight_list=None,
+                    epochs=10,model_save_dir="test_lt_clf", weighted_loss=True,weight_list=None,
                     wandb_log=False,print_test_mistakes=True)
 ##Run as script
 if __name__ == "__main__":
