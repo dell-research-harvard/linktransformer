@@ -8,7 +8,9 @@ import sentence_transformers
 from sentence_transformers import models, LoggingHandler 
 from sentence_transformers.datasets import SentenceLabelDataset
 import logging
-from transformers import logging as lg
+# from transformers import logging as lg
+from transformers.utils import logging as lg
+
 import wandb    
 
 from linktransformer.modelling.LinkTransformer import LinkTransformer

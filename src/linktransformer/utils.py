@@ -57,7 +57,7 @@ def cosine_similarity_corresponding_pairs(vector1, vector2):
     return cosine_sim
 
 
-def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = None, model: str = None) -> list:
+def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", model: str = None) -> list:
     """
     Serialize columns of a DataFrame into a single string.
 
@@ -82,9 +82,14 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = None, mo
                     tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/" + model)
                     sep_token = tokenizer.sep_token
                 except:
-                    print(f"Trying linktransformers/{model}...")
-                    tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/" + model)
-                    sep_token = tokenizer.sep_token
+                    try:
+                        print(f"Trying linktransformers/{model}...")
+                        tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/" + model)
+                        sep_token = tokenizer.sep_token
+                    except:
+                        print("Probably an OpenAI model. Using defaul sep token of </s>")
+                        sep_token = "</s>"
+                        
         else:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model)
             sep_token = tokenizer.sep_token
