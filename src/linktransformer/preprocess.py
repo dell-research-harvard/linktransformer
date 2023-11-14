@@ -118,7 +118,6 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
     #### Check if right columns form a unique key, leave a warning if not and drop duplicates
     if data[right_col_names].duplicated().any():
         print("Warning: Right columns do not form a unique key, not dropping duplicates. Matching will proceed")
-        data = data.drop_duplicates(subset=right_col_names)
 
     ## If left_id_name is not specified, we will assume left data is unique and use the index as the id
     if not left_id_name:
