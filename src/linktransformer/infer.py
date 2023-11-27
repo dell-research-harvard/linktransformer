@@ -369,30 +369,33 @@ def cluster_rows(
     openai_key: str = None
 ) -> DataFrame:
     """
-    Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.         
-    "agglomerative": {
-            "threshold": 0.5,
-            "clustering linkage": "ward",  # You can choose a default linkage method
-            "metric": "euclidean",  # You can choose a default metric
-        },
-        "HDBScan": {
-            "min cluster size": 5,
-            "min samples": 1,
-            "metric": "cosine",
-        },
-        "SLINK": {
-            "min cluster size": 2,
-            "threshold": 0.1,
-            "metric": "cosine",
-        },
-    }
+    Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.
 
     :param df (DataFrame): Dataframe to deduplicate.
     :param model (str): Language model to use.
     :param on (Union[str, List[str]]): Column(s) to deduplicate on.
     :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
-    :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
-    :param openai_key (str): OpenAI API key
+    :param cluster_params (Dict[str, Any]): Parameters for clustering method. 
+        Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
+    :param openai_key (str): OpenAI API key.
+
+    Supported clustering methods and their parameters:
+    
+    - "agglomerative": 
+        - "threshold": 0.5
+        - "clustering linkage": "ward"
+        - "metric": "euclidean"
+
+    - "HDBScan": 
+        - "min cluster size": 5
+        - "min samples": 1
+        - "metric": "cosine"
+
+    - "SLINK": 
+        - "min cluster size": 2
+        - "threshold": 0.1
+        - "metric": "cosine"
+
     :return: DataFrame: The deduplicated dataframe.
     """
 
