@@ -378,10 +378,12 @@ def cluster_rows(
         "HDBScan": {
             "min cluster size": 5,
             "min samples": 1,
+            "metric": "cosine",
         },
         "SLINK": {
             "min cluster size": 2,
             "threshold": 0.1,
+            "metric": "cosine",
         },
     }
 
