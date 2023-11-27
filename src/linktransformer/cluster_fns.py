@@ -15,10 +15,13 @@ def cluster(cluster_type, cluster_params, corpus_embeddings, corpus_ids=None):
         "HDBScan": {
             "min cluster size": 5,
             "min samples": 1,
+            "metric": "cosine"
+
         },
         "SLINK": {
             "min cluster size": 2,
             "threshold": 0.1,
+            "metric": "cosine"
         },
     }
 

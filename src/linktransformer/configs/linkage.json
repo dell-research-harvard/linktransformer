@@ -9,10 +9,10 @@
   "learning_rate": 2e-6,
   "val_perc": 0.2,
   "wandb_names": {
-    "project": "linkage",
-    "id": "econabhishek",
-    "run": "paraphrase-xlm-r-multilingual-v1-es",
-    "entity": "econabhishek"
+    "project": "linktransformer",
+    "id": "your-id",
+    "run": "run-name",
+    "entity": "your-id"
   }, 
   "add_pooling_layer": false,
   "large_val": true,

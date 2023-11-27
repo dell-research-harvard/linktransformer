@@ -216,8 +216,9 @@ def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=
         fps = pd.DataFrame()
         fns = pd.DataFrame()
         for i in range(num_labels):
-            fps = fps.append(test_df[(test_df["label"] == i) & (test_df["preds"] != i)])
-            fns = fns.append(test_df[(test_df["label"] != i) & (test_df["preds"] == i)])
+            ##Use pd.concat instead of append
+            fps = pd.concat([fps,test_df[(test_df["label"] == i) & (test_df["preds"] != i)]])
+            fns = pd.concat([fns,test_df[(test_df["label"] != i) & (test_df["preds"] == i)]])
 
         print("Total mispredictions:", len(fps) + len(fns))
         print("False positives:", len(fps))

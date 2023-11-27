@@ -8,7 +8,7 @@ from typing import List, Tuple, Dict, Any, Union
 import pandas as pd
 
 from linktransformer.utils import serialize_columns
-from linktransformer.modified_sbert.cluster_fns import clusters_from_edges
+from linktransformer.cluster_fns import clusters_from_edges
 
 def convert_to_text(unicode_string):
     return unicode_string.encode('ascii','ignore').decode('ascii')
@@ -63,7 +63,9 @@ def check_clust_data(data,model,text_col_names,clus_id_col_name):
 
 
 def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_name, right_id_name, label_col_name):
-
+    """
+    Function to preprocess data for linkage/pairwise training. As of v0.1.12, we no longer drop duplicates by single columns.
+    """
     ###If *_id_name is a string, convert to list
     if isinstance(left_id_name, str):
         left_id_name = [left_id_name]
@@ -111,13 +113,18 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
         if right_id_name[0] not in data.columns:
             raise ValueError(f"Column {right_id_name} not present in data, please check the right id column name")
     
+    ##Updated v 0.1.12 - We used to deduplicate by only the right column. Now, we deduplicate by both left and right columns
+    ## This wouldn't affect training, but would affet eval. 
+    print("Dropping duplicates if any from left + right columns")
+    data = data.drop_duplicates(subset=left_col_names+right_col_names)
+
     ## Check if left columns form a unique key
     if not data[left_col_names].duplicated().any():
-        print(f" Warning Left columns do not form a unique key, please check the left column names")
-    
-    #### Check if right columns form a unique key, leave a warning if not and drop duplicates
+        print(f" Warning Left columns do not form a unique key, please check the left column names. Drop duplicates before if this was unexpected.")
+
+    #### Check if right columns form a unique key, leave a warning if not and drop duplicates. ##Disabling dup drop in v 0.1.12
     if data[right_col_names].duplicated().any():
-        print("Warning: Right columns do not form a unique key, not dropping duplicates. Matching will proceed")
+        print("Warning: Right columns do not form a unique key, please check the right column names. Drop duplicates before if this was unexpected.")
 
     ## If left_id_name is not specified, we will assume left data is unique and use the index as the id
     if not left_id_name:
@@ -537,17 +544,20 @@ def prep_linkage_data(
                 train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
                 val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
                 test_data = data[data["cluster_assignment"].isin(test_cluster_assignment)]
+
             else:
                 train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
                 val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
             
         else:
-            val_data,left_id_rename, right_id_rename = check_and_prep_data(val_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
+            val_data,left_id_rename, right_id_rename = check_and_prep_data(val_data,model, left_col_names, right_col_names, left_id_name, right_id_name, None)
             
             if test_data is not None:
-                test_data,left_id_rename, right_id_rename = check_and_prep_data(test_data, model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
+                test_data,left_id_rename, right_id_rename = check_and_prep_data(test_data, model, left_col_names, right_col_names, left_id_name, right_id_name, None)
             
-
+    print("Train data shape: ", train_data.shape)
+    print("Val data shape: ", val_data.shape)
+    print("Test data shape: ", test_data.shape)
     ### Now, group by cluster assignment and make a dict with cluster_assignment:[left_text, right_text1, right_text2, right_text3...]
     train_data_dict = defaultdict(list)
     for index, row in train_data.iterrows():

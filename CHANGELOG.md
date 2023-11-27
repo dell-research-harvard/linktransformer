@@ -43,4 +43,15 @@
 ## 0.1.11 
     - Allowed a progress bar for training inference 
     - Fixed a bug in tokenizer saving 
+## 0.1.12
+    - Fixes in merge and classification inference to be in line with OpenAI API changes
+    - Bug fixes in column serialisation when using open ai embeddings 
+    - Updated toml file to restrict by package versioning - forward compatibility would not be supported
+    - Made merge with blocking faster - no longer needs loading the model for each block
+    - All Linkage inference functions can now take in a LinkTransformer model (wrapper around SentenceTransformer) as input. This would be useful for workflows requiring looping; preventing repeated model loading.
+    - More robust typing where it was lacking
+    - Fixes in cluster functions and bringing them to the root directory
+
+
+
     

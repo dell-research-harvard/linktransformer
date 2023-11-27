@@ -15,3 +15,15 @@ wiki_aliases_copy/**
 *.csv
 /docs/build
 /docs/_build
+**.pt
+**.log
+**trainer_state.json
+**training_args.bin
+**rng_state.pth
+**.bin
+**.ipynb_checkpoints
+**.ipynb
+**wandb
+**test_lt_clf**
+**clean_protest_models**
+

@@ -1,7 +1,7 @@
 import os
 import time
 import warnings
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Union
 from linktransformer.modelling.LinkTransformer import LinkTransformer
 import numpy as np
 import pandas as pd
@@ -9,7 +9,7 @@ import transformers
 import openai
 from datasets import Dataset
 from itertools import combinations
-
+import torch
 from tqdm import tqdm
 
 
@@ -55,6 +55,12 @@ def cosine_similarity_corresponding_pairs(vector1, vector2):
     cosine_sim = dot_product / (norm_vector1 * norm_vector2)
     return cosine_sim
 
+def cosine_similarity_corresponding_pairs_torch(vector1, vector2):
+    dot_product = torch.sum(vector1 * vector2, axis=1)
+    norm_vector1 = torch.norm(vector1, axis=1)
+    norm_vector2 = torch.norm(vector2, axis=1)
+    cosine_sim = dot_product / (norm_vector1 * norm_vector2)
+    return cosine_sim
 
 def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", model: str = None) -> list:
     """
@@ -66,37 +72,44 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
     :param model: The language model to use for tokenization (optional).
     :return: List of serialized strings.
     """
-    if model is not None:
-        if "/" not in model:
-            print("No base organization specified, if there is an error, it is likely because of that.")
-            print(
-                f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!")
-            ###Error handling
-            try:
-                tokenizer = transformers.AutoTokenizer.from_pretrained(model)
-                sep_token = tokenizer.sep_token
-            except:
+    
+    ###if model is string
+    if isinstance(model, str):
+        if model is not None:
+            if "/" not in model:
+                print("No base organization specified, if there is an error, it is likely because of that.")
+                print(
+                    f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!")
+                ###Error handling
                 try:
-                    print(f"Trying sentence-transformers/{model}...")
-                    tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/" + model)
+                    tokenizer = transformers.AutoTokenizer.from_pretrained(model)
                     sep_token = tokenizer.sep_token
                 except:
                     try:
-                        print(f"Trying linktransformers/{model}...")
-                        tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/" + model)
+                        print(f"Trying sentence-transformers/{model}...")
+                        tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/" + model)
                         sep_token = tokenizer.sep_token
                     except:
-                        print("Probably an OpenAI model. Using defaul sep token of </s>")
-                        sep_token = "</s>"
-        else:
-            tokenizer = transformers.AutoTokenizer.from_pretrained(model)
-            sep_token = tokenizer.sep_token
+                        try:
+                            print(f"Trying linktransformers/{model}...")
+                            tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/" + model)
+                            sep_token = tokenizer.sep_token
+                        except:
+                            print("Probably an OpenAI model. Using defaul sep token of </s>")
+                            sep_token = "</s>"
+            else:
+                tokenizer = transformers.AutoTokenizer.from_pretrained(model)
+                sep_token = tokenizer.sep_token
+    elif isinstance(model, LinkTransformer):
+        sep_token = model.tokenizer.sep_token
+    else:
+        sep_token = "</s>"
 
     return df[columns].apply(lambda x: sep_token.join(x.astype(str)), axis=1).tolist()
 
 
 def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 128,
-                     sbert: bool = True, openai_key: str = None) -> np.ndarray:
+                     sbert: bool = True, openai_key: str = None,return_numpy=True) -> Union[np.ndarray, torch.Tensor]:
     """
     Infer embeddings for a list of strings using a language model.
 
@@ -105,18 +118,20 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
     :param batch_size: Batch size for inference (default: 128).
     :param sbert: If True, load model as LinkTransformer (default: True).
     :param openai_key: OpenAI API key (optional).
-    :return: Embeddings as a numpy array.
+    :param return_numpy: If True, return embeddings as a numpy array (default: True). Else return a tensor.
+    :return: Embeddings as a numpy array or a tensor (depending on return_numpy).
     """
 
     if openai_key is None:
         if isinstance(model, LinkTransformer):
-            embeddings = model.encode(strings, batch_size=batch_size)
+            embeddings = model.encode(strings, batch_size=batch_size,convert_to_numpy=return_numpy,convert_to_tensor=not return_numpy)
         elif isinstance(model, str):
             if sbert:
                 model = LinkTransformer(model)
             else:
                 model = transformers.AutoModel.from_pretrained(model)
-            embeddings = model.encode(strings, batch_size=batch_size)
+                print("Warning: Use of non-sentence transformer models is not recommended and is not actively supported. This will probably not work")
+            embeddings = model.encode(strings, batch_size=batch_size,convert_to_numpy=return_numpy,convert_to_tensor=not return_numpy)
         else:
             raise ValueError(f"Invalid model type: {type(model)}")
     else:
@@ -140,12 +155,23 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
         ##Get the embeddings for each of the split lists
         embeddings = []
         for i in range(len(split_strings)):
-            response = openai.Embedding.create(input=split_strings[i], model=model)["data"]
-            f = lambda x: x["embedding"]
-            embeddings.append(np.array(list(map(f, response)), dtype=np.float32))
-        embeddings = np.concatenate(embeddings, axis=0)
+            if not openai.__version__ >= "1.0.0":
+                response = openai.embeddings.create(input=split_strings[i], model=model)["data"]
+                f = lambda x: x["embedding"]
+            else:
+                response = openai.embeddings.create(input=split_strings[i],model="text-embedding-ada-002").data
+                f = lambda x: x.embedding
+            if return_numpy:
+                embeddings.append(np.array(list(map(f, response)), dtype=np.float32))
+            else: #prep as tensor
+                embeddings.append(torch.tensor(list(map(f, response)), dtype=torch.float32))
+        if return_numpy:
+            embeddings = np.concatenate(embeddings, axis=0)
+        else:
+            embeddings = torch.cat(embeddings, dim=0)
 
     return embeddings
+
 
 
 def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):

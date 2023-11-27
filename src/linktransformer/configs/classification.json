@@ -12,5 +12,6 @@
   "metric_for_best_model": "f1",
   "save_total_limit": 1,
   "report_to": null,
-  "warmup_ratio": 0
+  "warmup_ratio": 0,
+  "disable_tqdm": false
 }

@@ -20,6 +20,8 @@ def test_lm_merge():
     assert isinstance(df_lm_matched, pd.DataFrame)
     # Add more assertions to check the correctness of the output
 
+
+
 def test_lm_aggregate():
     df_coarse = pd.read_csv(os.path.join(DATA_DIR_PATH, "coarse.csv"))
     df_fine = pd.read_csv(os.path.join(DATA_DIR_PATH, "fine.csv"))
@@ -76,6 +78,40 @@ def test_cluster():
         cluster_params= {'threshold': 0.7})
     assert isinstance(df_cluster, pd.DataFrame,)
     # Add more assertions to check the correctness of the output
+
+def test_cluster_noargs():
+    df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
+    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2")
+    assert isinstance(df_cluster, pd.DataFrame)
+
+def test_cluster_slink():
+    df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
+    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "SLINK")
+    assert isinstance(df_cluster, pd.DataFrame)
+
+def test_cluster_hdbscan():
+    df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
+    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "HDBScan")
+    assert isinstance(df_cluster, pd.DataFrame)
+
+def test_cluster_hdbscan_params():
+    df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
+    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "HDBScan",
+        cluster_params= {'min cluster size': 2, 'min samples': 1})
+    assert isinstance(df_cluster, pd.DataFrame)
+
+def test_cluster_slink_params():
+    df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
+    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "SLINK",
+        cluster_params= {'min cluster size': 2, 'threshold': 0.1, 'metric': 'cosine'})
+    assert isinstance(df_cluster, pd.DataFrame)
+
+def test_cluster_agglomerative_params():
+    df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
+    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "agglomerative",
+        cluster_params= {'threshold': 0.7, 'clustering linkage': 'average', 'metric': 'cosine'})
+    assert isinstance(df_cluster, pd.DataFrame)
+
 
 ###Test evaluate pairs
 def test_eval_pairs():
@@ -218,4 +254,4 @@ if __name__ == "__main__":
     # # test classification
     # test_clf_single_col_bin()
     # test_clf_multi_col_bin()
-    test_lm_merge_openai()
+    test_knn()

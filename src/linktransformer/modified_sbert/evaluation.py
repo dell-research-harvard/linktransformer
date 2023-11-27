@@ -395,10 +395,11 @@ class InformationRetrievalEvaluator_wandb(evaluation.InformationRetrievalEvaluat
 
             ###save the df as a csv 
             df.to_csv("current_best_matches.csv", index=False,encoding="utf-8")
-
+        
+        output_scores={'accuracy@k': num_hits_at_k, 'precision@k': precisions_at_k, 'recall@k': recall_at_k, 'ndcg@k': ndcg, 'mrr@k': MRR, 'map@k': AveP_at_k}
+        print(output_scores)
  
-        return {'accuracy@k': num_hits_at_k, 'precision@k': precisions_at_k, 'recall@k': recall_at_k, 'ndcg@k': ndcg, 'mrr@k': MRR, 'map@k': AveP_at_k}
-
+        return output_scores
 
 
 
@@ -474,6 +475,7 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
                 'recall': recall,
                 'ap': ap
             }
+            print(output_scores)
             if self.wandb_names:
                 wandb.log({
                     f"Classification Accuracy {name}": acc,

@@ -2,7 +2,7 @@ import pandas as pd
 import pickle
 import numpy as np
 import linktransformer as lt
-from linktransformer.modified_sbert.cluster_fns import clusters_from_edges
+from linktransformer.cluster_fns import clusters_from_edges
 
 ###run as script 
 

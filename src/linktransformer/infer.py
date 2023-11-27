@@ -10,7 +10,7 @@ import faiss
 from typing import Union, List, Optional, Tuple,Dict, Any
 from pandas import DataFrame
 
-from linktransformer.modified_sbert.cluster_fns import cluster
+from linktransformer.cluster_fns import cluster
 # from linktransformer.utils import serialize_columns, infer_embeddings, load_model, load_clf, cosine_similarity_corresponding_pairs, tokenize_data_for_inference, predict_rows_with_openai
 from linktransformer.utils import *
 from sklearn.metrics.pairwise import cosine_similarity
@@ -24,7 +24,7 @@ def merge(
     df2: DataFrame,
     merge_type: str = '1:1',
     on: Optional[Union[str, List[str]]] = None,
-    model: str = "all-MiniLM-L6-v2",
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
     suffixes: Tuple[str, str] = ('_x', '_y'),
@@ -93,6 +93,12 @@ def merge(
     df1.loc[:, "id_lt"] = np.arange(len(df1))
     df2.loc[:, "id_lt"] = np.arange(len(df2))
 
+    ## Load the model if string
+    if isinstance(model, str):
+        if openai_key is None:
+            model = load_model(model)
+
+
     if isinstance(right_on, list):
         strings_right = serialize_columns(df2, right_on, model=model)
     if isinstance(left_on, list):
@@ -101,9 +107,7 @@ def merge(
         strings_left = df1[left_on].tolist()
         strings_right = df2[right_on].tolist()
 
-    ## Load the model
-    if openai_key is None:
-        model = load_model(model)
+
 
     ## Infer embeddings for df1
     embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key)
@@ -161,7 +165,7 @@ def merge_blocking(
     df2: DataFrame,
     merge_type: str = '1:1',
     on: Optional[Union[str, List[str]]] = None,
-    model: str = "all-MiniLM-L6-v2",
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
     blocking_vars: Optional[List[str]] = None,
@@ -228,6 +232,11 @@ def merge_blocking(
         skipped_keys_2 = set(df2_block_list).difference(set(df1_block_list))
         common_keys = set(df1_block_list).intersection(set(df2_block_list))
 
+        ## Load the model if string
+        if isinstance(model, str):
+            if openai_key is None:
+                model = load_model(model)      
+
         for block_1 in common_keys:
             print(f"Merging block {block_1}")
             df1_block = df1_blocks.get_group(block_1)
@@ -258,9 +267,9 @@ def merge_blocking(
 def aggregate_rows(
     df: DataFrame,
     ref_df: DataFrame,
-    model: str,
-    left_on: Union[str, List[str]],
-    right_on: Union[str, List[str]],
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    left_on: Union[str, List[str]]=None,
+    right_on: Union[str, List[str]]=None,
     openai_key: str = None
 ) -> DataFrame:
     """
@@ -277,6 +286,11 @@ def aggregate_rows(
     df = df.copy()
     ref_df = ref_df.copy()
 
+    ##Load model if string
+    if isinstance(model, str):
+        if openai_key is None:
+            model = load_model(model)
+
     ## Just use the merge function with merge type 1:m
     df_lm_matched = merge(df, ref_df, merge_type="1:1", on=None, model=model, left_on=left_on,
                                 right_on=right_on, suffixes=("_x", "_y"), use_gpu=False, batch_size=128,
@@ -286,7 +300,12 @@ def aggregate_rows(
 
 
 
-def evaluate_pairs(df,model,left_on,right_on,openai_key=None):
+def evaluate_pairs(df: DataFrame,
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    left_on: Union[str, List[str]]=None,
+    right_on: Union[str, List[str]]=None,
+    openai_key: str = None
+    ) -> DataFrame:
     """
     This function evaluates paired columns in a dataframe and gives a match score (cosine similarity). 
     Typically, this can be though of as a way to evaluate already merged in dataframes.
@@ -300,6 +319,11 @@ def evaluate_pairs(df,model,left_on,right_on,openai_key=None):
 
     df = df.copy()
 
+    ##Load model if string
+    if isinstance(model, str):
+        if openai_key is None:
+            model = load_model(model)
+
     ###We will serialize the columns if they are lists
     if isinstance(left_on, list):
         strings_left = serialize_columns(df, left_on, model=model)
@@ -311,9 +335,7 @@ def evaluate_pairs(df,model,left_on,right_on,openai_key=None):
     else:
         strings_right = df[right_on].tolist()
 
-    ## Load the model
-    if openai_key is None:
-        model = load_model(model)
+
 
     ## Infer embeddings for df1
     embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key)
@@ -340,8 +362,8 @@ def evaluate_pairs(df,model,left_on,right_on,openai_key=None):
 
 def cluster_rows(
     df: DataFrame,
-    model: str,
-    on: Union[str, List[str]],
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    on: Union[str, List[str]]=None,
     cluster_type: str = "SLINK",
     cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
     openai_key: str = None
@@ -374,6 +396,10 @@ def cluster_rows(
 
     df = df.copy()
 
+    ##Load model if string
+    if isinstance(model, str):
+        if openai_key is None:
+            model = load_model(model)
 
     ## First, get the embeddings
     ### If len(on)>1, then we need to serialize the columns
@@ -398,8 +424,8 @@ def cluster_rows(
 
 def dedup_rows(
     df: DataFrame,
-    model: str,
-    on: Union[str, List[str]],
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    on: Union[str, List[str]]=None,
     cluster_type: str = "SLINK",
     cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
     openai_key: str = None
@@ -419,6 +445,10 @@ def dedup_rows(
 
     df = df.copy()
 
+    ##Load model if string
+    if isinstance(model, str):
+        if openai_key is None:
+            model = load_model(model)
     
 
     print(f"Deduplicating dataframe with originally {len(df)} rows")
@@ -437,7 +467,12 @@ def dedup_rows(
 
     
 
-def all_pair_combos_evaluate(df,model,left_on,right_on,openai_key=None):
+def all_pair_combos_evaluate(df: DataFrame,
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    left_on: Union[str, List[str]]=None,
+    right_on: Union[str, List[str]]=None,
+    openai_key: str = None
+    ) -> DataFrame:
     """
     Get similarity scores for every pair of rows in a dataframe. 
     We make this efficient by only embedding each string once and get all possible pairwise distances
@@ -449,6 +484,13 @@ def all_pair_combos_evaluate(df,model,left_on,right_on,openai_key=None):
     :param openai_key (str): OpenAI API key
     :return: DataFrame: The evaluated dataframe.
     """
+
+    df = df.copy()
+
+    ##Load model if string
+    if isinstance(model, str):
+        if openai_key is None:
+            model = load_model(model)
 
     ###Get the embeddings for the left_on column
     if isinstance(left_on, list):
@@ -501,7 +543,7 @@ def merge_knn(
     df2: DataFrame,
     merge_type: str = '1:1',
     on: Optional[Union[str, List[str]]] = None,
-    model: str = "all-MiniLM-L6-v2",
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
     k: int = 1,
@@ -522,11 +564,12 @@ def merge_knn(
     :param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
     :param k (int): Number of nearest neighbors to match for each row in df1. Defaults to 1.
     :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
-    :param use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
+    :param use_gpu (bool): Whether to use GPU for storing embeddings and FAISS search. Defaults to False.
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
     :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
+
 
     ## Set common columns as on if not specified
     if on is None:
@@ -582,29 +625,47 @@ def merge_knn(
         strings_right = df2[right_on].tolist()
     
     ## Load the model
-    model = load_model(model)
+    if isinstance(model, str):
+        if openai_key is None:
+            model = load_model(model)
+
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, return_numpy= not use_gpu)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key,return_numpy= not use_gpu)
 
-    ### Expand dim if embeddings are 1d (numpy)
-    if len(embeddings1.shape) == 1:
-        embeddings1 = np.expand_dims(embeddings1, axis=0)
-    if len(embeddings2.shape) == 1:
-        embeddings2 = np.expand_dims(embeddings2, axis=0)
+    print(embeddings1)
 
-    ## Normalize embedding tensors using numpy
+    if not use_gpu:
+        ### Expand dim if embeddings are 1d (numpy)
+        if len(embeddings1.shape) == 1:
+            embeddings1 = np.expand_dims(embeddings1, axis=0)
+        if len(embeddings2.shape) == 1:
+            embeddings2 = np.expand_dims(embeddings2, axis=0)
+    else:
+        raise ValueError(f"GPU not supported yet")
 
-    embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
-    embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
+            
+
+    if not use_gpu:
+        ## Normalize embedding tensors using numpy
+        embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
+        embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
+    else:
+        ## Normalize embedding tensors using torch
+        embeddings1 = embeddings1 / torch.linalg.norm(embeddings1, axis=1, keepdims=True)
+        embeddings2 = embeddings2 / torch.linalg.norm(embeddings2, axis=1, keepdims=True)
+
+    
 
     ## Create index
     if use_gpu:
         raise ValueError(f"GPU not supported yet")
     else:
         index = faiss.IndexFlatIP(embeddings1.shape[1])
+    
+    print("Adding embeddings to index")
 
     ## Add to index depending on merge type
     if merge_type == "1:m":
@@ -613,6 +674,8 @@ def merge_knn(
         index.add(embeddings2)
     elif merge_type == "1:1":
         index.add(embeddings2)
+
+    print("Searching index")
 
     ## Search index
     if merge_type == "1:m":
@@ -659,7 +722,6 @@ def classify_rows(
     model: str = None,
     num_labels: int = 2,
     label_map: Optional[dict] = None,
-    use_gpu: bool = False,
     batch_size: int = 128,
     openai_key: Optional[str] = None,
     openai_topic: Optional[str] = None,
@@ -678,7 +740,6 @@ def classify_rows(
     :param model: (str) filepath to the model to use (to use OpenAI, see "https://platform.openai.com/docs/models").
     :param num_labels: (int) number of labels to predict. Defaults to 2.
     :param label_map: (dict) a dictionary that maps text labels to numeric labels. Used for OpenAI predictions.
-    :param use_gpu: (bool) Whether to use GPU. Not supported yet. Defaults to False.
     :param batch_size: (int) Batch size for inferencing embeddings. Defaults to 128.
     :param openai_key: (str, optional) OpenAI API key for InferKit API. Defaults to None.
     :param openai_topic: (str, optional) The topic predict whether the text is relevant or not. Defaults to None.
