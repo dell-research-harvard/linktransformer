@@ -109,6 +109,49 @@ def test_train_model_clustering():
 
     )
 
+def test_train_model_jp_onlincontrastive():
+    ##Test for positive and neg pairs datasets
+    dataset_path = os.path.join(DATA_DIR_PATH, "jp_pr_tk431.csv")
+
+    ##Load the data
+    df = pd.read_csv(dataset_path)
+
+    ##Drop if tk_truth!=0 or 1
+    df = df[df['tk_truth'].isin([0,1])]
+
+
+   # Call the train_model function
+    saved_model_path = lt.train_model(
+        model_path="oshizo/sbert-jsnli-luke-japanese-base-lite",
+        data=df,
+        left_col_names=["source_firm_title","source_address",
+                        "source_product",
+                        "source_est_date",
+                        "source_capital",
+                        "source_bank",
+                        "source_shareholder",
+                        ],
+        right_col_names=["tk_firm_title","tk_address",
+                        "tk_product",
+                        "tk_est_date",
+                        "tk_capital",
+                        "tk_bank",
+                        "tk_shareholder"],
+        label_col_name="tk_truth",
+        left_id_name=['source'],
+        right_id_name=['tk_path_value'],
+        log_wandb=False,
+        training_args={"num_epochs": 1,
+                       "test_at_end": True,
+                       "save_val_test_pickles": True,
+                       "model_save_name": "check",
+                       "opt_model_description": "test",
+                       "opt_model_lang":"jp",
+                       "val_perc":0.2,
+                       "loss_type":"onlinecontrastive"}
+    )
+
+
 
 # if __name__ == "__main__":
     # test_train_model_jp()

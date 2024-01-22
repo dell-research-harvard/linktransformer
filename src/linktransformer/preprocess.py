@@ -178,7 +178,8 @@ def preprocess_any_data(data: Union[str, pd.DataFrame]=None,
         val_perc: float = 0.2,
         val_query_prop:float =0.5,
         large_val: bool = True,
-        test_at_end=True
+        test_at_end=True,
+        pairs_for_training=False
                         ):
     """
     Wrapper around the two preprocessing functions. if label_col_name is not none, use prep_paired_label_data; otherwise use prep_linkage_data
@@ -194,6 +195,8 @@ def preprocess_any_data(data: Union[str, pd.DataFrame]=None,
     :param: model: Model to use for tokenization.
     :param: val_perc: Percentage of data to use for validation. Defaults to 0.2.
     :param: large_val: If True, use the training data as part of the validation data (in the corpus for information retrieval evaluation)
+    :param: test_at_end: If True, split the validation data into test and val (equally)
+    :param: pairs_for_training: If True, return pairs for training. If False, return clusters for training.
     :return: A tuple containing the training data dictionary and the validation data, test tuple.
     """
     #Validate inputs
@@ -220,7 +223,8 @@ def preprocess_any_data(data: Union[str, pd.DataFrame]=None,
             label_col_name=label_col_name,
             model=model,
             val_perc=val_perc,
-            test_at_end=test_at_end
+            test_at_end=test_at_end,
+            pairs_for_training=pairs_for_training
         )
     elif clus_id_col_name and clus_text_col_names:
         return prep_clus_data(
@@ -269,7 +273,8 @@ def prep_paired_label_data(
         label_col_name: str = "label",
         model: str = "sentence-transformers/all-mpnet-base-v2",
         val_perc: float = 0.2,
-        test_at_end=True
+        test_at_end=True,
+        pairs_for_training=False,
 ) ->  Tuple[Dict[str, List[str]], Tuple[List[str], List[str], List[str]],Tuple[List[str], List[str], List[str]]]:
     """
     This method is used to prepare training data + evaluation data. Evaluation is suitable for classification evaluation.
@@ -348,14 +353,12 @@ def prep_paired_label_data(
 
     data, left_id_rename, right_id_rename = check_and_prep_data(data, model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
     ### We now want to make a network from this data. Simply use the left_id and right_id columns as edges.
-    ### Once we do that, we want to make connected components from this network. Each connected component is a cluster that is used as a "class" for training.
-    edge_list = list(zip(data[left_id_rename], data[right_id_rename]))
-    cluster_assignment = clusters_from_edges(edge_list)
-    ## Assign cluster ids to each node
-    ## Now, make a mapping between left_id and cluster id - reverse the dict
-    cluster_assignment = {k: v for v, l in cluster_assignment.items() for k in l}
-    data["cluster_assignment"] = data[left_id_rename].map(cluster_assignment)
 
+    
+    ##rename label column to label
+    data=data.rename(columns={label_col_name:"label"})
+    label_col_name="label"
+    
     ### We want to split the data by cluster assignment 
     if val_perc == 1:
         train_data = data
@@ -364,32 +367,39 @@ def prep_paired_label_data(
         print("Warning: train and val data are the same")
     else:
         if  val_data is None  and  test_data is None:
-        ### Split by val perc - we want to split by cluster assignment. Only 20% of the clusters should be in the val set
-            train_cluster_assignment, val_cluster_assignment = train_test_split(list(set(data["cluster_assignment"])), test_size=val_perc, random_state=42)
+        ### Split by val perc - we want to split this dataframe directly since we are dealing with pairs
+            train_data,val_data = train_test_split(data, test_size=val_perc, random_state=42)
             ###Split val into test and val
             if test_at_end:
                 print("Splitting val into test and val (equally) ")
-                val_cluster_assignment, test_cluster_assignment = train_test_split(val_cluster_assignment, test_size=0.5, random_state=42)
-                train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
-                val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
-                test_data = data[data["cluster_assignment"].isin(test_cluster_assignment)]
-            else:
-                train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
-                val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
-            
+                val_data, test_data= train_test_split(val_data, test_size=0.5, random_state=42)
         else:
             val_data,left_id_rename, right_id_rename = check_and_prep_data(val_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
             test_data,left_id_rename, right_id_rename = check_and_prep_data(test_data, model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
-            
-    train_data=data
-    ### Now, group by cluster assignment and make a dict with cluster_assignment:[left_text, right_text1, right_text2, right_text3...]
-    train_data_dict = defaultdict(list)
-    for index, row in train_data.iterrows():
-        train_data_dict[row["cluster_assignment"]].append(row["left_text"])
-        train_data_dict[row["cluster_assignment"]].append(row["right_text"])          
     
-    ### Deduplicate the lists
-    train_data_dict = {k: list(set(v)) for k, v in train_data_dict.items()}
+    ### Once we do that, we want to make connected components from this network. Each connected component is a cluster that is used as a "class" for training.
+    
+    
+    if not pairs_for_training:
+        ##Keep only positive pairs
+        train_data=train_data[train_data[label_col_name]==1]
+        edge_list = list(zip(train_data[left_id_rename], train_data[right_id_rename]))
+        cluster_assignment = clusters_from_edges(edge_list)
+        ## Assign cluster ids to each node
+        ## Now, make a mapping between left_id and cluster id - reverse the dict
+        cluster_assignment = {k: v for v, l in cluster_assignment.items() for k in l}
+        train_data["cluster_assignment"] = train_data[left_id_rename].map(cluster_assignment)
+
+        ### Now, group by cluster assignment and make a dict with cluster_assignment:[left_text, right_text1, right_text2, right_text3...]
+        train_data_dict = defaultdict(list)
+        for index, row in train_data.iterrows():
+            train_data_dict[row["cluster_assignment"]].append(row["left_text"])
+            train_data_dict[row["cluster_assignment"]].append(row["right_text"])          
+        
+        ### Deduplicate the lists
+        train_data_dict = {k: list(set(v)) for k, v in train_data_dict.items()}
+    else:
+        train_data_dict=train_data
 
     ###Time for validation set now.
     ###Simply make a list of left_text, right_text1, right_text2, right_text3... and make a list of labels

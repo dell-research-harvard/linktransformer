@@ -20,6 +20,20 @@ def test_lm_merge():
     assert isinstance(df_lm_matched, pd.DataFrame)
     # Add more assertions to check the correctness of the output
 
+def test_lm_merge_suffixes():
+    df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
+    df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
+
+    # Test your function here
+    df_lm_matched = lt.merge(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,suffixes=("_1","_2"))
+    
+    ##Check if the suffixes are added
+    assert "CompanyName_1" in df_lm_matched.columns
+    assert "CompanyName_2" in df_lm_matched.columns
+    assert isinstance(df_lm_matched, pd.DataFrame)
+    # Add more assertions to check the correctness of the output
+
+
 
 
 def test_lm_aggregate():
@@ -154,6 +168,36 @@ def test_knn():
     assert df_lm_matched.equals(df_lm_matched2)
 
 
+def test_knn_suffixes():
+    df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
+    df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
+
+    # Test your function here
+    df_lm_matched = lt.merge_knn(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+                                 k=1,suffixes=("_1","_2"))
+    print(df_lm_matched)
+    assert isinstance(df_lm_matched, pd.DataFrame)
+
+    ###Check if identical to merge
+    df_lm_matched2 = lt.merge(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,suffixes=("_1","_2"))
+
+    ###Check if k=2 is different
+    df_lm_matched3_2nn = lt.merge_knn(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+                                    k=2,suffixes=("_1","_2"))
+    
+    print(df_lm_matched3_2nn)
+
+    ###Asser that length is double
+    assert len(df_lm_matched3_2nn) == len(df_lm_matched)*2
+    
+    ##Check if suffixes are added
+    print(df_lm_matched3_2nn.columns)
+    assert "CompanyName_1" in df_lm_matched3_2nn.columns
+    assert "CompanyName_2" in df_lm_matched3_2nn.columns
+
+
+    assert df_lm_matched.equals(df_lm_matched2)
+
 def test_clf_single_col_bin():
     df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
 
@@ -254,4 +298,4 @@ if __name__ == "__main__":
     # # test classification
     # test_clf_single_col_bin()
     # test_clf_multi_col_bin()
-    test_knn()
+    test_knn_suffixes()

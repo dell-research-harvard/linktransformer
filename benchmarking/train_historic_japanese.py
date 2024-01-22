@@ -45,10 +45,12 @@ if __name__ == "__main__":
                        "model_save_name": "lt-historicjapanesecompanies-comp-prod-ind_test",
                        "opt_model_description": "This model was trained on a dataset of historic Japanese companies, products, industry, addresses, and shareholders. Take a look at our paper for more details. The task is to link indices of japanese companies",
                        "opt_model_lang":"ja",
+                       "loss_type":"onlinecontrastive",
                        "val_perc":0.2,
+                       "loss_params":{"margin":0.15},
                         "wandb_names":{
                                      "id": "econabhishek",
-                                    "run": "lt-historicjapanesecompanies-comp-prod-ind",
+                                    "run": "lt-historicjapanesecompanies-comp-prod-ind_0.15",
                                     "project": "linkage",
                                     "entity": "econabhishek" },}
     )
