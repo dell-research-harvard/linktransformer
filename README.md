@@ -19,6 +19,9 @@ LinkTransformer is a Python library for merging and deduplicating data frames us
 
 More tutorials are coming soon!
 
+## News
+
+- Online contrastive loss is now available for linkage model training - especially useful for training with paired data containing binary labels. Try it out! Tutorial will be out soon.
 
 ## Features
 
