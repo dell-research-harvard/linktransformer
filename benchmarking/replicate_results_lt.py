@@ -275,7 +275,7 @@ def get_size_of_japanese_data(val_pickle,test_pickle):
 ###Run as script
 if __name__ == "__main__":
 
-    myopenaikey= None
+    myopenaikey= "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"
 
 
     all_models={
@@ -310,25 +310,27 @@ if __name__ == "__main__":
     val_test_size_by_model=make_val_test_query_size_table(all_models)
     val_test_size_by_model.to_csv("val_test_by_model.csv")
     ###Check on historic japanese data
-    val_pickle="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/lt-historicjapanesecompanies-comp-prod-ind/val_data.pickle"
-    test_pickle="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/lt-historicjapanesecompanies-comp-prod-ind/test_data.pickle"
+    val_pickle="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/models/lt-historicjapanesecompanies-comp-prod-ind_test/val_data.pickle"    
+    test_pickle="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/models/lt-historicjapanesecompanies-comp-prod-ind_test/test_data.pickle"
+    
     sbert_model="oshizo/sbert-jsnli-luke-japanese-base-lite"
     lt_wiki_model="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/historicjapanese/models/lt-wikidata-comp-prod-ind-ja"
-    trained_lt_model = "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases/models/lt-historicjapanesecompanies-comp-prod-ind"
+    trained_lt_model = "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/models/lt-historicjapanesecompanies-comp-prod-ind_test"
     open_ai_model="text-embedding-ada-002"
     
     ##Make a table of results - Edit distance, SBERT, LT ZS Wiki, LT, OpenAI
     
     # evaluate_f1_score(val_pickle,test_pickle,model,openai_key=None,edit_distance=False)
 
-    # results_df_japanese=pd.DataFrame({
-    #     "edit_distance":[evaluate_f1_score(val_pickle,test_pickle,None,openai_key=None,edit_distance=True)[0]],
-    #     "SBERT":[evaluate_f1_score(val_pickle,test_pickle,sbert_model,openai_key=None,edit_distance=False)[0]],
-    #     "LT ZS Wiki":[evaluate_f1_score(val_pickle,test_pickle,lt_wiki_model,openai_key=None,edit_distance=False)[0]],
-    #     "LT":[evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)[0]],
-    #     "OpenAI":[evaluate_f1_score(val_pickle,test_pickle,open_ai_model,openai_key=myopenaikey,edit_distance=False)[0]],
-    # })
+    results_df_japanese=pd.DataFrame({
+        "edit_distance":[evaluate_f1_score(val_pickle,test_pickle,None,openai_key=None,edit_distance=True)[0]],
+        # "SBERT":[evaluate_f1_score(val_pickle,test_pickle,sbert_model,openai_key=None,edit_distance=False)[0]],
+        # "LT ZS Wiki":[evaluate_f1_score(val_pickle,test_pickle,lt_wiki_model,openai_key=None,edit_distance=False)[0]],
+        "LT":[evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)[0]],
+        # "OpenAI":[evaluate_f1_score(val_pickle,test_pickle,open_ai_model,openai_key=myopenaikey,edit_distance=False)[0]],
+    })
 
+    print(results_df_japanese)
     ###Get size of japanese data
     print(get_size_of_japanese_data(val_pickle,test_pickle))
 

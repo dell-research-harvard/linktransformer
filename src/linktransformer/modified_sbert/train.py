@@ -43,11 +43,11 @@ def train_biencoder(
         loss_params=None,
         model_save_path="output",
         wandb_names=None,
-        already_clustered_train=False,
         eval_steps_perc=0.1,
         eval_type="retrieval",
         opt_model_description=None,
-        opt_model_lang=None
+        opt_model_lang=None,
+        loss_type="supcon", #can be either "supcon" or "onlinecontrastive",
 
 ):
 
@@ -81,7 +81,10 @@ def train_biencoder(
         wandb.watch(model)
 
 
-    train_loss = losses.SupConLoss_wandb(model=model,**loss_params if loss_params is not None else {},wandb_names=wandb_names)    
+    if loss_type=="onlinecontrastive":
+        train_loss = losses.OnlineContrastiveLoss_wandb(model=model,**loss_params if loss_params is not None else {},wandb_names=wandb_names)
+    else:
+        train_loss = losses.SupConLoss_wandb(model=model,**loss_params if loss_params is not None else {},wandb_names=wandb_names)
         
 
 
@@ -95,10 +98,21 @@ def train_biencoder(
 
     # Load data as individuals
     ## train_data - You should organize it into cluster fformat
-    train_samples = data_loaders.load_data_as_individuals(train_data, type="training",already_clustered=already_clustered_train)
-    train_data_sampler = SentenceLabelDataset(train_samples)
-    train_dataloader = DataLoader(train_data_sampler, batch_size=train_batch_size)
-
+    if loss_type=="supcon":
+        train_samples = data_loaders.load_data_as_individuals(train_data, type="training")
+        train_data_sampler = SentenceLabelDataset(train_samples)
+        train_dataloader = DataLoader(train_data_sampler, batch_size=train_batch_size)
+    elif loss_type=="onlinecontrastive":
+        train_samples = data_loaders.load_data_as_pairs(train_data, type="training")
+        train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=train_batch_size)
+    else:
+        raise ValueError("loss_type can only be either 'supcon' or 'onlinecontrastive'")
+    
+    ##Force eval_type="classification" if loss_type=="onlinecontrastive"
+    if loss_type=="onlinecontrastive":
+        print("Forcing eval_type='classification' since loss_type='onlinecontrastive'")
+        eval_type="classification"
+    
     if eval_type=="retrieval":
         print("Evaluating on retrieval task")
         queries,corpus,relevant_docs=dev_data

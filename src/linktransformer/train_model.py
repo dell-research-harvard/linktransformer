@@ -16,6 +16,7 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
                             num_epochs:int=None,
                             warm_up_perc:float=None,
                             learning_rate:float=None,
+                            loss_type:str=None,
                             val_perc:float=None,
                             wandb_names:dict=None,
                             add_pooling_layer:bool=None,
@@ -35,6 +36,7 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
     :param num_epochs (int): Number of epochs
     :param warm_up_perc (float): Percentage of warmup steps
     :param learning_rate (float): Learning rate
+    :param loss_type (str): Type of loss
     :param val_perc (float): Percentage of validation data
     :param wandb_names (dict): Dictionary of wandb names
     :param add_pooling_layer (bool): Whether to add pooling layer
@@ -78,6 +80,8 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
         config["save_val_test_pickles"]=save_val_test_pickles
     if val_query_prop is not None:
         config["val_query_prop"]=val_query_prop
+    if loss_type is not None:
+        config["loss_type"]=loss_type
 
     
 
@@ -99,7 +103,7 @@ def train_model(
     train_data: Union[str, pd.DataFrame] = None,
     val_data: Union[str, pd.DataFrame] = None,
     test_data: Union[str, pd.DataFrame] = None,
-    model_path: str="sentence-transformers/paraphrase-xlm-r-multilingual-v1",
+    model_path: str="sentence-transformers/all-mpnet-base-v2",
     left_col_names: List[str] = None,
     right_col_names: List[str] = None,
     left_id_name: Union[str,List[str]] = None,
@@ -170,7 +174,8 @@ def train_model(
         val_perc=config["val_perc"],
         val_query_prop=config["val_query_prop"],
         large_val=config["large_val"],
-        test_at_end=config["test_at_end"]
+        test_at_end=config["test_at_end"],
+        pairs_for_training=True if config["loss_type"]=="onlinecontrastive" else False,
     )
     
     ##Save val and test pickles
@@ -187,6 +192,8 @@ def train_model(
     ##If label_col_name is not None, specify that the eval type is classification
     if label_col_name is not None:
         config["eval_type"]="classification"
+        print("Since label_col_name is provided, the eval type is set to classification")
+        print("You can also consider loss_type=='onlinecontrastive'")
     elif clus_id_col_name is not None:
         config["eval_type"]="retrieval"
     else:
@@ -222,6 +229,8 @@ def train_model(
         opt_model_description=config["opt_model_description"],
         opt_model_lang=config["opt_model_lang"],
         eval_steps_perc=config["eval_steps_perc"],
+        loss_type=config["loss_type"],
+        loss_params=config["loss_params"],
 
     )
     print(f"Best model saved on the path: {best_model_path} ")

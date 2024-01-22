@@ -12,7 +12,29 @@ sys.path.append(parentdir)
     
 
 
-def load_data_as_individuals(cluster_dict, type,already_clustered=False):
+def load_data_as_pairs(data, type):
+
+    """
+    This is for contrastive or other pairwise losses.
+    """
+
+    source_text_gt=data['left_text'].tolist()
+    target_text_gt=data['right_text'].tolist()
+    label=data['label'].tolist()
+    print(label)
+    label2int = {"same": 1, "different": 0, 1: 1, 0: 0}
+
+    paired_data = []
+    for i in range(len(source_text_gt)):
+        label_id = label2int[label[i]]
+        paired_data.append(InputExample(texts=[source_text_gt[i], target_text_gt[i]], label=float(label_id)))
+
+    print(f'{len(paired_data)} {type} pairs')
+
+    return paired_data
+
+
+def load_data_as_individuals(cluster_dict, type):
     '''
     This is for SupCon Loss
 

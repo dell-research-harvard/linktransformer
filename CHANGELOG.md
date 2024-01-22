@@ -51,6 +51,12 @@
     - All Linkage inference functions can now take in a LinkTransformer model (wrapper around SentenceTransformer) as input. This would be useful for workflows requiring looping; preventing repeated model loading.
     - More robust typing where it was lacking
     - Fixes in cluster functions and bringing them to the root directory
+## 0.1.13
+    - Major Update : Allowed Online contrastive loss in model training with paired data with labels
+    - Fixed the behaviour of the custom suffix feature in merge functions
+    - Fixed an incorrect piece of preprocessing code for paired data with labels - we recommend training such models again for a substantial increase in performance
+    - Allowed loss_type in the train_model args - "supcon" and "onlinecontrastive"
+    - Made some changes in the linkage configs to allow loss params into the training args. loss_params is a dictionary containing "temperature" for supcon loss and "margin" for onlinecontrastive.
 
 
 

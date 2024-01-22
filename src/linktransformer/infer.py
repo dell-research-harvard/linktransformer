@@ -27,7 +27,7 @@ def merge(
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
-    suffixes: Tuple[str, str] = ('_x', '_y'),
+    suffixes: Tuple[str, str] = ("_x", "_y"),
     use_gpu: bool = False,
     batch_size: int = 128,
     openai_key: Optional[str] = None
@@ -150,11 +150,11 @@ def merge(
     df2 = df2.reset_index(drop=True)
 
     ## Fuzzily merge the dfs based on the faiss index queries
-    df_lm_matched = df1.merge(df2.iloc[I.flatten()].reset_index(drop=True), left_index=True, right_index=True, how="inner")
+    df_lm_matched = df1.merge(df2.iloc[I.flatten()].reset_index(drop=True), left_index=True, right_index=True, how="inner",suffixes=suffixes)
     ### Add score column
     df_lm_matched["score"] = D.flatten()
 
-    print(f"LM matched on key columns - left: {left_on}{suffixes[0]}, right: {right_on}{suffixes[1]}")
+        
     return df_lm_matched
 
     
@@ -169,7 +169,7 @@ def merge_blocking(
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
     blocking_vars: Optional[List[str]] = None,
-    suffixes: Tuple[str, str] = ('_x', '_y'),
+    suffixes: Tuple[str, str] = ("_x", "_y"),
     use_gpu: bool = False,
     batch_size: int = 128,
     openai_key: Optional[str] = None
@@ -259,6 +259,9 @@ def merge_blocking(
 
         ## Concatenate the merged dfs
         df_lm_matched = pd.concat(merged_dfs, axis=0).reset_index(drop=True)
+        
+        
+        
         return df_lm_matched
 
 
@@ -375,8 +378,7 @@ def cluster_rows(
     :param model (str): Language model to use.
     :param on (Union[str, List[str]]): Column(s) to deduplicate on.
     :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
-    :param cluster_params (Dict[str, Any]): Parameters for clustering method. 
-        Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
+    :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
     :param openai_key (str): OpenAI API key.
 
     Supported clustering methods and their parameters:
@@ -552,7 +554,7 @@ def merge_knn(
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
     k: int = 1,
-    suffixes: Tuple[str, str] = ('_x', '_y'),
+    suffixes: Tuple[str, str] = ("_x", "_y"),
     use_gpu: bool = False,
     batch_size: int = 128,
     openai_key: Optional[str] = None,
@@ -640,7 +642,6 @@ def merge_knn(
     ## Infer embeddings for df2
     embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key,return_numpy= not use_gpu)
 
-    print(embeddings1)
 
     if not use_gpu:
         ### Expand dim if embeddings are 1d (numpy)
@@ -707,16 +708,36 @@ def merge_knn(
 
 
     ###Now, merge the expanded dfs
-    df_lm_matched = df1_expanded.merge(df2_expanded, left_index=True, right_index=True, how="inner")
+    df_lm_matched = df1_expanded.merge(df2_expanded, left_index=True, right_index=True, how="inner",suffixes=suffixes)
 
     ### Add score column
     df_lm_matched["score"] =  D.flatten()
 
-    print(f"LM matched on key columns - left: {left_on}{suffixes[0]}, right: {right_on}{suffixes[1]}")
-
     if drop_sim_threshold is not None:
         df_lm_matched = df_lm_matched[df_lm_matched["score"]>=drop_sim_threshold]
         print(f"Dropped rows with similarity below {drop_sim_threshold}")
+    
+    ##rename overlapping columns for left_on and right_on
+    
+    # if suffixes is not None:
+    #     print("Renaming overlapping columns by adding suffixes")
+        
+    #     if isinstance(left_on, list):
+    #         for col in left_on:
+    #             df_lm_matched = df_lm_matched.rename(columns={col+"_x": col+suffixes[0]})
+
+    #     else:
+    #         df_lm_matched = df_lm_matched.rename(columns={left_on+"_x": left_on+suffixes[0]})
+
+    #     if isinstance(right_on, list):
+    #         for col in right_on:
+    #             df_lm_matched = df_lm_matched.rename(columns={col+"_y": col+suffixes[1]})
+    #     else:
+    #         df_lm_matched = df_lm_matched.rename(columns={right_on+"_y": right_on+suffixes[1]})
+            
+
+    print(f"LM matched on key columns - left: {left_on}{suffixes[0]}, right: {right_on}{suffixes[1]}")
+        
 
     return df_lm_matched
 
