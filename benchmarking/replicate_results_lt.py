@@ -275,7 +275,7 @@ def get_size_of_japanese_data(val_pickle,test_pickle):
 ###Run as script
 if __name__ == "__main__":
 
-    myopenaikey= "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"
+    myopenaikey= ""
 
 
     all_models={
