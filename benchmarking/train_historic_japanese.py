@@ -9,7 +9,7 @@ import os
 
 if __name__ == "__main__":
      ###Load the data
-    dataset_path = os.path.join(lt.DATA_DIR_PATH, "jp_pr_tk431.csv")
+    dataset_path = os.path.join(lt.DATA_DIR_PATH, "jp_pr_tkv2.csv")
 
     ##Load the data
     df = pd.read_csv(dataset_path)
@@ -39,18 +39,20 @@ if __name__ == "__main__":
         left_id_name=['source'],
         right_id_name=['tk_path_value'],
         log_wandb=True,
-        training_args={"num_epochs": 100,
+        training_args={"num_epochs": 50,
+                        "warm_up_perc": 1,
+                        "learning_rate": 2e-5,
                        "test_at_end": True,
                        "save_val_test_pickles": True,
-                       "model_save_name": "lt-historicjapanesecompanies-comp-prod-ind_test",
+                       "model_save_name": "lt-historicjapanesecompanies-comp-prod-ind_supcon",
                        "opt_model_description": "This model was trained on a dataset of historic Japanese companies, products, industry, addresses, and shareholders. Take a look at our paper for more details. The task is to link indices of japanese companies",
                        "opt_model_lang":"ja",
-                       "loss_type":"onlinecontrastive",
+                       "loss_type":"supcon",
                        "val_perc":0.2,
-                       "loss_params":{"margin":0.15},
+                       "loss_params":{},
                         "wandb_names":{
                                      "id": "econabhishek",
-                                    "run": "lt-historicjapanesecompanies-comp-prod-ind_0.15",
+                                    "run": "lt-historicjapanesecompanies-comp-prod-ind_supcon",
                                     "project": "linkage",
                                     "entity": "econabhishek" },}
     )
@@ -58,17 +60,17 @@ if __name__ == "__main__":
 
 
 
-    # # ###Save the model to hub
-    # best_model=lt.load_model(saved_model_path)
+    # ###Save the model to hub
+    best_model=lt.load_model(saved_model_path)
 
-    # best_model.save_to_hub(repo_name = "lt-wikidata-comp-prod-ind-ja", ##Write model name here
-    #         organization= "dell-research-harvard",
-    #         private = None,
-    #         commit_message = "Add new LinkTransformer model.",
-    #         local_model_path = None,
-    #         exist_ok = True,
-    #         replace_model_card = True,
-    #         )
+    best_model.save_to_hub(repo_name = "lt-wikidata-comp-prod-ind-ja", ##Write model name here
+            organization= "dell-research-harvard",
+            private = None,
+            commit_message = "Add new LinkTransformer model.",
+            local_model_path = None,
+            exist_ok = True,
+            replace_model_card = True,
+            )
 
 
     
