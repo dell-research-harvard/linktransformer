@@ -193,7 +193,8 @@ def train_model(
     if label_col_name is not None:
         config["eval_type"]="classification"
         print("Since label_col_name is provided, the eval type is set to classification")
-        print("You can also consider loss_type=='onlinecontrastive'")
+        if config["loss_type"]=="supcon":
+            print("You can also consider loss_type=='onlinecontrastive'")
     elif clus_id_col_name is not None:
         config["eval_type"]="retrieval"
     else:

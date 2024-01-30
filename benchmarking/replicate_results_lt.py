@@ -232,7 +232,7 @@ def evaluate_f1_score(val_pickle,test_pickle,model,openai_key=None,edit_distance
         return -f1    
 
     # Hyperopt optimization to find the best threshold for F1
-    space = hp.uniform('threshold', 0, 1)
+    space = hp.uniform('threshold', 0.5,1)
     best = fmin(fn=calculate_f1, space=space, algo=tpe.suggest, max_evals=1000, verbose=False)
     best_threshold = best['threshold']
 
@@ -267,15 +267,23 @@ def get_size_of_japanese_data(val_pickle,test_pickle):
     ##Get number of positiveees
     val_positives=val_df[val_df["label"]==1].shape[0]
     test_positives=test_df[test_df["label"]==1].shape[0]
+    
+    ## Get number of negatives
+    val_negatives=val_df[val_df["label"]==0].shape[0]
+    test_negatives=test_df[test_df["label"]==0].shape[0]
+    
+    ##Get total number of queries
+    val_total=val_df.shape[0]
+    test_total=test_df.shape[0]
 
-    return val_positives, test_positives
+    return val_positives, test_positives, val_negatives, test_negatives, val_total, test_total
     
 
 
 ###Run as script
 if __name__ == "__main__":
 
-    myopenaikey= ""
+    myopenaikey= "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"
 
 
     all_models={
@@ -299,7 +307,7 @@ if __name__ == "__main__":
         # "un-multi-fine-fine":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_fine"},
         # "un-multi-fine-coarse":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_coarse"},
         # "un-multi-fine-industry":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_industry"},
-        "mexicantrad4748" : {"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/mexicandata/models/lt-mexicantrade4748"}
+        # "mexicantrad4748" : {"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/mexicandata/models/lt-mexicantrade4748"}
               }
     
 
@@ -309,13 +317,31 @@ if __name__ == "__main__":
     # results_df_companies.to_csv("results_df_wiki_multi_only.csv")
     val_test_size_by_model=make_val_test_query_size_table(all_models)
     val_test_size_by_model.to_csv("val_test_by_model.csv")
+    
+    model_name="lt-historicjapanesecompanies-comp-prod-ind_supcon_full"
+    # model_name="lt-historicjapanesecompanies-comp-prod-ind_onlinecontrastive_full"
+    # model_two="lt-historicjapanesecompanies-comp-prod-ind_onlinecontrastive_full"
+    
     ###Check on historic japanese data
-    val_pickle="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/lt-historicjapanesecompanies-comp-prod-ind_contrastive_015/val_data.pickle"    
-    test_pickle="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/lt-historicjapanesecompanies-comp-prod-ind_contrastive_015/test_data.pickle"
+    val_pickle=f"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/{model_name}/val_data.pickle"    
+    test_pickle=f"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/{model_name}/test_data.pickle"
+    
+    # test_pickle_2=f"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/{model_two}/test_data.pickle"
+    
+    # ##check if the pickles are the same
+    # with open(test_pickle, 'rb') as handle:
+    #     test_data = pickle.load(handle)
+    #     print(test_data[0][1])
+    # with open(test_pickle_2, 'rb') as handle:
+    #     test_data_2 = pickle.load(handle)
+    #     print(test_data_2[0][1])
+    
+    # print(test_data[0]==test_data_2[0])
+    
     
     sbert_model="oshizo/sbert-jsnli-luke-japanese-base-lite"
     lt_wiki_model="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/historicjapanese/models/lt-wikidata-comp-prod-ind-ja"
-    trained_lt_model = "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/lt-historicjapanesecompanies-comp-prod-ind_supcon" #contrastive_015
+    trained_lt_model = f"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/{model_name}" #lt-historicjapanesecompanies-comp-prod-ind_contrastive_015 #contrastive_015
     open_ai_model="text-embedding-ada-002"
     
     ##Make a table of results - Edit distance, SBERT, LT ZS Wiki, LT, OpenAI
@@ -324,16 +350,30 @@ if __name__ == "__main__":
 
     results_df_japanese=pd.DataFrame({
         "edit_distance":[evaluate_f1_score(val_pickle,test_pickle,None,openai_key=None,edit_distance=True)[0]],
+        "edit_distance_threshold":[evaluate_f1_score(val_pickle,test_pickle,None,openai_key=None,edit_distance=True)[2]],
         "SBERT":[evaluate_f1_score(val_pickle,test_pickle,sbert_model,openai_key=None,edit_distance=False)[0]],
+        "SBERT_threshold":[evaluate_f1_score(val_pickle,test_pickle,sbert_model,openai_key=None,edit_distance=False)[2]],
         "LT ZS Wiki":[evaluate_f1_score(val_pickle,test_pickle,lt_wiki_model,openai_key=None,edit_distance=False)[0]],
+        "LT ZS Wiki_threshold":[evaluate_f1_score(val_pickle,test_pickle,lt_wiki_model,openai_key=None,edit_distance=False)[2]],
         "LT":[evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)[0]],
+        "LT_threshold":[evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)[2]],
         "OpenAI":[evaluate_f1_score(val_pickle,test_pickle,open_ai_model,openai_key=myopenaikey,edit_distance=False)[0]],
+        "OpenAI_threshold":[evaluate_f1_score(val_pickle,test_pickle,open_ai_model,openai_key=myopenaikey,edit_distance=False)[2]]
     })
 
-    print(results_df_japanese)
+    ##Save the test results in the model dir as well
+    save_dir=os.path.join(trained_lt_model,"test_results_allmethods.csv")
+    results_df_japanese.to_csv(save_dir)
+    
     ###Get size of japanese data
     print(get_size_of_japanese_data(val_pickle,test_pickle))
 
+    # ##Save full df from LT model
+    # test_f1 , time_elapsed, best_threshold, full_test_df = evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)
+    
+    # ##Save the df
+    # full_test_df.to_csv("full_test_df_tkfull.csv")
+    
     # results_df_japanese.to_csv("results_df_japanese.csv")
 
     #Let's run this for mexican data now

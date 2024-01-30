@@ -21,7 +21,6 @@ def load_data_as_pairs(data, type):
     source_text_gt=data['left_text'].tolist()
     target_text_gt=data['right_text'].tolist()
     label=data['label'].tolist()
-    print(label)
     label2int = {"same": 1, "different": 0, 1: 1, 0: 0}
 
     paired_data = []
