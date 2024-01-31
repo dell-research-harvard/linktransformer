@@ -357,7 +357,6 @@ def prep_paired_label_data(
     
     ##rename label column to label
     data=data.rename(columns={label_col_name:"label"})
-    label_col_name="label"
     
     ### We want to split the data by cluster assignment 
     if val_perc == 1:
@@ -374,11 +373,16 @@ def prep_paired_label_data(
                 print("Splitting val into test and val (equally) ")
                 val_data, test_data= train_test_split(val_data, test_size=0.5, random_state=42)
         else:
+            train_data,left_id_rename, right_id_rename = check_and_prep_data(train_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
             val_data,left_id_rename, right_id_rename = check_and_prep_data(val_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
             test_data,left_id_rename, right_id_rename = check_and_prep_data(test_data, model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
-    
+            ##Rename label column to label
+            train_data=train_data.rename(columns={label_col_name:"label"})
+            val_data=val_data.rename(columns={label_col_name:"label"})
+            test_data=test_data.rename(columns={label_col_name:"label"})
     ### Once we do that, we want to make connected components from this network. Each connected component is a cluster that is used as a "class" for training.
-    
+    label_col_name="label"
+  
     
     if not pairs_for_training:
         ##Keep only positive pairs
