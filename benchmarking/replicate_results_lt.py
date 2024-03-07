@@ -1,4 +1,6 @@
 import linktransformer as lt
+from rapidfuzz import process, fuzz
+
 import pandas as pd
 import pickle
 import numpy as np
@@ -7,6 +9,7 @@ import numpy as np
 import os
 from sklearn.metrics import f1_score
 # import hyperopt
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from linktransformer.infer import  evaluate_pairs
 from hyperopt import fmin, tpe, hp
@@ -15,19 +18,53 @@ from linktransformer.train_model import train_model
 import json
 import wandb
 import editdistance
-from huggingface_hub import hf_hub_download
+from tqdm import tqdm
 
 
 
-def caclulate_lev_distance(str_1,str_2):
+def calculate_lev_distance(str_1,str_2):
     return editdistance.eval(str_1,str_2)
 
+def calculate_batch_distances(query, corpus_texts):
+    # Using RapidFuzz to find the best match for a query within the corpus texts
+    # Note: process.extractOne returns the best match, its score, and its index
+    best_match = process.extractOne(query, corpus_texts, scorer=fuzz.ratio)
+    return best_match[2], best_match[1]  # Returning index and score (edit distance) of the best match
+
+def calculate_retrieval_accuracy_edit(path_to_pickle):
+    with open(path_to_pickle, 'rb') as handle:
+        val_data = pickle.load(handle)
+
+    query_df = pd.DataFrame.from_dict(val_data[0], orient='index', columns=['query_text']).reset_index()
+    corpus_df = pd.DataFrame.from_dict(val_data[1], orient='index', columns=['corpus_text']).reset_index()
+    
+    corpus_texts = corpus_df['corpus_text'].tolist()
+
+    # Prepare for parallel computation with a progress bar
+    with ProcessPoolExecutor() as executor:
+        futures = {executor.submit(calculate_batch_distances, query, corpus_texts): query for query in query_df['query_text']}
+        
+        distances = []
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Calculating distances"):
+            distances.append(future.result())
+
+    # Convert distances to a DataFrame
+    matches_df = pd.DataFrame(distances, columns=['corpus_index', 'score'], index=query_df['index'])
+    matches_df['corpus_index'] = matches_df['corpus_index'].apply(lambda x: corpus_df.iloc[x]['index'])
+
+    # Add relevance information
+    matches_df['is_relevant'] = matches_df.apply(lambda row: 1 if row['corpus_index'] in val_data[2].get(row.name, []) else 0, axis=1)
+
+    # Calculate the retrieval accuracy
+    accuracy = matches_df['is_relevant'].mean()
+
+    return accuracy
 
 def eval_pairs_using_edit_distance(df, left_on="left_text", right_on="right_text"):
     ###If left_on or right_on len > 1, concatenate the columns
 
     ###now, calculate edit distance for each left_on , right on row and add a "score" column
-    df["score"]=df.apply(lambda x: caclulate_lev_distance(x[left_on],x[right_on]),axis=1)
+    df["score"]=df.apply(lambda x: calculate_lev_distance(x[left_on],x[right_on]),axis=1)
 
     return df
 
@@ -54,52 +91,15 @@ def make_val_test_query_size_table(model_dict):
     return table
 
 
-def calculate_retrieval_accuracy_edit(path_to_pickle):
-    with open(path_to_pickle, 'rb') as handle:
-        val_data = pickle.load(handle)
-    ##merge the queries and corpus dataframe on the query_text and corpus_text columns using the edit distance - find edit distance between each query and corpus text
-    ###The closest corpus text to each query text is the one with the lowest edit distance and should be the match
 
-    query_df=pd.DataFrame.from_dict(val_data[0], orient='index', columns=['query_text']).reset_index()
-    corpus_df=pd.DataFrame.from_dict(val_data[1], orient='index', columns=['corpus_text']).reset_index()
-
-    print("query_df shape",query_df.shape)
-    print("corpus_df shape",corpus_df.shape)
-    merged_df=pd.merge(query_df,corpus_df,how="cross")
-
-    merged_df["lev_distance"]=merged_df.apply(lambda x: caclulate_lev_distance(x["query_text"],x["corpus_text"]),axis=1)
-
-    merged_df=merged_df.sort_values(by=["lev_distance"])
-
-    merged_df=merged_df.drop_duplicates(subset=["index_x"],keep="first")
-
-    merged_df=merged_df.drop_duplicates(subset=["index_y"],keep="first")
-
-
-    merged_df=merged_df.reset_index()
-
-
-    # # Create a new column in merged_df that indicates whether each document (cid) is relevant to its corresponding query (qid)
-    def is_relevant(row):
-        return 1 if row['index_y'] in val_data[2][row['index_x']] else 0
-
-    merged_df['is_relevant'] = merged_df.apply(is_relevant, axis=1)
-
-    # Calculate the retrieval accuracy by taking the mean of the is_relevant column
-    accuracy = merged_df['is_relevant'].mean()
-
-    return accuracy
-
-
-
-def calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key):
+def calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key,openai_model="text-embedding-3-small"):
     with open(path_to_pickle, 'rb') as handle:
         val_data = pickle.load(handle)
 
     # Merge queries and corpus using LinkTransformer's lt.merge function
     merged_df = lt.merge(pd.DataFrame.from_dict(val_data[0], orient='index', columns=['query_text']).reset_index(), 
                          pd.DataFrame.from_dict(val_data[1], orient='index', columns=['corpus_text']).reset_index(), 
-                         merge_type='1:m', model="text-embedding-ada-002", 
+                         merge_type='1:m', model=openai_model, 
                          left_on="query_text", right_on="corpus_text", openai_key=openai_key)
     
 
@@ -128,6 +128,7 @@ def calculate_retrieval_accuracy_lt(path_to_pickle,model):
                          merge_type='1:m', model=model, 
                          left_on="query_text", right_on="corpus_text", openai_key=None)
     
+    print("merged_df shape",merged_df.shape)
     merged_df=merged_df.reset_index()
 
 
@@ -148,7 +149,7 @@ def calculate_retrieval_accuracy_lt(path_to_pickle,model):
 def make_table(model_dict, openai_key):
     """This function takes a dictionary of models (sbert , lt) and returns a table with edit distance, zs sbert, LT, gpt (ada)"""
 
-    table=pd.DataFrame(columns=["key","edit_distance","sbert","lt","gpt"])
+    table=pd.DataFrame(columns=["key","edit_distance","sbert","lt","gpt_small","gpt_large"])
     
 
     for key in model_dict.keys():
@@ -160,18 +161,21 @@ def make_table(model_dict, openai_key):
         sbert_accuracy=calculate_retrieval_accuracy_lt(path_to_pickle,sbert_model)
         lt_accuracy=calculate_retrieval_accuracy_lt(path_to_pickle,lt_model)
         if openai_key is not None:
-            gpt_accuracy=calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key)
+            gpt_accuracy_small=calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key,openai_model="text-embedding-3-small")
+            gpt_accuracy_large=calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key,openai_model="text-embedding-3-large")
         else:
-            gpt_accuracy=None
+            gpt_accuracy_small=None
+            gpt_accuracy_large=None
         editdistance_acc=calculate_retrieval_accuracy_edit(path_to_pickle)
-
+        print("Edit distance accuracy",editdistance_acc)
         ##Use pd.concat to add a row to the table
-        table=pd.concat([table,pd.DataFrame([[key,editdistance_acc,sbert_accuracy,lt_accuracy,gpt_accuracy]],columns=["key","edit_distance","sbert","lt","gpt"])],ignore_index=True)
+        table=pd.concat([table,pd.DataFrame([[key,editdistance_acc,sbert_accuracy,lt_accuracy,gpt_accuracy_small,gpt_accuracy_large]],columns=["key","edit_distance","sbert","lt","gpt_small","gpt_large"])],ignore_index=True)
+        print(table)
 
     return table
 
 
-def make_mexican_table(model_dict, openai_key):
+def make_mexican_table(model_dict, openai_key,openai_model="text-embedding-3-small"):
     """This function takes a dictionary of models (sbert , lt) and returns a table with edit distance, zs sbert, LT, gpt (ada)"""
 
     table=pd.DataFrame(columns=["key","edit_distance","sbert","lt","gpt"])
@@ -188,20 +192,22 @@ def make_mexican_table(model_dict, openai_key):
         lt_un_accuracy=calculate_retrieval_accuracy_lt(path_to_pickle,lt_un_model)
         lt_accuracy=calculate_retrieval_accuracy_lt(path_to_pickle,lt_model)
         if openai_key is not None:
-            gpt_accuracy=calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key)
+            gpt_accuracy_small=calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key,openai_model="text-embedding-3-small")
+            gpt_accuracy_large=calculate_retrieval_accuracy_gpt(path_to_pickle,openai_key,openai_model="text-embedding-3-large")
         else:
-            gpt_accuracy=None
+            gpt_accuracy_small=None
+            gpt_accuracy_large=None
         editdistance_acc=calculate_retrieval_accuracy_edit(path_to_pickle)
 
         ##Use pd.concat to add a row to the table
-        table=pd.concat([table,pd.DataFrame([[key,editdistance_acc,sbert_accuracy,lt_un_accuracy,lt_accuracy,gpt_accuracy]],columns=["key","edit_distance","sbert","lt_un","lt","gpt"])],ignore_index=True)
-
+        table=pd.concat([table,pd.DataFrame([[key,editdistance_acc,sbert_accuracy,lt_un_accuracy,lt_accuracy,gpt_accuracy_small,gpt_accuracy_large]],columns=["key","edit_distance","sbert","lt_un","lt","gpt_small","gpt_large"])],ignore_index=True)
+        print(table)
     return table    
 
  
 def evaluate_f1_score(val_pickle,test_pickle,model,openai_key=None,edit_distance=False):
     """This function needs some work - it is not complete yet"""
-
+    print("Using model",model)
     ##Load the data
     with open(val_pickle, 'rb') as handle:
         val_data = pickle.load(handle)
@@ -283,112 +289,127 @@ def get_size_of_japanese_data(val_pickle,test_pickle):
 ###Run as script
 if __name__ == "__main__":
 
-    myopenaikey= "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"
+###Replace all local paths with huggingface hub paths for easy replication as provided in the paper/website/repo
 
+##All models apart from jap
 
     all_models={
-        # "wiki-es":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_es_aliases"},
-        # "wiki-fr":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_fr_aliases"},
-        # "wiki-ja":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_ja_aliases"},
-        # "wiki-zh":{"SBERT":"DMetaSoul/sbert-chinese-qmc-domain-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_zh_aliases"},
-        # "wiki-de":{"SBERT":"Sahajtomar/German-semantic","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_de_aliases"},
-        # "wiki-en":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_en_aliases"},
-        # "wiki_data_ja_comp_prod_industry":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/historicjapanese/models/lt-wikidata-comp-prod-ind-ja"},
-        # "wiki-multi":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/wiki_aliases_copy/models/linkage_multi_aliases"},
-        # "un-en-fine-fine":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_fine"},
-        # "un-en-fine-coarse":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_coarse"},
-        # "un-en-fine-industry":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_en_fine_industry"},
-        # "un-es-fine-fine":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_fine"},
-        # "un-es-fine-coarse":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_coarse"},
-        # "un-es-fine-industry":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_es_fine_industry"},
-        # "un-fr-fine-fine":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_fine"},
-        # "un-fr-fine-coarse":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_coarse"},
-        # "un-fr-fine-industry":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_industry"},
-        # "un-multi-fine-fine":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_fine"},
-        # "un-multi-fine-coarse":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_coarse"},
-        # "un-multi-fine-industry":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_fr_fine_industry"},
-        # "mexicantrad4748" : {"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/mexicandata/models/lt-mexicantrade4748"}
+    #     "wiki-es":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/wiki_data/models/linkage_es_aliases"},
+    #     "wiki-fr":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/wiki_data/models/linkage_fr_aliases"},
+    #     "wiki-ja":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/wiki_data/models/linkage_ja_aliases"},
+    #     "wiki-zh":{"SBERT":"DMetaSoul/sbert-chinese-qmc-domain-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/wiki_data/models/linkage_zh_aliases"},
+    #     "wiki-de":{"SBERT":"Sahajtomar/German-semantic","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/wiki_data/models/linkage_de_aliases"},
+    #     "wiki-en":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/wiki_data/models/linkage_en_aliases"},
+    #     "wiki_data_ja_comp_prod_industry":{"SBERT":"oshizo/sbert-jsnli-luke-japanese-base-lite","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/historicjapanese/models/lt-wikidata-comp-prod-ind-ja"},
+    #     "wiki-multi":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/wiki_data/models/linkage_multi_aliases"},
+    #     "un-en-fine-fine":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_en_fine_fine"},
+    #     "un-en-fine-coarse":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_en_fine_coarse"},
+    #     "un-en-fine-industry":{"SBERT":"sentence-transformers/multi-qa-mpnet-base-dot-v1","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_en_fine_industry"},
+    #     "un-es-fine-fine":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_es_fine_fine"},
+    #     "un-es-fine-coarse":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_es_fine_coarse"},
+    #     "un-es-fine-industry":{"SBERT":"hiiamsid/sentence_similarity_spanish_es","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_es_fine_industry"},
+    #     "un-fr-fine-fine":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_fr_fine_fine"},
+    #     "un-fr-fine-coarse":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_fr_fine_coarse"},
+        "un-fr-fine-industry":{"SBERT":"dangvantuan/sentence-camembert-large","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_fr_fine_industry"},
+    #     "un-multi-fine-fine":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_multi_fine_fine"},
+    #     "un-multi-fine-coarse":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_multi_fine_coarse"},
+    #     "un-multi-fine-industry":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2","LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_multi_fine_industry"},
               }
     
-
+    openaikey=os.environ.get("OPENAI_API_KEY")
     
-    # results_df_companies=make_table(all_models,openai_key=myopenaikey)
+    results_df_companies=make_table(all_models,openai_key=openaikey)
 
-    # results_df_companies.to_csv("results_df_wiki_multi_only.csv")
+    results_df_companies.to_csv("/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/results_df_wiki_multi_only_test.csv")
     val_test_size_by_model=make_val_test_query_size_table(all_models)
-    val_test_size_by_model.to_csv("val_test_by_model.csv")
+    val_test_size_by_model.to_csv("/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/val_test_by_model_test.csv")
     
-    model_name="lt-historicjapanesecompanies-comp-prod-ind_supcon_full"
-    # model_name="lt-historicjapanesecompanies-comp-prod-ind_onlinecontrastive_full"
-    # model_two="lt-historicjapanesecompanies-comp-prod-ind_onlinecontrastive_full"
     
     ###Check on historic japanese data
-    val_pickle=f"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/{model_name}/val_data.pickle"    
-    test_pickle=f"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/{model_name}/test_data.pickle"
-    
-    # test_pickle_2=f"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/{model_two}/test_data.pickle"
-    
-    # ##check if the pickles are the same
-    # with open(test_pickle, 'rb') as handle:
-    #     test_data = pickle.load(handle)
-    #     print(test_data[0][1])
-    # with open(test_pickle_2, 'rb') as handle:
-    #     test_data_2 = pickle.load(handle)
-    #     print(test_data_2[0][1])
-    
-    # print(test_data[0]==test_data_2[0])
-    
-    
-    sbert_model="oshizo/sbert-jsnli-luke-japanese-base-lite"
-    lt_wiki_model="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/historicjapanese/models/lt-wikidata-comp-prod-ind-ja"
-    trained_lt_model = f"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/models/{model_name}" #lt-historicjapanesecompanies-comp-prod-ind_contrastive_015 #contrastive_015
-    open_ai_model="text-embedding-ada-002"
-    
-    ##Make a table of results - Edit distance, SBERT, LT ZS Wiki, LT, OpenAI
-    
-    # evaluate_f1_score(val_pickle,test_pickle,model,openai_key=None,edit_distance=False)
 
-    results_df_japanese=pd.DataFrame({
-        "edit_distance":[evaluate_f1_score(val_pickle,test_pickle,None,openai_key=None,edit_distance=True)[0]],
-        "edit_distance_threshold":[evaluate_f1_score(val_pickle,test_pickle,None,openai_key=None,edit_distance=True)[2]],
-        "SBERT":[evaluate_f1_score(val_pickle,test_pickle,sbert_model,openai_key=None,edit_distance=False)[0]],
-        "SBERT_threshold":[evaluate_f1_score(val_pickle,test_pickle,sbert_model,openai_key=None,edit_distance=False)[2]],
-        "LT ZS Wiki":[evaluate_f1_score(val_pickle,test_pickle,lt_wiki_model,openai_key=None,edit_distance=False)[0]],
-        "LT ZS Wiki_threshold":[evaluate_f1_score(val_pickle,test_pickle,lt_wiki_model,openai_key=None,edit_distance=False)[2]],
-        "LT":[evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)[0]],
-        "LT_threshold":[evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)[2]],
-        "OpenAI":[evaluate_f1_score(val_pickle,test_pickle,open_ai_model,openai_key=myopenaikey,edit_distance=False)[0]],
-        "OpenAI_threshold":[evaluate_f1_score(val_pickle,test_pickle,open_ai_model,openai_key=myopenaikey,edit_distance=False)[2]]
-    })
+    # model_dir="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/historicjapanese/models/"
 
-    ##Save the test results in the model dir as well
-    save_dir=os.path.join(trained_lt_model,"test_results_allmethods.csv")
-    results_df_japanese.to_csv(save_dir)
-    
-    ###Get size of japanese data
-    print(get_size_of_japanese_data(val_pickle,test_pickle))
+    # model_supcon="lt-historicjapanesecompanies-comp-prod-ind_supcon_full"
+    # model_contrastive="lt-historicjapanesecompanies-comp-prod-ind_onlinecontrastive_full"
+    # myopenaikey=os.environ.get("OPENAI_API_KEY")
 
-    # ##Save full df from LT model
-    # test_f1 , time_elapsed, best_threshold, full_test_df = evaluate_f1_score(val_pickle,test_pickle,trained_lt_model,openai_key=None,edit_distance=False)
+    # val_pickle_supcon=os.path.join(model_dir,model_supcon,"val_data.pickle")    
+    # test_pickle_supcon=os.path.join(model_dir,model_supcon,"test_data.pickle")
+    # val_pickle_contrastive=os.path.join(model_dir,model_contrastive,"val_data.pickle")
+    # test_pickle_contrastive=os.path.join(model_dir,model_contrastive,"test_data.pickle")
+
     
-    # ##Save the df
-    # full_test_df.to_csv("full_test_df_tkfull.csv")
+    # sbert_model="oshizo/sbert-jsnli-luke-japanese-base-lite"
+    # lt_wiki_model=os.path.join(model_dir,"lt-wikidata-comp-prod-ind-ja")
+    # model_supcon=os.path.join(model_dir,model_supcon)
+    # model_contrastive=os.path.join(model_dir,model_contrastive)
+    # open_ai_model_small="text-embedding-3-small"
+    # open_ai_model_large="text-embedding-3-large"
+    # open_ai_model_ada="text-embedding-3-ada"
     
-    # results_df_japanese.to_csv("results_df_japanese.csv")
+    # ##Make a table of results - Edit distance, SBERT, LT ZS Wiki, LT, OpenAI
+    
+    # # evaluate_f1_score(val_pickle,test_pickle,model,openai_key=None,edit_distance=False)
+
+    #     # Define a function to evaluate once and return needed scores
+    # def get_scores(model, edit_distance, openai_key=None):
+    #     scores = evaluate_f1_score(val_pickle_supcon, test_pickle_supcon, model, openai_key, edit_distance)
+    #     return scores[0], scores[2]  # Return only the F1 score and threshold
+
+    # # Evaluate models
+    # edit_distance_score, edit_distance_threshold = get_scores(None, True)
+    # sbert_score, sbert_threshold = get_scores(sbert_model, False)
+    # lt_wiki_score, lt_wiki_threshold = get_scores(lt_wiki_model, False)
+    # model_supcon_score, model_supcon_threshold = get_scores(model_supcon, False)
+    # model_contrastive_score, model_contrastive_threshold = get_scores(model_contrastive, False)
+    # openai_small_score, openai_small_threshold = get_scores(open_ai_model_small, False, myopenaikey)
+    # openai_large_score, openai_large_threshold = get_scores(open_ai_model_large, False, myopenaikey)
+    # openai_ada_score, openai_ada_threshold = get_scores(open_ai_model_ada, False, myopenaikey)
+
+    # # Create the DataFrame
+    # results_df_japanese = pd.DataFrame({
+    #     "edit_distance": [edit_distance_score],
+    #     "edit_distance_threshold": [edit_distance_threshold],
+    #     "SBERT": [sbert_score],
+    #     "SBERT_threshold": [sbert_threshold],
+    #     "LT ZS Wiki": [lt_wiki_score],
+    #     "LT ZS Wiki_threshold": [lt_wiki_threshold],
+    #     "LT_supcon": [model_supcon_score],
+    #     "LT_supcon_threshold": [model_supcon_threshold],
+    #     "LT_contrastive": [model_contrastive_score],
+    #     "LT_contrastive_threshold": [model_contrastive_threshold],
+    #     "OpenAI": [openai_small_score],
+    #     "OpenAI_threshold": [openai_small_threshold],
+    #     "OpenAI_large": [openai_large_score],
+    #     "OpenAI_large_threshold": [openai_large_threshold],
+    #     "OpenAI_ada": [openai_ada_score],
+    #     "OpenAI_ada_threshold": [openai_ada_threshold]
+    # })
+
+
+    # ##Save the test results in the model dir as well
+    # save_dir=os.path.join("/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/historicjapanese","historic_jp_test_results_allmethods.csv")
+    # results_df_japanese.to_csv(save_dir)
+    
+    # ###Get size of japanese data
+    # print(get_size_of_japanese_data(val_pickle_supcon,test_pickle_supcon))
+    # print(get_size_of_japanese_data(val_pickle_contrastive,test_pickle_contrastive))
+
 
     #Let's run this for mexican data now
+    # myopenaikey=os.environ.get("OPENAI_API_KEY")
 
     # mexican_model_dict={
 
     #             ##Multilingual models for LT_UN
     #             "fine-fine-multi":{"SBERT":"sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-    #                          "LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/mexicandata/models/lt-mexicantrade4748",
-    #                            "LT_UN":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/un_data/models/linkage_un_data_multi_fine_fine"},
+    #                          "LT":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/historicmexican/models/lt-mexicantrade4748",
+    #                            "LT_UN":"/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/un_data/models/linkage_un_data_multi_fine_fine"},
 
     # }
 
-    # mexican_results=(make_mexican_table(mexican_model_dict,openai_key=myopenaikey))
-    # mexican_results.to_csv("results_df_mexican.csv")
+    # mexican_results=(make_mexican_table(mexican_model_dict,openai_key=myopenaikey,openai_model="text-embedding-3-small"))
+    # mexican_results.to_csv("/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/historicmexican/results_df_mexican.csv")
 
 
 

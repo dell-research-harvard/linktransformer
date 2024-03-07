@@ -7,7 +7,7 @@ import linktransformer as lt
 ###Run as script
 if __name__ == "__main__":
     ###Load the data
-    path_to_japanese_data = "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/historicjapanese/ja_corrected_format.csv"
+    path_to_japanese_data = "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/historicjapanese/ja_corrected_format.csv"
 
     ##open the data
     japanese_data=pd.read_csv(path_to_japanese_data, sep=',', encoding='utf-8', dtype=str)
@@ -24,7 +24,7 @@ if __name__ == "__main__":
         left_id_name=['id'],
         right_id_name=['id'],
         log_wandb=True,
-        training_args={"num_epochs": 100,
+        training_args={"num_epochs": 70,
                        "test_at_end": True,
                        "save_val_test_pickles": True,
                        "model_save_name": "lt-wikidata-comp-prod-ind-ja",

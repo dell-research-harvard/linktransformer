@@ -147,7 +147,7 @@ def test_knn():
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
     # Test your function here
-    df_lm_matched = lt.merge_knn(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+    df_lm_matched = lt.merge_knn(df2, df1, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
                                  k=1)
     print(df_lm_matched)
     assert isinstance(df_lm_matched, pd.DataFrame)
@@ -156,7 +156,7 @@ def test_knn():
     df_lm_matched2 = lt.merge(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None)
 
     ###Check if k=2 is different
-    df_lm_matched3_2nn = lt.merge_knn(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+    df_lm_matched3_2nn = lt.merge_knn(df2, df1, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
                                     k=2)
     
     print(df_lm_matched3_2nn)
@@ -173,16 +173,16 @@ def test_knn_suffixes():
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
     # Test your function here
-    df_lm_matched = lt.merge_knn(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+    df_lm_matched = lt.merge_knn(df2, df1, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
                                  k=1,suffixes=("_1","_2"))
     print(df_lm_matched)
     assert isinstance(df_lm_matched, pd.DataFrame)
 
     ###Check if identical to merge
-    df_lm_matched2 = lt.merge(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,suffixes=("_1","_2"))
+    df_lm_matched2 = lt.merge(df2, df1, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,suffixes=("_1","_2"))
 
     ###Check if k=2 is different
-    df_lm_matched3_2nn = lt.merge_knn(df2, df1, merge_type='1:m', on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+    df_lm_matched3_2nn = lt.merge_knn(df2, df1, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
                                     k=2,suffixes=("_1","_2"))
     
     print(df_lm_matched3_2nn)
@@ -197,6 +197,17 @@ def test_knn_suffixes():
 
 
     assert df_lm_matched.equals(df_lm_matched2)
+
+def test_knn_range_search():
+    df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
+    df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
+    df_lm_matched_range_search = lt.merge_knn(df2, df1, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+                                    drop_sim_threshold=0.5,suffixes=("_1","_2"),use_range_search=True)
+    df_lm_matched_2nn = lt.merge_knn(df2, df1, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2", left_on=None, right_on=None,
+                                    k=2,suffixes=("_1","_2"))
+    
+    print(df_lm_matched_range_search.shape)
+    print(df_lm_matched_2nn.shape)
 
 def test_clf_single_col_bin():
     df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
@@ -298,4 +309,4 @@ if __name__ == "__main__":
     # # test classification
     # test_clf_single_col_bin()
     # test_clf_multi_col_bin()
-    test_knn_suffixes()
+    test_knn_range_search()

@@ -34,10 +34,10 @@ if __name__ == "__main__":
         left_id_name=['tariffcode47'],
         right_id_name=['tariffcode48'],
         log_wandb=False,
-        training_args={"num_epochs": 100,
+        training_args={"num_epochs": 200,
                        "test_at_end": True,
                        "save_val_test_pickles": True,
-                       "model_save_name": "lt-mexicantrade4748_test",
+                       "model_save_name": "lt-mexicantrade4748",
                        "opt_model_description": None,
                        "opt_model_lang":None,
                        "val_perc":0.2,
@@ -51,17 +51,17 @@ if __name__ == "__main__":
 
 
 
-    # # ###Save the model to hub
-    # best_model=lt.load_model(saved_model_path)
+    # ###Save the model to hub
+    best_model=lt.load_model(saved_model_path)
 
-    # best_model.save_to_hub(repo_name = "lt-mexicantrade4748", ##Write model name here
-    #         organization= "dell-research-harvard",
-    #         private = None,
-    #         commit_message = "Add new LinkTransformer model.",
-    #         local_model_path = None,
-    #         exist_ok = True,
-    #         replace_model_card = True,
-    #         )
+    best_model.save_to_hub(repo_name = "lt-mexicantrade4748", ##Write model name here
+            organization= "dell-research-harvard",
+            private = None,
+            commit_message = "Add new LinkTransformer model.",
+            local_model_path = None,
+            exist_ok = True,
+            replace_model_card = True,
+            )
 
 
     

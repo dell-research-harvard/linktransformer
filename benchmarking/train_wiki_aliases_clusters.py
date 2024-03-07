@@ -2,7 +2,7 @@ import json
 import pandas as pd
 import itertools
 import linktransformer as lt
-
+import os
 
 
 def read_json(path):
@@ -27,10 +27,10 @@ def train_aliases(input_tuple):
   lang=save_name.split("_")[1]
   repo_name=f"lt-wikidata-comp-{lang}"
   df = preprocess_wiki_aliases(path)
+  lang_string= lang if lang != "multi" else ['de',"en", "zh", "ja","hi", "ar", "bn", "pt", "ru", "es", "fr","ko"]
 
 
   ##Save the df as csv
-  df.to_csv(save_name+"_train.csv")
 
   best_model_path = lt.train_model(
         model_path=model,
@@ -46,12 +46,14 @@ def train_aliases(input_tuple):
                               }, 
                               "opt_model_description": f"This model was trained on a dataset consisting of company aliases from wiki data using the LinkTransformer framework. \n \
                               It was trained for {n} epochs using other defaults that can be found in the repo's LinkTransformer config file - LT_training_config.json \n  ",
-                              "opt_model_lang":lang,
+                              "opt_model_lang":lang_string,
                              },
             log_wandb=True
 
     )
 
+  df.to_csv(os.path.join(best_model_path,save_name+"_train.csv"))
+  print("Saved model and training data at ", best_model_path)
 
 
 
@@ -70,13 +72,16 @@ def train_aliases(input_tuple):
 
 ###Run as script
 if __name__ == "__main__":
+  
   train_inputs = [
-        ("es_aliases.json","hiiamsid/sentence_similarity_spanish_es",100,"linkage_es_aliases"),
-        ("fr_aliases.json", "dangvantuan/sentence-camembert-large",100,"linkage_fr_aliases"),
-      ("ja_aliases.json", "oshizo/sbert-jsnli-luke-japanese-base-lite", 100,"linkage_ja_aliases"),
-      ("zh_aliases.json", "DMetaSoul/sbert-chinese-qmc-domain-v1", 100,"linkage_zh_aliases"),
-      ("de_aliases.json", "Sahajtomar/German-semantic", 100,"linkage_de_aliases"),
-              ("en_aliases.json", "multi-qa-mpnet-base-dot-v1",100,"linkage_en_aliases" )
+      #   ("es_aliases.json","hiiamsid/sentence_similarity_spanish_es",100,"linkage_es_aliases"),
+      #   ("fr_aliases.json", "dangvantuan/sentence-camembert-large",100,"linkage_fr_aliases"),
+      # ("ja_aliases.json", "oshizo/sbert-jsnli-luke-japanese-base-lite", 100,"linkage_ja_aliases"),
+      # ("zh_aliases.json", "DMetaSoul/sbert-chinese-qmc-domain-v1", 100,"linkage_zh_aliases"),
+      # ("de_aliases.json", "Sahajtomar/German-semantic", 100,"linkage_de_aliases"),
+      #         ("en_aliases.json", "multi-qa-mpnet-base-dot-v1",100,"linkage_en_aliases" ),
+      ("multi_aliases.json","sentence-transformers/paraphrase-multilingual-mpnet-base-v2",70,"linkage_multi_aliases")
 
       ]
   all_model_paths = [train_aliases(t) for t in train_inputs]
+

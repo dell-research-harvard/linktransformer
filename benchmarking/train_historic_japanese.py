@@ -48,7 +48,7 @@ if __name__ == "__main__":
         left_id_name=['source'],
         right_id_name=['tk_path_value'],
         log_wandb=True,
-        training_args={"num_epochs": 50,
+        training_args={"num_epochs": 200,
                         "warm_up_perc": 1,
                         "learning_rate": 2e-5,
                        "test_at_end": True,
