@@ -21,7 +21,9 @@ More tutorials are coming soon!
 
 ## News
 
-- Online contrastive loss is now available for linkage model training - especially useful for training with paired data containing binary labels. Try it out! Tutorial will be out soon.
+- If you are just looking to demo the package on your data, try out this [HuggingFace Space](https://huggingface.co/spaces/96abhishekarora/linktransformer_merge) to merge two data frames!!
+- All linkage models have been updated! (On the safe paths). Larger training datasets for Company models, better performance across the board! Check them out. 
+- Online contrastive loss is now available for linkage model training - especially useful for training with paired data containing binary labels. Try it out! The tutorial will be out soon.
 
 ## Features
 
@@ -30,7 +32,7 @@ More tutorials are coming soon!
 - Efficient 1:1, 1:m, and m:1 merges
 - Clustering methods for grouping similar data
 - Support for various NLP models available on HuggingFace
-- Classification - prediction and training in one line of code!
+- Classification - prediction, and training in one line of code!
 
 ## Coming soon
 - FAISS GPU, cuDF, cuML and cuGraph integration
