@@ -22,7 +22,7 @@ More tutorials are coming soon!
 ## News
 
 - If you are just looking to demo the package on your data, try out this [HuggingFace Space](https://huggingface.co/spaces/96abhishekarora/linktransformer_merge) to merge two data frames!!
-- All linkage models have been updated! (On the safe paths). Larger training datasets for Company models, better performance across the board! Check them out. 
+- All linkage models have been updated! (On the same paths). Larger training datasets for Company models, better performance across the board! Check them out. 
 - Online contrastive loss is now available for linkage model training - especially useful for training with paired data containing binary labels. Try it out! The tutorial will be out soon.
 
 ## Features
@@ -36,7 +36,6 @@ More tutorials are coming soon!
 
 ## Coming soon
 - FAISS GPU, cuDF, cuML and cuGraph integration
-- Convenience wrapper to use our models (trained on UN products and Wikidata)
 - Integration of other modalities in this framework (Vision/Multimodal models)
 - Hard negative mining for efficient training
 
