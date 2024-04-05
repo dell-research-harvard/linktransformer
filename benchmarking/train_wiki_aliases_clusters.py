@@ -38,6 +38,7 @@ def train_aliases(input_tuple):
         clus_id_col_name=["company_id"],
         clus_text_col_names=["company_name"],
         training_args = {"num_epochs":n,"model_save_name":save_name,"save_val_test_pickles":True,
+                         "train_batch_size": 256, 
                                "wandb_names": {
                                 "project": "linkage",
                                 "id": "econabhishek",
@@ -80,7 +81,8 @@ if __name__ == "__main__":
       # ("zh_aliases.json", "DMetaSoul/sbert-chinese-qmc-domain-v1", 100,"linkage_zh_aliases"),
       # ("de_aliases.json", "Sahajtomar/German-semantic", 100,"linkage_de_aliases"),
       #         ("en_aliases.json", "multi-qa-mpnet-base-dot-v1",100,"linkage_en_aliases" ),
-      ("multi_aliases.json","sentence-transformers/paraphrase-multilingual-mpnet-base-v2",70,"linkage_multi_aliases")
+      # ("multi_aliases.json","sentence-transformers/paraphrase-multilingual-mpnet-base-v2",70,"linkage_multi_aliases")
+      ("en_aliases.json", "BAAI/bge-large-en-v1.5",30,"linkage_en_aliases_large"),
 
       ]
   all_model_paths = [train_aliases(t) for t in train_inputs]

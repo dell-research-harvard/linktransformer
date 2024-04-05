@@ -85,7 +85,7 @@ if __name__ == "__main__":
         un_data_subset=un_data_subset[["CPC21code","text",f"isic_{lang}","isic_code"]].drop_duplicates()
 
         un_data_subset["isic_code_lang"]=un_data_subset[f"isic_code"].astype(str)+"_"+lang
-        un_data_subset["isic_text"]=un_data_subset[f"isic_{lang}"].astype(str)+"_"+lang
+        un_data_subset["isic_text"]=un_data_subset[f"isic_{lang}"].astype(str)
 
         ##Drop isic_lang
         un_data_subset.drop(columns=[f"isic_{lang}"],inplace=True)
@@ -95,6 +95,11 @@ if __name__ == "__main__":
 
     ###now, stack them together  (by row)
     un_data_lang=pd.concat(un_data_lang_subsets,axis=0)
+    
+    ##Now drop duplicates by text
+    un_data_lang=un_data_lang.drop_duplicates(subset=["text"])
+    
+    un_data_lang.to_csv("un_data_lang.csv",index=False)
 
     ##Now, we want to train a model
     
@@ -108,10 +113,10 @@ if __name__ == "__main__":
     
     best_model_path = lt.train_model(
             model_path=model_path,
-            data=un_data_subset,
+            data=un_data_lang,
             left_col_names=["text"],
             right_col_names=['isic_text'],
-            left_id_name=['isic_code_lang'],
+            right_id_name=['isic_code'],
             training_args = {"num_epochs":num_epochs,"model_save_name":save_name,"save_val_test_pickles":True,
                                 "wandb_names": {
                                     "project": "linkage",
@@ -135,7 +140,7 @@ if __name__ == "__main__":
     best_model.save_to_hub(repo_name = repo_name, ##Write model name here
                     organization= "dell-research-harvard",
                     private = None,
-                    commit_message = "Modified validation and training for linktransformer model",
+                    commit_message = "Modified validation and training for linktransformer model; fixed errors in un models",
                     local_model_path = None,
                     exist_ok = True,
                     replace_model_card = True,
@@ -155,7 +160,7 @@ if __name__ == "__main__":
         un_data_subset=un_data_subset[["CPC21code","text",f"{lang}_cpc_11","digit3_parentcpc11"]].drop_duplicates()
 
         un_data_subset["digit3_parentcpc11code_lang"]=un_data_subset[f"digit3_parentcpc11"].astype(str)+"_"+lang
-        un_data_subset["digit3_parentcpc11_text"]=un_data_subset[f"{lang}_cpc_11"].astype(str)+"_"+lang
+        un_data_subset["digit3_parentcpc11_text"]=un_data_subset[f"{lang}_cpc_11"].astype(str)
 
         ##Drop isic_lang
         un_data_subset.drop(columns=[f"{lang}_cpc_11"],inplace=True)
@@ -178,10 +183,10 @@ if __name__ == "__main__":
     
     best_model_path = lt.train_model(
             model_path=model_path,
-            data=un_data_subset,
+            data=un_data_lang,
             left_col_names=["text"],
             right_col_names=['digit3_parentcpc11_text'],
-            left_id_name=['digit3_parentcpc11code_lang'],
+            right_id_name=['digit3_parentcpc11'],
             training_args = {"num_epochs":num_epochs,"model_save_name":save_name,"save_val_test_pickles":True,
                                 "wandb_names": {
                                     "project": "linkage",
@@ -205,7 +210,7 @@ if __name__ == "__main__":
     best_model.save_to_hub(repo_name = repo_name, ##Write model name here
                     organization= "dell-research-harvard",
                     private = None,
-                    commit_message = "Modified validation and training for linktransformer model",
+                    commit_message = "Modified validation and training for linktransformer model; fixed errors in un models",
                     local_model_path = None,
                     exist_ok = True,
                     replace_model_card = True,

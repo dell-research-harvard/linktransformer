@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linktransformer"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
         "scikit-learn",
         "faiss-cpu",
@@ -36,7 +36,7 @@ classifiers = [
 license = {file = "LICENSE"}
 
 [project.urls]
-Homepage = "https://github.com/dell-research-harvard/linktransformer"
+Homepage = "https://linktransformer.github.io/"
 
 
 [tool.pytest.ini_options]

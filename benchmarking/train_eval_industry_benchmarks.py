@@ -45,7 +45,7 @@ def evaluate_deep_matcher_data(data_dir,model,left_on,right_on,note):
 
     # Hyperopt optimization to find the best threshold for F1
     space = hp.uniform('threshold', 0, 1)
-    best = fmin(fn=calculate_f1, space=space, algo=tpe.suggest, max_evals=10000, verbose=False)
+    best = fmin(fn=calculate_f1, space=space, algo=tpe.suggest, max_evals=1000, verbose=False)
     best_threshold = best['threshold']
 
     ###Using the best threshold, calculate F1 on the test set
@@ -220,12 +220,14 @@ def run_train_eval_retrieval_dm_datasets(deep_matcher_datasets,pretrained_model)
             right_col_names= on_keys_right,
             left_id_name= ['id_dm_x'],
             right_id_name= ['id_dm_y'],
-            training_args = {"num_epochs":100,"test_at_end":False,"model_save_name":f"linkage_model_{dataset}_{deep_matcher_datasets[dataset]['base_model']}",
+            training_args = {"num_epochs":100,"test_at_end":True,"model_save_name":f"linkage_model_retrieval_supcon_{dataset}",
                              "wandb_names":{
                                      "id": "econabhishek",
-                                    "run": f"linkage_model_{dataset}_{deep_matcher_datasets[dataset]['base_model']}",
+                                    "run": f"linkage_model_retrieval_supcon_{dataset}_{deep_matcher_datasets[dataset]['base_model']}",
                                     "project": "benchmark_data_set_ret",
                                     "entity": "econabhishek" },
+                             "learning_rate": 2e-5,
+                             "warmup_perc": 1,
                             "large_val":True
             },
             log_wandb=True
@@ -236,27 +238,28 @@ def run_train_eval_retrieval_dm_datasets(deep_matcher_datasets,pretrained_model)
         deep_matcher_datasets[dataset]["test_f1"]=test_f1
         deep_matcher_datasets[dataset]["time_taken"]=time_taken
         deep_matcher_datasets[dataset]["best_threshold"]=best_threshold
-        merged_df_test.to_csv(f"{dataset}/trained_deepmatcher_results.csv",index=False)
+        deep_matcher_datasets[dataset]["model_path"]=saved_model_path
+        merged_df_test.to_csv(f"{dataset}/trained_deepmatcher_results_retreival_supcon.csv",index=False)
 
     ##Save the dict
-    with open(f"retrieval_benchmark_results.json","w") as f:
+    with open(f"retrieval_benchmark_results_retrieval_supcon.json","w") as f:
         json.dump(deep_matcher_datasets,f)
 
 
-def run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_model):
+def run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_model,loss_type="supcon",learning_rate=2e-5):
+    
+    
     ##Add pretrained model to the dict to all datasets
     for dataset in deep_matcher_datasets:
         deep_matcher_datasets[dataset]["base_model"]=pretrained_model
 
     ###Iterate through all the datasets and get the match keys and add them to the dict as "on"
 
-    ##Add pretrained model to the dict to all datasets
     for dataset in deep_matcher_datasets:
-        deep_matcher_datasets[dataset]["base_model"]=pretrained_model
-    ###Iterate through all the datasets and get the match keys and add them to the dict as "on"
-
-    for dataset in deep_matcher_datasets:
-        print("Preparing to train on dataset: ",dataset)
+        dataset_name=dataset.split("/")[-2:]
+        dataset_name="_".join(dataset_name)
+        dataset_name=dataset_name+pretrained_model+loss_type
+        print("Preparing to train on dataset: ",dataset_name)
         ###Load the data
         tableA = pd.read_csv(os.path.join(dataset, "tableA.csv"))
         tableB = pd.read_csv(os.path.join(dataset, "tableB.csv"))
@@ -271,7 +274,7 @@ def run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_mo
 
 
     ##Check zero shot performance on all the datasets
-    for dataset in deep_matcher_datasets.keys():
+    for dataset in list(deep_matcher_datasets.keys()):
         on=deep_matcher_datasets[dataset]["on"]
         on_keys_left = [key+"_x" for key in on]
         on_keys_right = [key+"_y" for key in on]
@@ -280,11 +283,11 @@ def run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_mo
         deep_matcher_datasets[dataset]["zs_test_f1"]=test_f1
         deep_matcher_datasets[dataset]["zs_time_taken"]=time_taken
         deep_matcher_datasets[dataset]["zs_best_threshold"]=best_threshold
-        merged_df_test.to_csv(f"{dataset}/zs_deepmatcher_results.csv",index=False)
+        merged_df_test.to_csv(f"{dataset}/zs_deepmatcher_results_{os.path.basename(pretrained_model)}_{str(learning_rate)}.csv",index=False)
     
 
     ###Now, iterate through all the datasets and train a model on them
-    for dataset in deep_matcher_datasets.keys():
+    for dataset in list(deep_matcher_datasets.keys()):
         train_data,val_data, test_data=prep_train_lt_model_on_deepmatcher_data_paired(dataset,combine_train_val=False)
         train_data.to_csv(f"{dataset}/train_data_processed.csv",index=False)
         val_data.to_csv(f"{dataset}/val_data_processed.csv",index=False)
@@ -309,14 +312,15 @@ def run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_mo
             left_id_name= ['id_dm_x'],
             right_id_name= ['id_dm_y'],
             label_col_name="label",
-            training_args = {"num_epochs":150,"test_at_end":False,
-                             "model_save_name":f"linkage_model_{dataset}_{deep_matcher_datasets[dataset]['base_model']}",
+            training_args = {"num_epochs":75,"test_at_end":True,
+                             "model_save_name":f"linkage_model_{loss_type}_paired_{dataset_name}_{str(learning_rate)}",
                              "batch_size": 128,
-                             "learning_rate": 2e-6,
+                             "learning_rate": learning_rate,
                              "warmup_perc": 1,
+                             "eval_steps_perc":0.5,
                              "wandb_names":{
                                      "id": "econabhishek",
-                                    "run": f"linkage_model_{dataset}_{deep_matcher_datasets[dataset]['base_model']}",
+                                    "run": f"linkage_model_{dataset_name}_{loss_type}_paired_{str(learning_rate)}",
                                     "project": "benchmark_data_set_class",
                                     "entity": "econabhishek" },
                             "large_val":False
@@ -329,10 +333,13 @@ def run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_mo
         deep_matcher_datasets[dataset]["test_f1"]=test_f1
         deep_matcher_datasets[dataset]["time_taken"]=time_taken
         deep_matcher_datasets[dataset]["best_threshold"]=best_threshold
-        merged_df_test.to_csv(f"{dataset}/trained_deepmatcher_results.csv",index=False)
+        deep_matcher_datasets[dataset]["model_path"]=saved_model_path
+        merged_df_test.to_csv(f"{dataset}/trained_deepmatcher_results_paired_{loss_type}_{os.path.basename(pretrained_model)}_{str(learning_rate)}.csv",index=False)
+
+
 
     ##Save the dict
-    with open(f"class_benchmark_results.json","w") as f:
+    with open(f"class_benchmark_results_{loss_type}_{os.path.basename(pretrained_model)}_{str(learning_rate)}.json","w") as f:
         json.dump(deep_matcher_datasets,f)
 
 
@@ -342,27 +349,32 @@ def run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_mo
 
 
 if __name__ == "__main__":
+    
+    data_dir="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data"
 
     ###Make a dict of datasets and their match keys
     deep_matcher_datasets={
-        # "Structured/Amazon-Google":{},
-        # "Structured/Beer":{},
-        # "Structured/DBLP-ACM":{},
-        # "Structured/DBLP-GoogleScholar":{},
-        # "Structured/iTunes-Amazon":{},
-        # "Structured/Walmart-Amazon":{},
-        # "Structured/Fodors-Zagats":{},
-        "Textual/Company":{}, #This follows a different format in file naming
-        # "Dirty/DBLP-ACM" : {},
-        # "Dirty/DBLP-GoogleScholar" : {},
-        # "Dirty/iTunes-Amazon" : {},
-        # "Dirty/Walmart-Amazon" : {},
-        # "Textual/Abt-Buy":{}
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Structured/Amazon-Google":{},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Structured/Beer":{},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Structured/DBLP-ACM":{},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Structured/DBLP-GoogleScholar":{},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Structured/iTunes-Amazon":{},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Structured/Walmart-Amazon":{},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Structured/Fodors-Zagats":{},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Dirty/DBLP-ACM" : {},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Dirty/DBLP-GoogleScholar" : {},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Dirty/iTunes-Amazon" : {},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Dirty/Walmart-Amazon" : {},
+        # "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Textual/Abt-Buy":{},
+        "/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/data_outside_package/deepmatcher_data/Textual/Company":{} ## To do Follows a diff naming convention
 
         }
 
-    pretrained_model="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/deepmatcher_data/models/linkage_model_Textual/Company_sentence-transformers/multi-qa-mpnet-base-dot-v1"
-
+    pretrained_model= 'multi-qa-mpnet-base-dot-v1' #"BAAI/bge-large-en-v1.5" #"BAAI/bge-large-en-v1.5"  #"sentence-transformers/all-mpnet-base-v2" #BAAI/bge-large-zh-v1.5 #multi-qa-mpnet-base-dot-v1
     # run_train_eval_retrieval_dm_datasets(deep_matcher_datasets,pretrained_model)
-    # run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_model)
-    evaluate_deep_matcher_data("Textual/Company",model=pretrained_model,left_on=["content_x"],right_on=["content_y"],note="zs")
+    # run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_model,loss_type="supcon")
+
+
+    run_train_eval_classfication_dm_datasets(deep_matcher_datasets,pretrained_model,loss_type="supcon",learning_rate=2e-5)
+
+    # evaluate_deep_matcher_data("Textual/Company",model=pretrained_model,left_on=["content_x"],right_on=["content_y"],note="zs")

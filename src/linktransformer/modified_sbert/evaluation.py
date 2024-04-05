@@ -288,7 +288,7 @@ class InformationRetrievalEvaluator_wandb(evaluation.InformationRetrievalEvaluat
         return scores
 
 
-    def compute_metrics(self, queries_result_list: List[object],save_best_matches=True):
+    def compute_metrics(self, queries_result_list: List[object],save_best_matches=False):
         # Init score computation values
         num_hits_at_k = {k: 0 for k in self.accuracy_at_k}
         precisions_at_k = {k: [] for k in self.precision_recall_at_k}
@@ -411,7 +411,8 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
         self.sentences2 = sentences2
         self.labels = labels
         self.wandb_names = wandb_names
-
+        print(self.sentences1[0])
+        print(self.sentences2[0])
         assert len(self.sentences1) == len(self.sentences2)
         assert len(self.sentences1) == len(self.labels)
         for label in labels:

@@ -21,6 +21,7 @@ More tutorials are coming soon!
 
 ## News
 
+- New (and retrained) models are up on the organisation's (dell-research-harvard) huggingface (with the same paths). Be sure to check them out. Most get a bump in the training data size, better hyperparams (and loss function choices). Training data for each  model is also included within the repo. 
 - Online contrastive loss is now available for linkage model training - especially useful for training with paired data containing binary labels. Try it out! Tutorial will be out soon.
 
 ## Features

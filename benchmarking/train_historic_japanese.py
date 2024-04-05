@@ -70,7 +70,7 @@ if __name__ == "__main__":
     # ###Save the model to hub
     best_model=lt.load_model(saved_model_path)
 
-    best_model.save_to_hub(repo_name = "lt-wikidata-comp-prod-ind-ja-supcon", ##Write model name here
+    best_model.save_to_hub(repo_name = "lt-historicjapanesecompanies", ##Write model name here
             organization= "dell-research-harvard",
             private = None,
             commit_message = "Add new LinkTransformer model.",

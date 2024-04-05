@@ -372,6 +372,7 @@ def prep_paired_label_data(
             if test_at_end:
                 print("Splitting val into test and val (equally) ")
                 val_data, test_data= train_test_split(val_data, test_size=0.5, random_state=42)
+
         else:
             train_data,left_id_rename, right_id_rename = check_and_prep_data(train_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
             val_data,left_id_rename, right_id_rename = check_and_prep_data(val_data,model, left_col_names, right_col_names, left_id_name, right_id_name, label_col_name)
@@ -558,6 +559,7 @@ def prep_linkage_data(
                 train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
                 val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
                 test_data = data[data["cluster_assignment"].isin(test_cluster_assignment)]
+                
 
             else:
                 train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
@@ -568,7 +570,10 @@ def prep_linkage_data(
             
             if test_data is not None:
                 test_data,left_id_rename, right_id_rename = check_and_prep_data(test_data, model, left_col_names, right_col_names, left_id_name, right_id_name, None)
-            
+    
+    ###get value counts of cluster assignment
+
+    
     print("Train data shape: ", train_data.shape)
     print("Val data shape: ", val_data.shape)
     print("Test data shape: ", test_data.shape)

@@ -22,13 +22,12 @@ from transformers import TrainingArguments, Trainer
 def merge(
     df1: DataFrame,
     df2: DataFrame,
-    merge_type: str = '1:1',
+    merge_type: str = None,
     on: Optional[Union[str, List[str]]] = None,
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
     suffixes: Tuple[str, str] = ("_x", "_y"),
-    use_gpu: bool = False,
     batch_size: int = 128,
     openai_key: Optional[str] = None
 ) -> DataFrame:
@@ -38,12 +37,13 @@ def merge(
     :param df1 (DataFrame): First dataframe (left).
     :param df2 (DataFrame): Second dataframe (right).
     :param merge_type (str): Type of merge to perform (1:m or m:1 or 1:1).
+        .. deprecated:: 0.1.14
+        No longer useful as it only validates whether the join columns are unique; it will be removed in the future.
     :param model (str): Language model to use.
-    :param on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+    :param on (Union[str, List[str]], optional): Column(s) to join on in df1 and df2. Defaults to None.
     :param left_on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
     :param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
     :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
-    :param use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
     :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
     :return: DataFrame: The merged dataframe.
@@ -60,9 +60,12 @@ def merge(
 
     on = None
 
-    ### If how is 1:m, then we want to merge df1 to df2
+    ##Deprication warning for merge_type
+    if merge_type is not None:
+        warnings.warn("merge_type is deprecated. It will be removed in the future as it only validates whether the join columns are unique", DeprecationWarning)
+    
     ### Check if how is valid
-    if merge_type not in ["1:m", "m:1", "1:1"]:
+    if merge_type not in ["1:m", "m:1", "1:1", None]:
         raise ValueError(f"Invalid merge type: {merge_type}")
 
     if merge_type == "1:m":
@@ -124,26 +127,15 @@ def merge(
     embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
     embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
     ## Create index
-    if use_gpu:
-        raise ValueError(f"GPU not supported yet")
-    else:
-        index = faiss.IndexFlatIP(embeddings1.shape[1])
+    index = faiss.IndexFlatIP(embeddings1.shape[1])
 
     ## Add to index depending on merge type
-    if merge_type == "1:m":
-        index.add(embeddings2)
-    elif merge_type == "m:1":
-        index.add(embeddings2)
-    elif merge_type == "1:1":
-        index.add(embeddings2)
+    index.add(embeddings2)
+
 
     ## Search index
-    if merge_type == "1:m":
-        D, I = index.search(embeddings1, 1)
-    elif merge_type == "m:1":
-        D, I = index.search(embeddings1, 1)
-    elif merge_type == "1:1":
-        D, I = index.search(embeddings1, 1)
+    D, I = index.search(embeddings1, 1)
+  
 
     ## Check nearest neighbor of the first text in df1 as a test
     df1 = df1.reset_index(drop=True)
@@ -163,14 +155,13 @@ def merge(
 def merge_blocking(
     df1: DataFrame,
     df2: DataFrame,
-    merge_type: str = '1:1',
+    merge_type: str = None,
     on: Optional[Union[str, List[str]]] = None,
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
     blocking_vars: Optional[List[str]] = None,
     suffixes: Tuple[str, str] = ("_x", "_y"),
-    use_gpu: bool = False,
     batch_size: int = 128,
     openai_key: Optional[str] = None
 ) -> DataFrame:
@@ -180,13 +171,14 @@ def merge_blocking(
     :param df1 (DataFrame): First dataframe (left).
     :param df2 (DataFrame): Second dataframe (right).
     :param merge_type (str): Type of merge to perform (1:m or m:1 or 1:1).
+        .. deprecated:: 0.1.14
+        No longer useful as it only validates whether the join columns are unique; it will be removed in the future.
     :param model (str): Language model to use.
-    :param on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
+    :param on (Union[str, List[str]], optional): Column(s) to join on in df1 and df2. Defaults to None.
     :param left_on (Union[str, List[str]], optional): Column(s) to join on in df1. Defaults to None.
     :param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
     :param blocking_vars (List[str], optional): Columns to use for blocking. Defaults to None.
     :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
-    :param use_gpu (bool): Whether to use GPU. Not supported yet. Defaults to False.
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
     :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
     :return: DataFrame: The merged dataframe.
@@ -196,7 +188,7 @@ def merge_blocking(
     if blocking_vars is None:
         print("No blocking vars specified, matching between all rows")
         df_lm_matched = merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
-                                    right_on=right_on, suffixes=suffixes, use_gpu=use_gpu, batch_size=batch_size,
+                                    right_on=right_on, suffixes=suffixes, batch_size=batch_size,
                                      openai_key=openai_key)
         return df_lm_matched
     else:
@@ -243,7 +235,7 @@ def merge_blocking(
             df2_block = df2_blocks.get_group(block_1)
             ## Merge the blocks
             df_block_matched = merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
-                                           left_on=left_on, right_on=right_on, suffixes=suffixes, use_gpu=use_gpu,
+                                           left_on=left_on, right_on=right_on, suffixes=suffixes,
                                            batch_size=batch_size, openai_key=openai_key)
             ## Add to merged dfs
             merged_dfs.append(df_block_matched)
@@ -296,7 +288,7 @@ def aggregate_rows(
 
     ## Just use the merge function with merge type 1:m
     df_lm_matched = merge(df, ref_df, merge_type="1:1", on=None, model=model, left_on=left_on,
-                                right_on=right_on, suffixes=("_x", "_y"), use_gpu=False, batch_size=128,
+                                right_on=right_on, suffixes=("_x", "_y"), batch_size=128,
                                  openai_key=openai_key)
 
     return df_lm_matched
@@ -376,7 +368,7 @@ def cluster_rows(
 
     :param df (DataFrame): Dataframe to deduplicate.
     :param model (str): Language model to use.
-    :param on (Union[str, List[str]]): Column(s) to deduplicate on.
+    :param on (Union[str, List[str]]): Column(s) to cluster on.
     :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
     :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
     :param openai_key (str): OpenAI API key.
@@ -548,17 +540,15 @@ def all_pair_combos_evaluate(df: DataFrame,
 def merge_knn(
     df1: DataFrame,
     df2: DataFrame,
-    merge_type: str = '1:1',
     on: Optional[Union[str, List[str]]] = None,
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Optional[Union[str, List[str]]] = None,
     right_on: Optional[Union[str, List[str]]] = None,
     k: int = 1,
     suffixes: Tuple[str, str] = ("_x", "_y"),
-    use_gpu: bool = False,
     batch_size: int = 128,
     openai_key: Optional[str] = None,
-    drop_sim_threshold: float = None
+    drop_sim_threshold: float = None,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings. This function would support k nearest neighbors matching for each row in df1.
@@ -571,9 +561,9 @@ def merge_knn(
     :param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
     :param k (int): Number of nearest neighbors to match for each row in df1. Defaults to 1.
     :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
-    :param use_gpu (bool): Whether to use GPU for storing embeddings and FAISS search. Defaults to False.
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
     :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
+    :param drop_sim_threshold (float, optional): Drop rows with similarity below this threshold. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
 
@@ -590,26 +580,6 @@ def merge_knn(
 
     on = None
 
-    ### If how is 1:m, then we want to merge df1 to df2
-    ### Check if how is valid
-    if merge_type not in ["1:m", "m:1", "1:1"]:
-        raise ValueError(f"Invalid merge type: {merge_type}")
-
-    if merge_type == "1:m":
-        if df1[left_on].duplicated().any():
-           print("Warning: Keys in df1 are not unique")
-
-    if merge_type == "m:1":
-        ## Check if keys in df2 are unique
-        if df2[right_on].duplicated().any():
-            print("Warning: Keys in df2 are not unique")
-    if merge_type == "1:1":
-        ## Check if keys in df1 are unique
-        if df1[left_on].duplicated().any():
-           print("Warning: Keys in df1 are not unique")
-        ## Check if keys in df2 are unique
-        if df2[right_on].duplicated().any():
-           print("Warning: Keys in df1 are not unique")
 
     df1 = df1.copy()
     df2 = df2.copy()
@@ -638,58 +608,37 @@ def merge_knn(
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, return_numpy= not use_gpu)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, return_numpy= True)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key,return_numpy= not use_gpu)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key,return_numpy= True)
 
 
-    if not use_gpu:
-        ### Expand dim if embeddings are 1d (numpy)
-        if len(embeddings1.shape) == 1:
-            embeddings1 = np.expand_dims(embeddings1, axis=0)
-        if len(embeddings2.shape) == 1:
-            embeddings2 = np.expand_dims(embeddings2, axis=0)
-    else:
-        raise ValueError(f"GPU not supported yet")
+    ### Expand dim if embeddings are 1d (numpy)
+    if len(embeddings1.shape) == 1:
+        embeddings1 = np.expand_dims(embeddings1, axis=0)
+    if len(embeddings2.shape) == 1:
+        embeddings2 = np.expand_dims(embeddings2, axis=0)
 
-            
+        
 
-    if not use_gpu:
-        ## Normalize embedding tensors using numpy
-        embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
-        embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
-    else:
-        ## Normalize embedding tensors using torch
-        embeddings1 = embeddings1 / torch.linalg.norm(embeddings1, axis=1, keepdims=True)
-        embeddings2 = embeddings2 / torch.linalg.norm(embeddings2, axis=1, keepdims=True)
+    ## Normalize embedding tensors using numpy
+    embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
+    embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
 
-    
+
 
     ## Create index
-    if use_gpu:
-        raise ValueError(f"GPU not supported yet")
-    else:
-        index = faiss.IndexFlatIP(embeddings1.shape[1])
+    index = faiss.IndexFlatIP(embeddings1.shape[1])
     
     print("Adding embeddings to index")
 
-    ## Add to index depending on merge type
-    if merge_type == "1:m":
-        index.add(embeddings2)
-    elif merge_type == "m:1":
-        index.add(embeddings2)
-    elif merge_type == "1:1":
-        index.add(embeddings2)
+
+    index.add(embeddings2)
 
     print("Searching index")
 
-    ## Search index
-    if merge_type == "1:m":
-        D, I = index.search(embeddings1, k)
-    elif merge_type == "m:1":
-        D, I = index.search(embeddings1, k)
-    elif merge_type == "1:1":
-        D, I = index.search(embeddings1, k)
+    D, I = index.search(embeddings1, k)
+
 
     ## Check nearest neighbor of the first text in df1 as a test
     df1 = df1.reset_index(drop=True)
@@ -702,10 +651,8 @@ def merge_knn(
 
     ###First, expand the rows of df1
     df1_expanded = df1.loc[np.repeat(df1.index.values, k)].reset_index(drop=True)
-
     ###Now, expand the rows of df2
     df2_expanded = df2.iloc[I.flatten()].reset_index(drop=True)
-
 
     ###Now, merge the expanded dfs
     df_lm_matched = df1_expanded.merge(df2_expanded, left_index=True, right_index=True, how="inner",suffixes=suffixes)
@@ -713,28 +660,12 @@ def merge_knn(
     ### Add score column
     df_lm_matched["score"] =  D.flatten()
 
+        
+        
+
     if drop_sim_threshold is not None:
         df_lm_matched = df_lm_matched[df_lm_matched["score"]>=drop_sim_threshold]
         print(f"Dropped rows with similarity below {drop_sim_threshold}")
-    
-    ##rename overlapping columns for left_on and right_on
-    
-    # if suffixes is not None:
-    #     print("Renaming overlapping columns by adding suffixes")
-        
-    #     if isinstance(left_on, list):
-    #         for col in left_on:
-    #             df_lm_matched = df_lm_matched.rename(columns={col+"_x": col+suffixes[0]})
-
-    #     else:
-    #         df_lm_matched = df_lm_matched.rename(columns={left_on+"_x": left_on+suffixes[0]})
-
-    #     if isinstance(right_on, list):
-    #         for col in right_on:
-    #             df_lm_matched = df_lm_matched.rename(columns={col+"_y": col+suffixes[1]})
-    #     else:
-    #         df_lm_matched = df_lm_matched.rename(columns={right_on+"_y": right_on+suffixes[1]})
-            
 
     print(f"LM matched on key columns - left: {left_on}{suffixes[0]}, right: {right_on}{suffixes[1]}")
         
@@ -860,17 +791,3 @@ def classify_rows(
             df[f"clf_preds_{'-'.join(on)}"] = preds
 
     return df
-
-
-
-
-
-
-
-
-
-
-
-
-
-##Add a function to test nn of each row within a df. 

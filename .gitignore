@@ -26,4 +26,6 @@ wiki_aliases_copy/**
 **wandb
 **test_lt_clf**
 **clean_protest_models**
+**data_outside_package**
+**archive_to_remove**
 

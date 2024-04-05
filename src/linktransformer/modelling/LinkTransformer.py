@@ -190,8 +190,9 @@ class LinkTransformer(SentenceTransformer):
                     exist_ok: bool = False,
                     replace_model_card: bool = False,
                     train_datasets: Optional[List[str]] = None,
-                    override_model_description: Optional[str] = None, 
-                    override_model_lang: Optional[str] = None):
+                    replace_all_contents: bool = False,
+                    retain_model_card: bool = True,
+                    ):
         """
         Uploads all elements of this LinkTransformer (inherited Sentence Transformer) to a new HuggingFace Hub repository.
 
@@ -203,6 +204,8 @@ class LinkTransformer(SentenceTransformer):
         :param exist_ok: If true, saving to an existing repository is OK. If false, saving only to a new repository is possible
         :param replace_model_card: If true, replace an existing model card in the hub with the automatically created model card
         :param train_datasets: Datasets used to train the model. If set, the datasets will be added to the model card in the Hub.
+        :param replace_all_contents: If true, replace all contents of the repository with the current model. If false, only the model files will be replaced.
+        :param retain_model_card: If true, the model card will be retained in the repository. If false, the model card will be deleted.
         :return: The url of the commit of your model in the given repository.
         """
         token = HfFolder.get_token()
@@ -234,7 +237,22 @@ class LinkTransformer(SentenceTransformer):
             # First create the repo (and clone its content if it's nonempty).
             logger.info("Create repository and clone it if it exists")
             repo = Repository(tmp_dir, clone_from=repo_url)
-
+           
+            if replace_all_contents:
+                print("Emptying the repo")
+                ##Initialize a new repo in the temp dir using git
+                repo = Repository(tmp_dir, clone_from=repo_url)
+                ##delete all files and folders in the repo
+                for f in os.listdir(tmp_dir):
+                    if not f == ".git":
+                        if retain_model_card and f == "README.md":
+                            continue
+                        if os.path.isfile(os.path.join(tmp_dir, f)):
+                            os.remove(os.path.join(tmp_dir, f))
+                        else:
+                            shutil.rmtree(os.path.join(tmp_dir, f))
+            
+            
             # If user provides local files, copy them.
             if local_model_path:
                 copy_tree(local_model_path, tmp_dir)
