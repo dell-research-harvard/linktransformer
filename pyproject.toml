@@ -6,21 +6,21 @@ build-backend = "setuptools.build_meta"
 name = "linktransformer"
 version = "0.1.15"
 dependencies = [
-        "scikit-learn",
-        "faiss-cpu",
-        "hdbscan",
-        "networkx",
-        "torch",
+        "scikit-learn==1.3.2",
+        "faiss-cpu==1.8.0",
+        "hdbscan==0.8.36",
+        "networkx==3.1",
+        "torch==2.3.0",
         "sentence-transformers==2.3.1",
-        "transformers",
-        "wandb",
-        "numpy",
-        "pandas",
-        "openai",
-        "openpyxl",
-        "datasets",
-        "accelerate",
-        "evaluate"
+        "transformers==4.41.1",
+        "wandb==0.17.0",
+        "numpy==1.24.4",
+        "pandas==2.0.3",
+        "openai==1.30.4",
+        "openpyxl==3.1.2",
+        "datasets==2.19.1",
+        "accelerate==0.30.1",
+        "evaluate==0.4.2"
 ]
 authors = [
   { name="Abhishek Arora and Melissa Dell", email="linktransformer23@gmail.com" },
