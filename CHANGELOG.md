@@ -57,6 +57,10 @@
     - Fixed an incorrect piece of preprocessing code for paired data with labels - we recommend training such models again for a substantial increase in performance
     - Allowed loss_type in the train_model args - "supcon" and "onlinecontrastive"
     - Made some changes in the linkage configs to allow loss params into the training args. loss_params is a dictionary containing "temperature" for supcon loss and "margin" for onlinecontrastive.
+## 0.1.14 
+    - Bug Fixes
+## 0.1.15
+    - Static dependency versioning - sentence-transformers underwent a massive update, until we are able to catch up, we will default to previously supported versions. 
 
 
 
