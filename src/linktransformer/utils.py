@@ -11,6 +11,7 @@ from datasets import Dataset
 from itertools import combinations
 import torch
 from tqdm import tqdm
+import json
 
 
 def load_model(model_path: str) -> LinkTransformer:
@@ -98,7 +99,17 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
                             print("Probably an OpenAI model. Using defaul sep token of </s>")
                             sep_token = "</s>"
             else:
-                tokenizer = transformers.AutoTokenizer.from_pretrained(model)
+                try:
+                    tokenizer = transformers.AutoTokenizer.from_pretrained(model)
+                except OSError as e:
+                    warnings.warn(
+                        f"Local tokenizer not found. Trying to resolve by loading base model for {model}. This is okay if you did not train the tokenzier. ")
+                    base_moddel = _load_base_model_name(model)
+                    if base_moddel is None:
+                        raise OSError(
+                            f"Cannot resolve by using base model for {model}. If you were trying to load it from 'https://huggingface.co/models', make sure you don't have a local directory with the same name. Otherwise, make sure '{hf_model}' is the correct path to a directory containing all relevant files for a tokenizer.")
+                    tokenizer = transformers.AutoTokenizer.from_pretrained(base_moddel)
+
                 sep_token = tokenizer.sep_token
     elif isinstance(model, LinkTransformer):
         sep_token = model.tokenizer.sep_token
@@ -178,7 +189,14 @@ def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
     dataset = Dataset.from_dict({name: corpus})
 
     # Instantiate tokenizer
-    tokenizer = transformers.AutoTokenizer.from_pretrained(hf_model)
+    try:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(hf_model)
+    except OSError as e:
+        warnings.warn(f"Local tokenizer not found. Trying to resolve by loading base model for {hf_model}. This is okay if you did not train the tokenzier. ")
+        base_moddel = _load_base_model_name(hf_model)
+        if base_moddel is None:
+            raise OSError(f"Cannot resolve by using base model for {hf_model}. If you were trying to load it from 'https://huggingface.co/models', make sure you don't have a local directory with the same name. Otherwise, make sure '{hf_model}' is the correct path to a directory containing all relevant files for a tokenizer.")
+        tokenizer = transformers.AutoTokenizer.from_pretrained(base_moddel)
 
     # Tokenize datasets
     def tokenize_function(dataset):
@@ -326,3 +344,22 @@ def predict_rows_with_openai(
             "Failed to convert OpenAI text labels to numeric labels. Text labels are kept. \
             You may want to modify the prompt or the label dict. ")
         return preds
+
+
+def _load_base_model_name(model_path: str):
+    """
+    This function loads the base model name from the model name string.
+    :param model_name: (str) model name string
+    :returns: (str) base model name
+    """
+
+    # check if config.json exists
+    if os.path.exists(os.path.join(model_path, "config.json")):
+        with open(os.path.join(model_path, "config.json"), "r") as f:
+            config = json.load(f)
+        if "_name_or_path" in config:
+            return config["_name_or_path"]
+        else:
+            return None
+    else:
+        return None
