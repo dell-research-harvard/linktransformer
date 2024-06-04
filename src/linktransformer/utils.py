@@ -349,7 +349,7 @@ def predict_rows_with_openai(
 def _load_base_model_name(model_path: str):
     """
     This function loads the base model name from the model name string.
-    :param model_name: (str) model name string
+    :param model_path: (str) filepath to the model to use
     :returns: (str) base model name
     """
 
