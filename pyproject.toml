@@ -27,7 +27,7 @@ authors = [
 ]
 description = "A friendly way to do link, aggregate, cluster and de-duplicate dataframes using large language models."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.8, <3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
