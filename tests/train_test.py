@@ -25,7 +25,8 @@ def test_train_model_mexican():
                        "model_save_name": "check2",
                        "opt_model_description": None,
                        "opt_model_lang":None,
-                       "val_perc":0.2}
+                       "val_perc":0.2,
+                       "large_val": True,}
     )
 
     model=lt.load_model(saved_model_path)
@@ -327,5 +328,5 @@ def test_train_model_jp_onlyleftid_supcon_split_manual():
 
 # if __name__ == "__main__":
     # test_train_model_jp()
-    # test_train_model_mexican()
     # test_train_model_clustering()
+    # test_train_model_mexican()

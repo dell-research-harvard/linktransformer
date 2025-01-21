@@ -40,6 +40,8 @@ def cos_sim(a: Tensor, b: Tensor):
 
     if not isinstance(b, torch.Tensor):
         b = torch.tensor(b)
+        
+
 
     if len(a.shape) == 1:
         a = a.unsqueeze(0)
@@ -249,12 +251,13 @@ class InformationRetrievalEvaluator_wandb(evaluation.InformationRetrievalEvaluat
 
             #Encode chunk of corpus
             if corpus_embeddings is None:
-                sub_corpus_embeddings = corpus_model.encode(self.corpus[corpus_start_idx:corpus_end_idx], show_progress_bar=False, batch_size=self.batch_size, convert_to_tensor=True)
+                sub_corpus_embeddings = corpus_model.encode(self.corpus[corpus_start_idx:corpus_end_idx], show_progress_bar=False, batch_size=self.batch_size, convert_to_tensor=True,normalize_embeddings=True)
             else:
                 sub_corpus_embeddings = corpus_embeddings[corpus_start_idx:corpus_end_idx]
 
             #Compute cosine similarites
             for name, score_function in self.score_functions.items():
+
                 pair_scores = score_function(query_embeddings, sub_corpus_embeddings)
 
                 #Get top-k values

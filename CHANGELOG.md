@@ -61,6 +61,9 @@
     - Bug Fixes
 ## 0.1.15
     - Static dependency versioning - sentence-transformers underwent a massive update, until we are able to catch up, we will default to previously supported versions. 
+## 0.1.16
+    - Minor bug fixes due to dependency changes. Fixed issue that breaks installation on google colab.
+    - Updated code for newest stable releases of transformers, pandas and sentence-transformers
 
 
 

@@ -8,7 +8,7 @@ import os
 import torch
 from torch import nn
 import sklearn
-from datasets import load_dataset, load_metric, DatasetDict
+from datasets import load_dataset, DatasetDict
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
 import evaluate
 import wandb
@@ -149,7 +149,7 @@ def train_model(
         
 ):
     class BalancedTrainer(Trainer):
-        def compute_loss(self, model, inputs, return_outputs=False):
+        def compute_loss(self, model, inputs, return_outputs=False,**kwargs):
             labels = inputs.get("labels")
             # forward pass
             outputs = model(**inputs)
@@ -430,7 +430,7 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
     if epochs is not None:
         training_args["num_train_epochs"] = epochs
     if eval_steps is not None:
-        training_args["evaluation_strategy"] = "steps"
+        training_args["eval_strategy"] = "steps"
         training_args["eval_steps"] = eval_steps
     if save_steps is not None:
         training_args["save_steps"] = save_steps
