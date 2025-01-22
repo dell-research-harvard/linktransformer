@@ -21,6 +21,8 @@ More tutorials are coming soon!
 
 ## News
 
+- If you like this resource and want to help build it further, we would appreciate contributions. Currently, we wish to make the API compatible with the latest sentence-transformers updates. 
+- A bug on package import on Google Colab is now fixed. 
 - If you are just looking to demo the package on your data, try out this [HuggingFace Space](https://huggingface.co/spaces/96abhishekarora/linktransformer_merge) to merge two data frames!!
 - New (and retrained) models are up on the organisation's (dell-research-harvard) huggingface (with the same paths). Be sure to check them out. Most get a bump in the training data size, better hyperparams (and loss function choices). Training data for each  model is also included within the repo. 
 - Online contrastive loss is now available for linkage model training - especially useful for training with paired data containing binary labels. Try it out! The tutorial will be out soon.
@@ -298,7 +300,7 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
 
 
 ## Contributing
-Contributions are welcome! If you encounter any issues or have suggestions for improvement, please create a new issue or submit a pull request.
+Contributions are welcome! If you encounter any issues or have suggestions for improvement, please create a new issue or submit a pull request. Currently, we need help with updating the package backend to the latest version of sentence-transformers (3.0.0+). 
 
 ## License
 This project is licensed under the GNU General Public License- see the LICENSE file for details.
