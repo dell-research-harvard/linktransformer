@@ -248,7 +248,8 @@ def predict_rows_with_openai(
         openai_prompt: Optional[str] = None,
         openai_params: Optional[dict] = None,
         label_dict: Optional[dict] = None, 
-        max_retries: int = 5
+        max_retries: int = 5, 
+        ratelimit_sleep_time: int = 15
 ):
     """
     This function takes a list of texts and run the texts through the API. The first part of the function
@@ -263,6 +264,7 @@ def predict_rows_with_openai(
     :param openai_params: (dict) a dictionary to set custom parameters for OpenAI API (temperature, top_p, max_tokens, etc.)
     :param label_dict: (dict) a dictionary map text labels to numeric labels
     :param max_retries: (int) maximum number of retries if the API request fails
+    :param ratelimit_sleep_time: (int) time to sleep when encountering rate-limiting errors
     :returns: (List[int]) a list of labels from OpenAI API
     """
 
@@ -270,9 +272,6 @@ def predict_rows_with_openai(
         raise ValueError(f"Requires OpenAI API version 1.0.0 or higher, but you have {openai.__version__}")
 
     preds = []
-
-    # set parameters
-    ratelimit_sleep_time = 15
 
     # create client
     client = openai.OpenAI(
