@@ -190,6 +190,7 @@ def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
 
 
 def get_completion_from_messages(
+        client: openai.OpenAI, 
         text: str,
         model: str,
         openai_key: str,
@@ -201,6 +202,7 @@ def get_completion_from_messages(
     This function takes text of an article and send it to OpenAI API as user input and
     collects the content of the API response and the total number of tokens used
 
+    :param client: (openai.OpenAI) OpenAI client
     :param text: (str) user input to API
     :param model: (str) name of the model to use (see "https://platform.openai.com/docs/models")
     :param openai_key: (str) OpenAI API key
@@ -217,54 +219,26 @@ def get_completion_from_messages(
 
     os.environ["OPENAI_API_KEY"] = openai_key
 
-    if openai.__version__ >= "1.0.0":
-        client = openai.OpenAI(
-            api_key=openai_key,
-            timeout=openai_params["request_timeout"] if "request_timeout" in openai_params else 10
-        )
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": sys_prompt
-                },
-                {
-                    "role": "user",
-                    "content": text
-                }
-            ],
-            temperature=openai_params["temperature"] if "temperature" in openai_params else 0,
-            max_tokens=openai_params["max_tokens"] if "max_tokens" in openai_params else 1,
-            top_p=openai_params["top_p"] if "top_p" in openai_params else 0,
-            frequency_penalty=openai_params["frequency_penalty"] if "frequency_penalty" in openai_params else 0,
-            presence_penalty=openai_params["presence_penalty"] if "presence_penalty" in openai_params else 0,
-        )
-        return response.choices[0].message.content, response.usage.total_tokens
-    else:
-        # this supports the deprecated version of the OpenAI API
-        openai.api_key = openai_key
-        response = openai.ChatCompletion.create(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": sys_prompt
-                },
-                {
-                    "role": "user",
-                    "content": text
-                }
-            ],
-            temperature=openai_params["temperature"] if "temperature" in openai_params else 0,
-            max_tokens=openai_params["max_tokens"] if "max_tokens" in openai_params else 1,
-            top_p=openai_params["top_p"] if "top_p" in openai_params else 0,
-            frequency_penalty=openai_params["frequency_penalty"] if "frequency_penalty" in openai_params else 0,
-            presence_penalty=openai_params["presence_penalty"] if "presence_penalty" in openai_params else 0,
-            request_timeout=openai_params["request_timeout"] if "request_timeout" in openai_params else 10,
-        )
-        return response.choices[0].message["content"], response.usage["total_tokens"]
-
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": sys_prompt
+            },
+            {
+                "role": "user",
+                "content": text
+            }
+        ],
+        temperature=openai_params["temperature"] if "temperature" in openai_params else 0,
+        max_tokens=openai_params["max_tokens"] if "max_tokens" in openai_params else 1,
+        top_p=openai_params["top_p"] if "top_p" in openai_params else 0,
+        frequency_penalty=openai_params["frequency_penalty"] if "frequency_penalty" in openai_params else 0,
+        presence_penalty=openai_params["presence_penalty"] if "presence_penalty" in openai_params else 0,
+    )
+    return response.choices[0].message.content, response.usage.total_tokens
+    
 
 def predict_rows_with_openai(
         strings_col: List[str],
@@ -273,7 +247,8 @@ def predict_rows_with_openai(
         openai_topic: Optional[str] = None,
         openai_prompt: Optional[str] = None,
         openai_params: Optional[dict] = None,
-        label_dict: Optional[dict] = None
+        label_dict: Optional[dict] = None, 
+        max_retries: int = 5
 ):
     """
     This function takes a list of texts and run the texts through the API. The first part of the function
@@ -287,26 +262,32 @@ def predict_rows_with_openai(
     :param openai_prompt: (str) custom system prompt for OpenAI API
     :param openai_params: (dict) a dictionary to set custom parameters for OpenAI API (temperature, top_p, max_tokens, etc.)
     :param label_dict: (dict) a dictionary map text labels to numeric labels
+    :param max_retries: (int) maximum number of retries if the API request fails
     :returns: (List[int]) a list of labels from OpenAI API
     """
 
     if openai.__version__ < "1.0.0":
-        warnings.warn('Old version of openai SDK (openai<1.0.0) is deprecated and will not be supported in the next major update. ', DeprecationWarning, stacklevel=2)
+        raise ValueError(f"Requires OpenAI API version 1.0.0 or higher, but you have {openai.__version__}")
 
     preds = []
 
     # set parameters
     ratelimit_sleep_time = 15
 
+    # create client
+    client = openai.OpenAI(
+        api_key=openai_key,
+        timeout=openai_params["request_timeout"] if "request_timeout" in openai_params else 10
+    )
+
     # get results from api
     for i in tqdm(range(len(strings_col))):
 
         # send text at row i and fetch response
-        for num_retry in range(5):
+        for num_retry in range(max_retries):
             try:
-                # you need to change the following two lines if your dataframe looks different from example
                 r, num_tokens = get_completion_from_messages(
-                    strings_col[i], model, openai_key, openai_topic, openai_prompt, openai_params
+                    client, strings_col[i], model, openai_key, openai_topic, openai_prompt, openai_params
                 )
                 preds.append(r)
                 break
