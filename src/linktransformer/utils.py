@@ -217,8 +217,6 @@ def get_completion_from_messages(
     else:
         sys_prompt = openai_prompt
 
-    os.environ["OPENAI_API_KEY"] = openai_key
-
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -292,7 +290,7 @@ def predict_rows_with_openai(
                 break
             except Exception as e:  # handles RateLimit or Timeout Error
                 tqdm.write(
-                    f"Encountered error: {repr(e)}. Will retry after sleeping for {ratelimit_sleep_time * (2 ** num_retry)} seconds (attempt {num_retry + 1}/5)")
+                    f"Encountered error: {repr(e)}. Will retry after sleeping for {ratelimit_sleep_time * (2 ** num_retry)} seconds (attempt {num_retry + 1}/{max_retries})")
                 time.sleep(ratelimit_sleep_time * (2 ** num_retry))
 
     if label_dict is None:
