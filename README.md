@@ -307,7 +307,7 @@ This project is licensed under the GNU General Public License- see the LICENSE f
 
 ## Acknowledgments
 
-- - The sentence-transformers library and HugginFace for providing pre-trained NLP models
+- - The sentence-transformers library and Hugging Face for providing pre-trained NLP models
 - - The faiss library for efficient similarity search
 - - The sklearn and networkx libraries for clustering and graph operations
 - - OpenAI for providing language model embeddings
