@@ -17,6 +17,7 @@ dependencies = [
         "wandb==0.17.0",
         "numpy==1.24.4",
         "pandas==2.2.3",
+        "httpx==0.27.2",
         "openai==1.30.4",
         "openpyxl==3.1.2",
         "datasets==3.2.0",
