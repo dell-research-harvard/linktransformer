@@ -64,6 +64,8 @@
 ## 0.1.16
     - Minor bug fixes due to dependency changes. Fixed issue that breaks installation on google colab.
     - Updated code for newest stable releases of transformers, pandas and sentence-transformers
+## 0.1.17
+    - Fixed the bug caused by a version of httpx for the openai api-dependant functions. 
 
 
 

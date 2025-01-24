@@ -295,16 +295,20 @@ def test_lm_merge_openai():
     print(df_lm_matched)
     assert isinstance(df_lm_matched, pd.DataFrame)
 
-if __name__ == "__main__":
-    test_data_dir_path()
-    test_lm_merge()
-    test_lm_aggregate()
-    test_lm_merge_with_multiple_columns()
-    test_lm_merge_with_blocking_df()
-    test_french_to_english_crosslingual()
-    test_dedup()
-    test_knn()
-
-    # test classification
-    test_clf_single_col_bin()
-    test_clf_multi_col_bin()
+# if __name__ == "__main__":
+    # test_data_dir_path()
+    # test_lm_merge()
+    # test_lm_aggregate()
+    # test_lm_merge_with_multiple_columns()
+    # test_lm_merge_with_blocking_df()
+    # test_french_to_english_crosslingual()
+    # test_dedup()
+    # test_knn()
+    # # test classification
+    # test_clf_single_col_bin()
+    # test_clf_multi_col_bin()
+    
+    ##OpenAI tests
+    # test_lm_merge_openai()
+    # test_clf_single_col_bin_openai()
+    # test_clf_multi_col_ter_openai()
