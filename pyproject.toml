@@ -15,7 +15,8 @@ dependencies = [
         "sentence-transformers==2.3.1",
         "transformers==4.48.1",
         "wandb==0.17.0",
-        "numpy==1.24.4",
+        "numpy==1.26.4; python_version == '3.12'",
+        "numpy==1.24.4; python_version < '3.12'",
         "pandas==2.2.3",
         "httpx==0.27.2",
         "openai==1.30.4",
@@ -29,7 +30,7 @@ authors = [
 ]
 description = "A friendly way to do link, aggregate, cluster and de-duplicate dataframes using large language models."
 readme = "README.md"
-requires-python = ">=3.8, <3.12"
+requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
