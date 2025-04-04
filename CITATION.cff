@@ -1,11 +1,54 @@
-cff-version: 1.0.0
-message: "If you use this software, please cite it as below."
-doi: 10.48550/arXiv.2309.00789
-authors:
-- family-names: "Arora"
-  given-names: "Abhishek"
-- family-names: "Dell"
-  given-names: "Melissa"
+# File: CITATION.cff
+
+cff-version: 1.2.0
+message: >
+  If you use LinkTransformer in your research, please cite the following paper:
 title: "LinkTransformer: A Unified Package for Record Linkage with Transformer Language Models"
-date-released: 2023-07-31
-url: "https://github.com/dell-research-harvard/linktransformer"
+version: "0.1.17"
+doi: "10.18653/v1/2024.acl-demos.21"
+url: "https://aclanthology.org/2024.acl-demos.21/"
+type: conferencePaper
+date-released: 2024-08-01
+
+authors:
+  - family-names: Arora
+    given-names: Abhishek
+  - family-names: Dell
+    given-names: Melissa
+
+abstract: >
+  Many computational analyses require linking information across noisy text
+  datasets. While large language models (LLMs) offer significant promise,
+  approximate string matching packages in popular statistical softwares such
+  as R and Stata remain predominant in academic applications. These packages
+  have simple interfaces and can be easily extended to a diversity of
+  languages and settings, and for academic applications, ease-of-use and
+  extensibility are essential. In contrast, packages for record linkage with
+  LLMs require significant familiarity with deep learning frameworks and
+  often focus on specialized applications of commercial value in English. The
+  open-source package LinkTransformer aims to bridge this gap by providing
+  an end-to-end software for performing record linkage and other data
+  cleaning tasks with transformer LLMs, treating linkage as a text retrieval
+  problem. At its core is an off-the-shelf toolkit for applying transformer
+  models to record linkage. LinkTransformer contains a rich repository of
+  pre-trained models for multiple languages and supports easy integration of
+  any transformer language model from Hugging Face or OpenAI, providing the
+  extensibility required for many scholarly applications. Its APIs also
+  perform common data processing tasks, e.g., aggregation, noisy
+  de-duplication, and translation-free cross-lingual linkage. LinkTransformer
+  contains comprehensive tools for efficient model tuning, allowing for
+  highly customized applications, and users can easily contribute their
+  custom-trained models to its model hub to ensure reproducibility. Using a
+  novel benchmark dataset geared towards academic applications, we show that
+  LinkTransformer – with both custom models and Hugging Face or OpenAI models
+  off-the-shelf – outperforms string matching by a wide margin. By combining
+  transformer LMs with intuitive APIs, LinkTransformer aims to democratize
+  these performance gains for those who lack familiarity with deep learning
+  frameworks.
+
+publisher: "Association for Computational Linguistics"
+conference:
+  name: "62nd Annual Meeting of the Association for Computational Linguistics (Volume 3: System Demonstrations)"
+  location: "Bangkok, Thailand"
+year: 2024
+pages: "221--231"
