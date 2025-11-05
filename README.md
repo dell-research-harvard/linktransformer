@@ -21,11 +21,11 @@ More tutorials are coming soon!
 
 ## News
 
+- An idea for training-free record linkage using LinkTransformer: Use any LT model closest to your setting/OpenAI embeddings to use the merge_knn function to return k nearest records for each source record. Then use LLM-based APIs to classify whether the neighbor in question is correct (or even better, filter by similarity score that is sensible first). Ideally, we would want to make a notebook for this. If you ever use this workflow in your work, please do consider making a Colab notebook. We will be happy to add it here. 
 - If you like this resource and want to help build it further, we would appreciate contributions. Currently, we wish to make the API compatible with the latest sentence-transformers updates. 
 - A bug on package import on Google Colab is now fixed. 
 - If you are just looking to demo the package on your data, try out this [HuggingFace Space](https://huggingface.co/spaces/96abhishekarora/linktransformer_merge) to merge two data frames!!
 - New (and retrained) models are up on the organisation's (dell-research-harvard) huggingface (with the same paths). Be sure to check them out. Most get a bump in the training data size, better hyperparams (and loss function choices). Training data for each  model is also included within the repo. 
-- Online contrastive loss is now available for linkage model training - especially useful for training with paired data containing binary labels. Try it out! The tutorial will be out soon.
 
 ## Features
 
