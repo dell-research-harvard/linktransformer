@@ -62,7 +62,7 @@ def cosine_similarity_corresponding_pairs_torch(vector1, vector2):
     cosine_sim = dot_product / (norm_vector1 * norm_vector2)
     return cosine_sim
 
-def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", model: str = None) -> list:
+def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str | None = None, model: str = None) -> list:
     """
     Serialize columns of a DataFrame into a single string.
 
@@ -72,38 +72,39 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
     :param model: The language model to use for tokenization (optional).
     :return: List of serialized strings.
     """
-    
-    ###if model is string
-    if isinstance(model, str):
-        if model is not None:
-            if "/" not in model:
-                print("No base organization specified, if there is an error, it is likely because of that.")
-                print(
-                    f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!")
-                ###Error handling
-                try:
-                    tokenizer = transformers.AutoTokenizer.from_pretrained(model)
-                    sep_token = tokenizer.sep_token
-                except:
+
+    if not sep_token:
+        ###if model is string
+        if isinstance(model, str):
+            if model is not None:
+                if "/" not in model:
+                    print("No base organization specified, if there is an error, it is likely because of that.")
+                    print(
+                        f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!")
+                    ###Error handling
                     try:
-                        print(f"Trying sentence-transformers/{model}...")
-                        tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/" + model)
+                        tokenizer = transformers.AutoTokenizer.from_pretrained(model)
                         sep_token = tokenizer.sep_token
                     except:
                         try:
-                            print(f"Trying linktransformers/{model}...")
-                            tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/" + model)
+                            print(f"Trying sentence-transformers/{model}...")
+                            tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/" + model)
                             sep_token = tokenizer.sep_token
                         except:
-                            print("Probably an OpenAI model. Using defaul sep token of </s>")
-                            sep_token = "</s>"
-            else:
-                tokenizer = transformers.AutoTokenizer.from_pretrained(model)
-                sep_token = tokenizer.sep_token
-    elif isinstance(model, LinkTransformer):
-        sep_token = model.tokenizer.sep_token
-    else:
-        sep_token = "</s>"
+                            try:
+                                print(f"Trying linktransformers/{model}...")
+                                tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/" + model)
+                                sep_token = tokenizer.sep_token
+                            except:
+                                print("Probably an OpenAI model. Using defaul sep token of </s>")
+                                sep_token = "</s>"
+                else:
+                    tokenizer = transformers.AutoTokenizer.from_pretrained(model)
+                    sep_token = tokenizer.sep_token
+        elif isinstance(model, LinkTransformer):
+            sep_token = model.tokenizer.sep_token
+        else:
+            sep_token = "</s>"
 
     return df[columns].apply(lambda x: sep_token.join(x.astype(str)), axis=1).tolist()
 

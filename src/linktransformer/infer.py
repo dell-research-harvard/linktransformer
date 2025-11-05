@@ -102,10 +102,11 @@ def merge(
             model = load_model(model)
 
 
+    sep_token = "</s>" if openai_key else None
     if isinstance(right_on, list):
-        strings_right = serialize_columns(df2, right_on, model=model)
+        strings_right = serialize_columns(df2, right_on, model=model, sep_token=sep_token)
     if isinstance(left_on, list):
-        strings_left = serialize_columns(df1, left_on, model=model)
+        strings_left = serialize_columns(df1, left_on, model=model, sep_token=sep_token)
     else:
         strings_left = df1[left_on].tolist()
         strings_right = df2[right_on].tolist()
@@ -320,13 +321,14 @@ def evaluate_pairs(df: DataFrame,
             model = load_model(model)
 
     ###We will serialize the columns if they are lists
+    sep_token = "</s>" if openai_key else None
     if isinstance(left_on, list):
-        strings_left = serialize_columns(df, left_on, model=model)
+        strings_left = serialize_columns(df, left_on, model=model, sep_token=sep_token)
     else:
         strings_left = df[left_on].tolist()
     
     if isinstance(right_on, list):
-        strings_right = serialize_columns(df, right_on, model=model)
+        strings_right = serialize_columns(df, right_on, model=model, sep_token=sep_token)
     else:
         strings_right = df[right_on].tolist()
 
@@ -402,8 +404,9 @@ def cluster_rows(
 
     ## First, get the embeddings
     ### If len(on)>1, then we need to serialize the columns
+    sep_token = "</s>" if openai_key else None
     if isinstance(on, list):
-        strings = serialize_columns(df, on, model=model)
+        strings = serialize_columns(df, on, model=model, sep_token=sep_token)
     else:
         strings = df[on].tolist()
     
@@ -492,8 +495,9 @@ def all_pair_combos_evaluate(df: DataFrame,
             model = load_model(model)
 
     ###Get the embeddings for the left_on column
+    sep_token = "</s>" if openai_key else None
     if isinstance(left_on, list):
-        strings_left = serialize_columns(df, left_on, model=model)
+        strings_left = serialize_columns(df, left_on, model=model, sep_token=sep_token)
     else:
         strings_left = df[left_on].tolist()
     
@@ -503,7 +507,7 @@ def all_pair_combos_evaluate(df: DataFrame,
 
     ###Get the embeddings for the right_on column
     if isinstance(right_on, list):
-        strings_right = serialize_columns(df, right_on, model=model)
+        strings_right = serialize_columns(df, right_on, model=model, sep_token=sep_token)
     else:
         strings_right = df[right_on].tolist()
     
@@ -593,10 +597,11 @@ def merge_knn(
     df1.loc[:, "id_lt"] = np.arange(len(df1))
     df2.loc[:, "id_lt"] = np.arange(len(df2))
 
+    sep_token = "</s>" if openai_key else None
     if isinstance(right_on, list):
-        strings_right = serialize_columns(df2, right_on, model=model)
+        strings_right = serialize_columns(df2, right_on, model=model, sep_token=sep_token)
     if isinstance(left_on, list):
-        strings_left = serialize_columns(df1, left_on, model=model)
+        strings_left = serialize_columns(df1, left_on, model=model, sep_token=sep_token)
     else:
         strings_left = df1[left_on].tolist()
         strings_right = df2[right_on].tolist()
@@ -726,8 +731,10 @@ def classify_rows(
         clf = load_clf(model, num_labels=num_labels)
 
         # join texts in columns if needed
+
+        sep_token = "</s>" if openai_key else None
         if isinstance(on, list):
-            strings_col = serialize_columns(df, on, model=model)
+            strings_col = serialize_columns(df, on, model=model, sep_token=sep_token)
         else:
             strings_col = df[on].tolist()
 
