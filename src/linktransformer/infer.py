@@ -628,6 +628,9 @@ def merge_knn(
             strings_right = serialize_columns(df2, right_on, sep_token="<SEP>")
         else:
             strings_right = serialize_columns(df2, right_on, model=model)
+    else:
+        strings_right = df2[right_on].tolist()
+
     if isinstance(left_on, list):
         if model_is_api_embedding:
             strings_left = serialize_columns(df1, left_on, sep_token="<SEP>")
@@ -635,7 +638,6 @@ def merge_knn(
             strings_left = serialize_columns(df1, left_on, model=model)
     else:
         strings_left = df1[left_on].tolist()
-        strings_right = df2[right_on].tolist()
     
     ## Load the model
     if isinstance(model, str):
@@ -705,6 +707,157 @@ def merge_knn(
 
     print(f"LM matched on key columns - left: {left_on}{suffixes[0]}, right: {right_on}{suffixes[1]}")
         
+
+    return df_lm_matched
+
+
+def merge_range(
+    df1: DataFrame,
+    df2: DataFrame,
+    on: Optional[Union[str, List[str]]] = None,
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    left_on: Optional[Union[str, List[str]]] = None,
+    right_on: Optional[Union[str, List[str]]] = None,
+    sim_threshold: float = 0.5,
+    suffixes: Tuple[str, str] = ("_x", "_y"),
+    batch_size: int = 128,
+    openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
+) -> DataFrame:
+    """
+    Range-based many-to-many merge using FAISS ``range_search``.
+
+    For each row in ``df1``, returns all rows in ``df2`` with cosine similarity
+    greater than or equal to ``sim_threshold``.
+
+    :param df1 (DataFrame): First dataframe (left).
+    :param df2 (DataFrame): Second dataframe (right).
+    :param on (Union[str, List[str]], optional): Column(s) to join on in both dataframes.
+    :param model (str or LinkTransformer): Embedding model to use.
+    :param left_on (Union[str, List[str]], optional): Left key column(s). Defaults to ``on``.
+    :param right_on (Union[str, List[str]], optional): Right key column(s). Defaults to ``on``.
+    :param sim_threshold (float): Cosine similarity threshold for keeping matches.
+    :param suffixes (Tuple[str, str]): Suffixes for overlapping columns.
+    :param batch_size (int): Batch size for embedding inference.
+    :param openai_key (str, optional): OpenAI API key for OpenAI embedding models.
+    :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
+    :return: DataFrame: Many-to-many matched dataframe with ``score`` column.
+    """
+    if sim_threshold < -1.0 or sim_threshold > 1.0:
+        raise ValueError("sim_threshold must be between -1.0 and 1.0 for cosine similarity.")
+
+    if on is None:
+        on = list(set(df1.columns).intersection(set(df2.columns)))
+
+    if left_on is None:
+        left_on = on
+    if right_on is None:
+        right_on = on
+
+    df1 = df1.copy()
+    df2 = df2.copy()
+
+    if "id_lt" in df1.columns:
+        raise ValueError("Column id_lt already exists in df1, please rename it to proceed")
+    if "id_lt" in df2.columns:
+        raise ValueError("Column id_lt already exists in df2,please rename it to proceed")
+
+    df1.loc[:, "id_lt"] = np.arange(len(df1))
+    df2.loc[:, "id_lt"] = np.arange(len(df2))
+
+    model_is_api_embedding = isinstance(model, str) and (
+        _is_openai_embedding_model(model) or _is_gemini_embedding_model(model)
+    )
+
+    if isinstance(right_on, list):
+        if model_is_api_embedding:
+            strings_right = serialize_columns(df2, right_on, sep_token="<SEP>")
+        else:
+            strings_right = serialize_columns(df2, right_on, model=model)
+    else:
+        strings_right = df2[right_on].tolist()
+
+    if isinstance(left_on, list):
+        if model_is_api_embedding:
+            strings_left = serialize_columns(df1, left_on, sep_token="<SEP>")
+        else:
+            strings_left = serialize_columns(df1, left_on, model=model)
+    else:
+        strings_left = df1[left_on].tolist()
+
+    if isinstance(model, str):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+            model = load_model(model)
+
+    embeddings1 = infer_embeddings(
+        strings_left,
+        model,
+        batch_size=batch_size,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        return_numpy=True,
+    )
+    embeddings2 = infer_embeddings(
+        strings_right,
+        model,
+        batch_size=batch_size,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        return_numpy=True,
+    )
+
+    if len(embeddings1.shape) == 1:
+        embeddings1 = np.expand_dims(embeddings1, axis=0)
+    if len(embeddings2.shape) == 1:
+        embeddings2 = np.expand_dims(embeddings2, axis=0)
+
+    embeddings1 = embeddings1 / np.clip(np.linalg.norm(embeddings1, axis=1, keepdims=True), 1e-12, None)
+    embeddings2 = embeddings2 / np.clip(np.linalg.norm(embeddings2, axis=1, keepdims=True), 1e-12, None)
+
+    embeddings1 = np.ascontiguousarray(embeddings1.astype(np.float32))
+    embeddings2 = np.ascontiguousarray(embeddings2.astype(np.float32))
+
+    index = faiss.IndexFlatIP(embeddings1.shape[1])
+    index.add(embeddings2)
+
+    lims, distances, indices = index.range_search(embeddings1, sim_threshold)
+
+    df1 = df1.reset_index(drop=True)
+    df2 = df2.reset_index(drop=True)
+
+    per_left_counts = np.diff(lims)
+    total_matches = int(per_left_counts.sum())
+
+    if total_matches == 0:
+        empty = df1.iloc[[]].merge(
+            df2.iloc[[]],
+            left_index=True,
+            right_index=True,
+            how="inner",
+            suffixes=suffixes,
+        )
+        empty["score"] = pd.Series(dtype=float)
+        return empty
+
+    left_indices = np.repeat(np.arange(len(df1), dtype=np.int64), per_left_counts.astype(np.int64))
+    right_indices = indices.astype(np.int64)
+
+    df1_expanded = df1.iloc[left_indices].reset_index(drop=True)
+    df2_expanded = df2.iloc[right_indices].reset_index(drop=True)
+
+    df_lm_matched = df1_expanded.merge(
+        df2_expanded,
+        left_index=True,
+        right_index=True,
+        how="inner",
+        suffixes=suffixes,
+    )
+    df_lm_matched["score"] = distances
+
+    print(
+        f"Range matched rows: {len(df_lm_matched)} (threshold={sim_threshold}) on key columns "
+        f"left={left_on}{suffixes[0]}, right={right_on}{suffixes[1]}"
+    )
 
     return df_lm_matched
 
