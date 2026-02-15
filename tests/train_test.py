@@ -5,7 +5,7 @@ import pandas as pd
 
 
 
-def test_train_model_mexican():
+def test_lt_train_model_mexican():
     ###Test for positive pairs datasets
     # Define the path to the test dataset
     dataset_path = os.path.join(DATA_DIR_PATH, "es_mexican_products.xlsx")
@@ -45,7 +45,7 @@ def test_train_model_mexican():
     # You can add more specific assertions based on your requirements
 
 
-def test_train_model_jp():
+def test_lt_train_model_jp():
     ##Test for positive and neg pairs datasets
     dataset_path = os.path.join(DATA_DIR_PATH, "jp_pr_tk431.csv")
 
@@ -87,7 +87,7 @@ def test_train_model_jp():
     )
 
 
-def test_train_model_clustering():
+def test_lt_train_model_clustering():
     #Test for cluster datasets
     dataset_path = os.path.join(DATA_DIR_PATH, "company_clusters.csv")
     ##Load the data
@@ -110,7 +110,7 @@ def test_train_model_clustering():
 
     )
 
-def test_train_model_jp_onlincontrastive():
+def test_lt_train_model_jp_onlinecontrastive():
     ##Test for positive and neg pairs datasets
     dataset_path = os.path.join(DATA_DIR_PATH, "jp_pr_tk431.csv")
 
@@ -153,7 +153,7 @@ def test_train_model_jp_onlincontrastive():
     )
 
 
-def test_train_model_jp_noids_contrastive():
+def test_lt_train_model_jp_noids_contrastive():
     ##Test for positive and neg pairs datasets
     dataset_path = os.path.join(DATA_DIR_PATH, "jp_pr_tk431.csv")
 
@@ -195,7 +195,7 @@ def test_train_model_jp_noids_contrastive():
     
 
 
-def test_train_model_jp_noids_supcon():
+def test_lt_train_model_jp_noids_supcon():
     ##Test for positive and neg pairs datasets
     dataset_path = os.path.join(DATA_DIR_PATH, "jp_pr_tk431.csv")
 
@@ -235,7 +235,7 @@ def test_train_model_jp_noids_supcon():
                        "loss_type":"supcon"}
     )
     
-def test_train_model_jp_onlyleftid_supcon():
+def test_lt_train_model_jp_onlyleftid_supcon():
     ##Test for positive and neg pairs datasets
     dataset_path = os.path.join(DATA_DIR_PATH, "jp_pr_tk431.csv")
 
@@ -276,7 +276,7 @@ def test_train_model_jp_onlyleftid_supcon():
                        "loss_type":"supcon"}
     )
 
-def test_train_model_jp_onlyleftid_supcon_split_manual():
+def test_lt_train_model_jp_onlyleftid_supcon_split_manual():
     ##Test for positive and neg pairs datasets
     dataset_path = os.path.join(DATA_DIR_PATH, "jp_pr_tk431.csv")
     

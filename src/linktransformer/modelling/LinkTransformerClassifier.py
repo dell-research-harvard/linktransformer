@@ -2,7 +2,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from typing import Optional, Union, Iterable, List, Dict, Tuple, Callable, Any
 import os
 import logging
-from huggingface_hub import HfApi, HfFolder, Repository
+from huggingface_hub import HfApi, get_token
 from sentence_transformers import __version__ 
 import os
 import json
@@ -10,11 +10,20 @@ import shutil
 import stat
 from linktransformer import __MODEL_HUB_ORGANIZATION__
 import tempfile
-from distutils.dir_util import copy_tree
 
 from linktransformer.model_card_templates import ClassificationModelCardTemplate
 
 logger = logging.getLogger(__name__)
+
+
+def _copy_dir_contents(src_dir: str, dst_dir: str):
+    for name in os.listdir(src_dir):
+        src_path = os.path.join(src_dir, name)
+        dst_path = os.path.join(dst_dir, name)
+        if os.path.isdir(src_path):
+            shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+        else:
+            shutil.copy2(src_path, dst_path)
 
 ##Define methods for 1) Saving model card with LT details, 2)Upload to huggingface (model + tokenizer)
 class LinkTransformerClassifier:
@@ -156,9 +165,9 @@ class LinkTransformerClassifier:
         
         :return: The url of the commit of your model in the given repository.
         """
-        token = HfFolder.get_token()
+        token = get_token() or os.getenv("HF_TOKEN")
         if token is None:
-            raise ValueError("You must login to the Hugging Face hub on this computer by typing `transformers-cli login`.")
+            raise ValueError("You must login to the Hugging Face hub. Run `huggingface-cli login` or set `HF_TOKEN`.")
 
         if '/' in repo_name:
             splits = repo_name.split('/', maxsplit=1)
@@ -168,27 +177,23 @@ class LinkTransformerClassifier:
             else:
                 raise ValueError("You passed and invalid repository name: {}.".format(repo_name))
 
-        endpoint = "https://huggingface.co"
+        api = HfApi()
         repo_id = repo_name
         if organization:
             repo_id = f"{organization}/{repo_id}"
-        repo_url = HfApi(endpoint=endpoint).create_repo(
+        api.create_repo(
                 repo_id=repo_id,
                 token=token,
                 private=private,
                 repo_type=None,
                 exist_ok=exist_ok,
             )
-        full_model_name = repo_url[len(endpoint)+1:].strip("/")
+        full_model_name = repo_id
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            # First create the repo (and clone its content if it's nonempty).
-            logger.info("Create repository and clone it if it exists")
-            repo = Repository(tmp_dir, clone_from=repo_url)
-
             # If user provides local files, copy them.
             if local_model_path:
-                copy_tree(local_model_path, tmp_dir)
+                _copy_dir_contents(local_model_path, tmp_dir)
             else:  # Else, save model directly into local repo.
                 self.save(tmp_dir, full_model_name,override_model_description, override_model_lang,train_datasets)
 
@@ -197,22 +202,14 @@ class LinkTransformerClassifier:
                 with open(os.path.join(tmp_dir, 'LT_training_config.json'), 'w') as fOut:
                     json.dump(self._lt_model_config, fOut, indent=2)
 
-            #Find files larger 5M and track with git-lfs
-            large_files = []
-            for root, dirs, files in os.walk(tmp_dir):
-                for filename in files:
-                    file_path = os.path.join(root, filename)
-                    rel_path = os.path.relpath(file_path, tmp_dir)
-
-                    if os.path.getsize(file_path) > (5 * 1024 * 1024):
-                        large_files.append(rel_path)
-
-            if len(large_files) > 0:
-                logger.info("Track files with git lfs: {}".format(", ".join(large_files)))
-                repo.lfs_track(large_files)
-
             logger.info("Push model to the hub. This might take a while")
-            push_return = repo.push_to_hub(commit_message=commit_message)
+            push_return = api.upload_folder(
+                repo_id=repo_id,
+                repo_type="model",
+                folder_path=tmp_dir,
+                token=token,
+                commit_message=commit_message,
+            )
 
             def on_rm_error(func, path, exc_info):
                 # path contains the path of the file that couldn't be removed
@@ -223,11 +220,13 @@ class LinkTransformerClassifier:
                 except:
                     pass
 
-            # Remove .git folder. On Windows, the .git folder might be read-only and cannot be deleted
-            # Hence, try to set write permissions on error
             try:
                 for f in os.listdir(tmp_dir):
-                    shutil.rmtree(os.path.join(tmp_dir, f), onerror=on_rm_error)
+                    path = os.path.join(tmp_dir, f)
+                    if os.path.isdir(path):
+                        shutil.rmtree(path, onerror=on_rm_error)
+                    else:
+                        os.remove(path)
             except Exception as e:
                 logger.warning("Error when deleting temp folder: {}".format(str(e)))
                 pass

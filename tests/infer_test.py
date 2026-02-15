@@ -6,12 +6,12 @@ import linktransformer as lt
 import pytest
 
 
-def test_data_dir_path():
+def test_lt_data_dir_path():
     print(DATA_DIR_PATH)
     assert os.path.exists(DATA_DIR_PATH)
     assert os.path.isdir(DATA_DIR_PATH)
 
-def test_lm_merge():
+def test_lt_merge():
     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
@@ -20,7 +20,7 @@ def test_lm_merge():
     assert isinstance(df_lm_matched, pd.DataFrame)
     # Add more assertions to check the correctness of the output
 
-def test_lm_merge_suffixes():
+def test_lt_merge_suffixes():
     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
@@ -36,7 +36,7 @@ def test_lm_merge_suffixes():
 
 
 
-def test_lm_aggregate():
+def test_lt_aggregate_rows():
     df_coarse = pd.read_csv(os.path.join(DATA_DIR_PATH, "coarse.csv"))
     df_fine = pd.read_csv(os.path.join(DATA_DIR_PATH, "fine.csv"))
 
@@ -45,7 +45,7 @@ def test_lm_aggregate():
     assert isinstance(df_lm_aggregate, pd.DataFrame)
     # Add more assertions to check the correctness of the output
 
-def test_lm_merge_with_multiple_columns():
+def test_lt_merge_multi_columns():
     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_multi_1.csv"))
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_multi_2.csv"))
 
@@ -54,7 +54,7 @@ def test_lm_merge_with_multiple_columns():
     assert isinstance(df_lm_matched, pd.DataFrame)
     # Add more assertions to check the correctness of the output
 
-def test_lm_merge_with_blocking_df():
+def test_lt_merge_blocking():
     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
@@ -66,7 +66,7 @@ def test_lm_merge_with_blocking_df():
 # Add more test functions for other functionalities of your code
 
 # French to English Translation Test
-def test_french_to_english_crosslingual():
+def test_lt_merge_crosslingual_french_english():
     df_french = pd.read_csv(os.path.join(DATA_DIR_PATH, "translation_1.csv"))
     df_english = pd.read_csv(os.path.join(DATA_DIR_PATH, "translation_2.csv"))
 
@@ -77,7 +77,7 @@ def test_french_to_english_crosslingual():
 
 
 ###Test deduplication
-def test_dedup():
+def test_lt_dedup_rows():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
     df_dedup=lt.dedup_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "agglomerative",
         cluster_params= {'threshold': 0.7})
@@ -86,41 +86,41 @@ def test_dedup():
 
 
 ##Test clustering
-def test_cluster():
+def test_lt_cluster_rows():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
     df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "agglomerative",
         cluster_params= {'threshold': 0.7})
     assert isinstance(df_cluster, pd.DataFrame,)
     # Add more assertions to check the correctness of the output
 
-def test_cluster_noargs():
+def test_lt_cluster_rows_noargs():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
     df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2")
     assert isinstance(df_cluster, pd.DataFrame)
 
-def test_cluster_slink():
+def test_lt_cluster_rows_slink():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
     df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "SLINK")
     assert isinstance(df_cluster, pd.DataFrame)
 
-def test_cluster_hdbscan():
+def test_lt_cluster_rows_hdbscan():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
     df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "HDBScan")
     assert isinstance(df_cluster, pd.DataFrame)
 
-def test_cluster_hdbscan_params():
+def test_lt_cluster_rows_hdbscan_params():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
     df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "HDBScan",
         cluster_params= {'min cluster size': 2, 'min samples': 1})
     assert isinstance(df_cluster, pd.DataFrame)
 
-def test_cluster_slink_params():
+def test_lt_cluster_rows_slink_params():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
     df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "SLINK",
         cluster_params= {'min cluster size': 2, 'threshold': 0.1, 'metric': 'cosine'})
     assert isinstance(df_cluster, pd.DataFrame)
 
-def test_cluster_agglomerative_params():
+def test_lt_cluster_rows_agglomerative_params():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
     df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "agglomerative",
         cluster_params= {'threshold': 0.7, 'clustering linkage': 'average', 'metric': 'cosine'})
@@ -128,21 +128,21 @@ def test_cluster_agglomerative_params():
 
 
 ###Test evaluate pairs
-def test_eval_pairs():
+def test_lt_evaluate_pairs():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_pairs.csv"))
     df_eval=lt.evaluate_pairs(df, model="sentence-transformers/all-MiniLM-L6-v2",left_on="company_name_1",right_on="company_name_2",openai_key=None)
 
     assert isinstance(df_eval,pd.DataFrame)
 
 ##Test pairwise evaluate
-def test_all_pairwise_eval():
+def test_lt_all_pair_combos_evaluate():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_pairs.csv"))
     df_eval=lt.all_pair_combos_evaluate(df, model="sentence-transformers/all-MiniLM-L6-v2",left_on="company_name_1",right_on="company_name_2",openai_key=None)
     print(df_eval)
     assert isinstance(df_eval,pd.DataFrame)
 
 ##Test knn
-def test_knn():
+def test_lt_merge_knn():
     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
@@ -168,7 +168,7 @@ def test_knn():
     assert df_lm_matched.equals(df_lm_matched2)
 
 
-def test_knn_suffixes():
+def test_lt_merge_knn_suffixes():
     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
@@ -209,7 +209,7 @@ def test_knn_suffixes():
 #     print(df_lm_matched_range_search.shape)
 #     print(df_lm_matched_2nn.shape)
 
-def test_clf_single_col_bin():
+def test_lt_classify_rows_single_col_binary():
     df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
 
     df_clf_output = lt.classify_rows(df, on="article", model="distilroberta-base")
@@ -220,7 +220,7 @@ def test_clf_single_col_bin():
     print(df_clf_output)
 
 
-def test_clf_multi_col_bin():
+def test_lt_classify_rows_multi_col_binary():
     df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
 
     df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="distilroberta-base")
@@ -231,7 +231,7 @@ def test_clf_multi_col_bin():
     print(df_clf_output)
 
 
-def test_clf_single_col_ter():
+def test_lt_classify_rows_single_col_ternary():
     df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_ternary.csv"))
 
     df_clf_output = lt.classify_rows(df, on="article", model="distilroberta-base", num_labels=3)
@@ -242,7 +242,7 @@ def test_clf_single_col_ter():
     print(df_clf_output)
 
 
-def test_clf_multi_col_ter():
+def test_lt_classify_rows_multi_col_ternary():
     df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_ternary.csv"))
 
     df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="distilroberta-base", num_labels=3)
@@ -254,7 +254,7 @@ def test_clf_multi_col_ter():
 
 
 @pytest.mark.skipif("OPENAI_API_KEY" not in os.environ, reason="OpenAI API keys not found in environment variable")
-def test_clf_single_col_bin_openai():
+def test_lt_classify_rows_single_col_binary_openai():
     df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_binary.csv"))
 
     df_clf_output = lt.classify_rows(df, on="article", model="gpt-3.5-turbo", num_labels=2,
@@ -267,7 +267,7 @@ def test_clf_single_col_bin_openai():
 
 
 @pytest.mark.skipif("OPENAI_API_KEY" not in os.environ, reason="OpenAI API keys not found in environment variable")
-def test_clf_multi_col_ter_openai():
+def test_lt_classify_rows_multi_col_ternary_openai():
     df = pd.read_csv(os.path.join(DATA_DIR_PATH, "protests_toy_sample_ternary.csv"))
 
     label_dict = {"Protest": 1, "Riot": 2, "Neither": 0}
@@ -284,7 +284,7 @@ def test_clf_multi_col_ter_openai():
     
 ##Test a merge using openai
 @pytest.mark.skipif("OPENAI_API_KEY" not in os.environ, reason="OpenAI API keys not found in environment variable")
-def test_lm_merge_openai():
+def test_lt_merge_openai_embeddings():
     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
 
@@ -294,21 +294,102 @@ def test_lm_merge_openai():
                              ,openai_key=os.getenv("OPENAI_API_KEY"))
     print(df_lm_matched)
     assert isinstance(df_lm_matched, pd.DataFrame)
+    
+import os
+import pytest
+import pandas as pd
+import linktransformer as lt
 
-# if __name__ == "__main__":
-    # test_data_dir_path()
-    # test_lm_merge()
-    # test_lm_aggregate()
-    # test_lm_merge_with_multiple_columns()
-    # test_lm_merge_with_blocking_df()
-    # test_french_to_english_crosslingual()
-    # test_dedup()
-    # test_knn()
+@pytest.mark.skipif(
+    "OPENAI_API_KEY" not in os.environ,
+    reason="OpenAI API key not found in environment"
+)
+def test_lt_transform_rows_multi_col_openai():
+    # prepare toy DataFrame with obvious spelling mistakes
+    df = pd.DataFrame({
+        "text": ["Ths is a tst.", "Anothr exmple."],
+        "suffix": [" corrctn", " pls fix"]
+    })
+
+    # call transform_rows on both columns
+    df_out = lt.transform_rows(
+        df,
+        on=["text", "suffix"],
+        openai_key=os.getenv("OPENAI_API_KEY"),
+        batch_size=2,
+        model="gpt-4o",
+        # explicit prompt to fix spelling mistakes
+        openai_prompt=(
+            "Fix spelling mistakes in each of the following strings. "
+            "Return a JSON array of the corrected strings."
+        )
+    )
+    
+    print(df_out)
+
+    # basic sanity checks
+    assert isinstance(df_out, pd.DataFrame)
+    # the new column should combine the two input column names
+    assert "transformed_text-suffix" in df_out.columns
+
+    corrected = df_out["transformed_text-suffix"].tolist()
+    # length must match original DataFrame
+    assert len(corrected) == len(df)
+
+    # each corrected entry should be a non-empty string
+    for entry in corrected:
+        assert isinstance(entry, str)
+        assert entry.strip() != ""
+
+@pytest.mark.skipif("GEMINI_API_KEY" not in os.environ, reason="Gemini API key not found in environment")
+def test_lt_merge_gemini_live():
+    pytest.importorskip("google.generativeai")
+
+    df1 = pd.DataFrame(
+        {
+            "CompanyName": ["Tech Corporation", "InfoTech Solutions", "AlphaSoft Systems"],
+            "Country": ["USA", "USA", "Canada"],
+        }
+    )
+    df2 = pd.DataFrame(
+        {
+            "CompanyName": ["Tech Corp", "InfoTech Soln", "AlphaSoft"],
+            "Country": ["USA", "USA", "Canada"],
+        }
+    )
+
+    df_lm_matched = lt.merge(
+        df1,
+        df2,
+        on=["CompanyName", "Country"],
+        model="gemini-embedding-001",
+        gemini_key=os.getenv("GEMINI_API_KEY"),
+    )
+
+    assert isinstance(df_lm_matched, pd.DataFrame)
+    assert "score" in df_lm_matched.columns
+    assert len(df_lm_matched) == len(df1)
+
+
+if __name__ == "__main__":
+    # test_lt_data_dir_path()
+    # test_lt_merge()
+    # test_lt_aggregate_rows()
+    # test_lt_merge_multi_columns()
+    # test_lt_merge_blocking()
+    # test_lt_merge_crosslingual_french_english()
+    # test_lt_dedup_rows()
+    # test_lt_merge_knn()
     # # test classification
-    # test_clf_single_col_bin()
-    # test_clf_multi_col_bin()
+    # test_lt_classify_rows_single_col_binary()
+    # test_lt_classify_rows_multi_col_binary()
     
     ##OpenAI tests
-    # test_lm_merge_openai()
-    # test_clf_single_col_bin_openai()
-    # test_clf_multi_col_ter_openai()
+    test_lt_merge_openai_embeddings()
+    test_lt_classify_rows_single_col_binary_openai()
+    test_lt_classify_rows_multi_col_ternary_openai()
+    test_lt_transform_rows_multi_col_openai()
+    
+    # Gemini test
+    test_lt_merge_gemini_live()
+    

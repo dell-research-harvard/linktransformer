@@ -4,6 +4,7 @@
 import numpy as np
 import json
 import pandas as pd
+import inspect
 import os
 import torch
 from torch import nn
@@ -170,9 +171,14 @@ def train_model(
 
     model = AutoModelForSequenceClassification.from_pretrained(hf_model, num_labels=num_labels)
 
-    training_args = TrainingArguments(
-        **training_args
-    )
+    ta_params = set(inspect.signature(TrainingArguments.__init__).parameters)
+    if "evaluation_strategy" in training_args and "evaluation_strategy" not in ta_params and "eval_strategy" in ta_params:
+        training_args["eval_strategy"] = training_args.pop("evaluation_strategy")
+    if "eval_strategy" in training_args and "eval_strategy" not in ta_params and "evaluation_strategy" in ta_params:
+        training_args["evaluation_strategy"] = training_args.pop("eval_strategy")
+    training_args = {k: v for k, v in training_args.items() if k in ta_params}
+
+    training_args = TrainingArguments(**training_args)
     TrainerClass=Trainer if weight_list is None else BalancedTrainer
     # Instantiate Trainer
     trainer = TrainerClass(
@@ -295,18 +301,18 @@ def preprocess_data(data,model,on,label_col_name):
 
     ##Check if label is an int - make int if not
     ###If string, get unique values and map to int starting from 0
-    if data[label_col_name].dtype==object:
+    if pd.api.types.is_object_dtype(data[label_col_name]) or pd.api.types.is_string_dtype(data[label_col_name]):
         unique_labels=data[label_col_name].unique()
         label_map={label:i for i,label in enumerate(unique_labels)}
         data[label_col_name]=data[label_col_name].map(label_map)
         ##Print mapping
         print(f"Label mapping: {label_map}")
     ###If float, make int
-    elif data[label_col_name].dtype==float:
+    elif pd.api.types.is_float_dtype(data[label_col_name]):
         data[label_col_name]=data[label_col_name].astype(int)
         label_map={i:i for i in range(data[label_col_name].max()+1)}
     ###If int, do nothing
-    elif data[label_col_name].dtype==int:
+    elif pd.api.types.is_integer_dtype(data[label_col_name]):
         label_map={i:i for i in range(data[label_col_name].max()+1)}
     else:
         raise ValueError(f"Label column {label_col_name} is not an int, float or string.")

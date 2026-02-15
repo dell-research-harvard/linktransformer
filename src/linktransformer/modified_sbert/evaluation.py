@@ -414,6 +414,10 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
         self.sentences2 = sentences2
         self.labels = labels
         self.wandb_names = wandb_names
+        self.truncate_dim = None
+        self.similarity_fn_names = ['cossim']
+        self.similarity_fn_name = self.similarity_fn_names[0]
+        self.primary_metric = f"{self.similarity_fn_name}_ap"
         print(self.sentences1[0])
         print(self.sentences2[0])
         assert len(self.sentences1) == len(self.sentences2)

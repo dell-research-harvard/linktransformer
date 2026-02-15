@@ -2,7 +2,7 @@
 import logging
 from sentence_transformers import SentenceTransformer
 from typing import Optional, List, Iterable, Union
-from huggingface_hub import HfApi, HfFolder, Repository
+from huggingface_hub import HfApi, get_token
 import transformers
 from sentence_transformers import __version__ 
 import os
@@ -15,13 +15,22 @@ from sentence_transformers.models import Transformer
 from torch import nn
 from linktransformer import __MODEL_HUB_ORGANIZATION__
 import tempfile
-from distutils.dir_util import copy_tree
 
 
 
 
 
 logger = logging.getLogger(__name__)
+
+
+def _copy_dir_contents(src_dir: str, dst_dir: str):
+    for name in os.listdir(src_dir):
+        src_path = os.path.join(src_dir, name)
+        dst_path = os.path.join(dst_dir, name)
+        if os.path.isdir(src_path):
+            shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+        else:
+            shutil.copy2(src_path, dst_path)
 
 class LinkTransformer(SentenceTransformer):
     """
@@ -68,7 +77,7 @@ class LinkTransformer(SentenceTransformer):
 
 
     def save(self, path: str, model_name: Optional[str] = None, create_model_card: bool = True, train_datasets: Optional[List[str]] = None,override_model_description: Optional[str] = None, 
-                    override_model_lang: Optional[str] = None):
+                    override_model_lang: Optional[str] = None, safe_serialization: bool = True, **kwargs):
         """
         Saves all elements for this seq. sentence embedder into different sub-folders
         
@@ -78,6 +87,8 @@ class LinkTransformer(SentenceTransformer):
         :param train_datasets: Optional list with the names of the datasets used to to train the model
         :param override_model_description: Optional model description to override the default model description in the model card
         :param override_model_lang: Optional model language to override the default model language in the model card
+        :param safe_serialization: Accepted for compatibility with modern SentenceTransformer save_pretrained API.
+        :param kwargs: Additional keyword arguments accepted for forward compatibility.
 
         :return: None
         """
@@ -208,9 +219,9 @@ class LinkTransformer(SentenceTransformer):
         :param retain_model_card: If true, the model card will be retained in the repository. If false, the model card will be deleted.
         :return: The url of the commit of your model in the given repository.
         """
-        token = HfFolder.get_token()
+        token = get_token() or os.getenv("HF_TOKEN")
         if token is None:
-            raise ValueError("You must login to the Hugging Face hub on this computer by typing `transformers-cli login`.")
+            raise ValueError("You must login to the Hugging Face hub. Run `huggingface-cli login` or set `HF_TOKEN`.")
 
         if '/' in repo_name:
             splits = repo_name.split('/', maxsplit=1)
@@ -220,42 +231,40 @@ class LinkTransformer(SentenceTransformer):
             else:
                 raise ValueError("You passed and invalid repository name: {}.".format(repo_name))
 
-        endpoint = "https://huggingface.co"
+        api = HfApi()
         repo_id = repo_name
         if organization:
           repo_id = f"{organization}/{repo_id}"
-        repo_url = HfApi(endpoint=endpoint).create_repo(
+        api.create_repo(
                 repo_id=repo_id,
                 token=token,
                 private=private,
                 repo_type=None,
                 exist_ok=exist_ok,
             )
-        full_model_name = repo_url[len(endpoint)+1:].strip("/")
+        full_model_name = repo_id
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            # First create the repo (and clone its content if it's nonempty).
-            logger.info("Create repository and clone it if it exists")
-            repo = Repository(tmp_dir, clone_from=repo_url)
-           
             if replace_all_contents:
-                print("Emptying the repo")
-                ##Initialize a new repo in the temp dir using git
-                repo = Repository(tmp_dir, clone_from=repo_url)
-                ##delete all files and folders in the repo
-                for f in os.listdir(tmp_dir):
-                    if not f == ".git":
-                        if retain_model_card and f == "README.md":
-                            continue
-                        if os.path.isfile(os.path.join(tmp_dir, f)):
-                            os.remove(os.path.join(tmp_dir, f))
-                        else:
-                            shutil.rmtree(os.path.join(tmp_dir, f))
+                existing_files = api.list_repo_files(repo_id=repo_id, repo_type="model", token=token)
+                for path_in_repo in existing_files:
+                    if retain_model_card and path_in_repo == "README.md":
+                        continue
+                    try:
+                        api.delete_file(
+                            path_in_repo=path_in_repo,
+                            repo_id=repo_id,
+                            repo_type="model",
+                            token=token,
+                            commit_message="Clear repository contents",
+                        )
+                    except Exception as exc:
+                        logger.warning("Failed deleting %s from repo: %s", path_in_repo, exc)
             
             
             # If user provides local files, copy them.
             if local_model_path:
-                copy_tree(local_model_path, tmp_dir)
+                _copy_dir_contents(local_model_path, tmp_dir)
             else:  # Else, save model directly into local repo.
                 create_model_card = replace_model_card or not os.path.exists(os.path.join(tmp_dir, 'README.md'))
                 self.save(tmp_dir, model_name=full_model_name, create_model_card=create_model_card, train_datasets=train_datasets)
@@ -265,22 +274,14 @@ class LinkTransformer(SentenceTransformer):
                 with open(os.path.join(tmp_dir, 'LT_training_config.json'), 'w') as fOut:
                     json.dump(self._lt_model_config, fOut, indent=2)
 
-            #Find files larger 5M and track with git-lfs
-            large_files = []
-            for root, dirs, files in os.walk(tmp_dir):
-                for filename in files:
-                    file_path = os.path.join(root, filename)
-                    rel_path = os.path.relpath(file_path, tmp_dir)
-
-                    if os.path.getsize(file_path) > (5 * 1024 * 1024):
-                        large_files.append(rel_path)
-
-            if len(large_files) > 0:
-                logger.info("Track files with git lfs: {}".format(", ".join(large_files)))
-                repo.lfs_track(large_files)
-
             logger.info("Push model to the hub. This might take a while")
-            push_return = repo.push_to_hub(commit_message=commit_message)
+            push_return = api.upload_folder(
+                repo_id=repo_id,
+                repo_type="model",
+                folder_path=tmp_dir,
+                token=token,
+                commit_message=commit_message,
+            )
 
             def on_rm_error(func, path, exc_info):
                 # path contains the path of the file that couldn't be removed
@@ -291,11 +292,13 @@ class LinkTransformer(SentenceTransformer):
                 except:
                     pass
 
-            # Remove .git folder. On Windows, the .git folder might be read-only and cannot be deleted
-            # Hence, try to set write permissions on error
             try:
                 for f in os.listdir(tmp_dir):
-                    shutil.rmtree(os.path.join(tmp_dir, f), onerror=on_rm_error)
+                    path = os.path.join(tmp_dir, f)
+                    if os.path.isdir(path):
+                        shutil.rmtree(path, onerror=on_rm_error)
+                    else:
+                        os.remove(path)
             except Exception as e:
                 logger.warning("Error when deleting temp folder: {}".format(str(e)))
                 pass

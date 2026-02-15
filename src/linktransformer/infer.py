@@ -2,6 +2,7 @@
 ###We want to link dfs together using embeddings
 import json
 import os
+import re
 import warnings
 
 import numpy as np
@@ -13,6 +14,7 @@ from pandas import DataFrame
 from linktransformer.cluster_fns import cluster
 # from linktransformer.utils import serialize_columns, infer_embeddings, load_model, load_clf, cosine_similarity_corresponding_pairs, tokenize_data_for_inference, predict_rows_with_openai
 from linktransformer.utils import *
+from linktransformer.utils import _is_gemini_embedding_model
 from sklearn.metrics.pairwise import cosine_similarity
 from itertools import combinations
 from transformers import TrainingArguments, Trainer
@@ -29,7 +31,8 @@ def merge(
     right_on: Optional[Union[str, List[str]]] = None,
     suffixes: Tuple[str, str] = ("_x", "_y"),
     batch_size: int = 128,
-    openai_key: Optional[str] = None
+    openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings.
@@ -45,7 +48,8 @@ def merge(
     :param right_on (Union[str, List[str]], optional): Column(s) to join on in df2. Defaults to None.
     :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
-    :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
+    :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
+    :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
     ## Set common columns as on if not specified
@@ -98,14 +102,24 @@ def merge(
 
     ## Load the model if string
     if isinstance(model, str):
-        if openai_key is None:
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
             model = load_model(model)
 
 
+    model_is_api_embedding = isinstance(model, str) and (
+        _is_openai_embedding_model(model) or _is_gemini_embedding_model(model)
+    )
+
     if isinstance(right_on, list):
-        strings_right = serialize_columns(df2, right_on, model=model)
+        if model_is_api_embedding:
+            strings_right = serialize_columns(df2, right_on, sep_token="<SEP>")
+        else:
+            strings_right = serialize_columns(df2, right_on, model=model)
     if isinstance(left_on, list):
-        strings_left = serialize_columns(df1, left_on, model=model)
+        if model_is_api_embedding:
+            strings_left = serialize_columns(df1, left_on, sep_token="<SEP>")
+        else:
+            strings_left = serialize_columns(df1, left_on, model=model)
     else:
         strings_left = df1[left_on].tolist()
         strings_right = df2[right_on].tolist()
@@ -113,9 +127,9 @@ def merge(
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
 
     ### Expand dim if embeddings are 1d (numpy)
     if len(embeddings1.shape) == 1:
@@ -163,7 +177,8 @@ def merge_blocking(
     blocking_vars: Optional[List[str]] = None,
     suffixes: Tuple[str, str] = ("_x", "_y"),
     batch_size: int = 128,
-    openai_key: Optional[str] = None
+    openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings with optional blocking.
@@ -180,7 +195,8 @@ def merge_blocking(
     :param blocking_vars (List[str], optional): Columns to use for blocking. Defaults to None.
     :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
-    :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
+    :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
+    :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
     ### For blocking, we need to chunk the dfs into blocks
@@ -189,7 +205,7 @@ def merge_blocking(
         print("No blocking vars specified, matching between all rows")
         df_lm_matched = merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
                                     right_on=right_on, suffixes=suffixes, batch_size=batch_size,
-                                     openai_key=openai_key)
+                                     openai_key=openai_key, gemini_key=gemini_key)
         return df_lm_matched
     else:
         ## Partition the dfs into blocks
@@ -201,14 +217,15 @@ def merge_blocking(
 
         ## Now, chunk the dfs into blocks
         ## First, get the number of blocks
-        num_blocks_1 = len(df1.groupby(blocking_vars))
-        num_blocks_2 = len(df2.groupby(blocking_vars))
+        groupby_key = blocking_vars[0] if len(blocking_vars) == 1 else blocking_vars
+        num_blocks_1 = len(df1.groupby(groupby_key))
+        num_blocks_2 = len(df2.groupby(groupby_key))
         print(f"Number of blocks in df1: {num_blocks_1}")
         print(f"Number of blocks in df2: {num_blocks_2}")
 
         ## Now, get the blocks
-        df1_blocks = df1.groupby(blocking_vars)
-        df2_blocks = df2.groupby(blocking_vars)
+        df1_blocks = df1.groupby(groupby_key)
+        df2_blocks = df2.groupby(groupby_key)
 
         ## Now, we need to merge each block in df1 with each block in df2.
         ## We need to keep track of the blocks that have been merged
@@ -226,7 +243,7 @@ def merge_blocking(
 
         ## Load the model if string
         if isinstance(model, str):
-            if openai_key is None:
+            if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
                 model = load_model(model)      
 
         for block_1 in common_keys:
@@ -236,7 +253,7 @@ def merge_blocking(
             ## Merge the blocks
             df_block_matched = merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
                                            left_on=left_on, right_on=right_on, suffixes=suffixes,
-                                           batch_size=batch_size, openai_key=openai_key)
+                                           batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
             ## Add to merged dfs
             merged_dfs.append(df_block_matched)
 
@@ -265,7 +282,8 @@ def aggregate_rows(
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Union[str, List[str]]=None,
     right_on: Union[str, List[str]]=None,
-    openai_key: str = None
+    openai_key: str = None,
+    gemini_key: str = None,
 ) -> DataFrame:
     """
     Aggregate the dataframe based on a reference dataframe using a language model.
@@ -283,13 +301,13 @@ def aggregate_rows(
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None:
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
             model = load_model(model)
 
     ## Just use the merge function with merge type 1:m
     df_lm_matched = merge(df, ref_df, merge_type="1:1", on=None, model=model, left_on=left_on,
                                 right_on=right_on, suffixes=("_x", "_y"), batch_size=128,
-                                 openai_key=openai_key)
+                                 openai_key=openai_key, gemini_key=gemini_key)
 
     return df_lm_matched
 
@@ -299,7 +317,8 @@ def evaluate_pairs(df: DataFrame,
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Union[str, List[str]]=None,
     right_on: Union[str, List[str]]=None,
-    openai_key: str = None
+    openai_key: str = None,
+    gemini_key: str = None
     ) -> DataFrame:
     """
     This function evaluates paired columns in a dataframe and gives a match score (cosine similarity). 
@@ -316,7 +335,7 @@ def evaluate_pairs(df: DataFrame,
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None:
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
             model = load_model(model)
 
     ###We will serialize the columns if they are lists
@@ -333,9 +352,9 @@ def evaluate_pairs(df: DataFrame,
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
 
     ### Expand dim if embeddings are 1d (numpy)
     if len(embeddings1.shape) == 1:
@@ -361,7 +380,8 @@ def cluster_rows(
     on: Union[str, List[str]]=None,
     cluster_type: str = "SLINK",
     cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
-    openai_key: str = None
+    openai_key: str = None,
+    gemini_key: str = None
 ) -> DataFrame:
     """
     Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.
@@ -397,7 +417,7 @@ def cluster_rows(
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None:
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
             model = load_model(model)
 
     ## First, get the embeddings
@@ -408,7 +428,7 @@ def cluster_rows(
         strings = df[on].tolist()
     
     ## Infer embeddings for df
-    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key)
+    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
     ## Normalize embedding tensors using numpy
     embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
     ### Now, cluster the embeddings based on similarity threshold
@@ -427,7 +447,8 @@ def dedup_rows(
     on: Union[str, List[str]]=None,
     cluster_type: str = "SLINK",
     cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
-    openai_key: str = None
+    openai_key: str = None,
+    gemini_key: str = None
 ) -> DataFrame:
     """
     Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
@@ -446,7 +467,7 @@ def dedup_rows(
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None:
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
             model = load_model(model)
     
 
@@ -456,7 +477,7 @@ def dedup_rows(
     df = df.drop_duplicates(subset=on, keep="first")
     print(f"Number of rows after dropping exact duplicates: {len(df)}")
 
-    df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key)
+    df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key, gemini_key)
     df = df.drop_duplicates(subset="cluster", keep="first")
     df = df.drop(columns=["cluster"])
     print(f"Number of rows after deduplication: {len(df)}")
@@ -470,7 +491,8 @@ def all_pair_combos_evaluate(df: DataFrame,
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     left_on: Union[str, List[str]]=None,
     right_on: Union[str, List[str]]=None,
-    openai_key: str = None
+    openai_key: str = None,
+    gemini_key: str = None
     ) -> DataFrame:
     """
     Get similarity scores for every pair of rows in a dataframe. 
@@ -488,7 +510,7 @@ def all_pair_combos_evaluate(df: DataFrame,
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None:
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
             model = load_model(model)
 
     ###Get the embeddings for the left_on column
@@ -498,7 +520,7 @@ def all_pair_combos_evaluate(df: DataFrame,
         strings_left = df[left_on].tolist()
     
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
     embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
 
     ###Get the embeddings for the right_on column
@@ -508,7 +530,7 @@ def all_pair_combos_evaluate(df: DataFrame,
         strings_right = df[right_on].tolist()
     
     ## Infer embeddings for df1
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
     embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
 
     ###calculate the cosine similarity between all pairs of rows
@@ -519,13 +541,15 @@ def all_pair_combos_evaluate(df: DataFrame,
     ###This gives an n*n matrix of cosine similarities. 
 
     ###Similarly, make an n*n matrix of the left_on column and right_on column
-    left_on_all_pairs = np.repeat(df[left_on].values, len(df[right_on]), axis=0)
+    left_values = df[left_on].to_numpy()
+    right_values = df[right_on].to_numpy()
+    left_on_all_pairs = np.repeat(left_values, len(right_values), axis=0)
 
 
     ###Left part of the df was repeating n times. We also want the right one to repeat, but 
 
 
-    right_on_all_pairs = np.tile(df[right_on].values, (len(df[left_on]),1))
+    right_on_all_pairs = np.tile(right_values, (len(left_values), 1))
 
     ###Now, flattenn the right on pairs
     right_on_all_pairs = right_on_all_pairs.flatten()
@@ -548,6 +572,7 @@ def merge_knn(
     suffixes: Tuple[str, str] = ("_x", "_y"),
     batch_size: int = 128,
     openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
     drop_sim_threshold: float = None,
 ) -> DataFrame:
     """
@@ -562,7 +587,8 @@ def merge_knn(
     :param k (int): Number of nearest neighbors to match for each row in df1. Defaults to 1.
     :param suffixes (Tuple[str, str]): Suffixes to use for overlapping columns. Defaults to ('_x', '_y').
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
-    :param openai_key (str, optional): OpenAI API key for InferKit API. Defaults to None.
+    :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
+    :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param drop_sim_threshold (float, optional): Drop rows with similarity below this threshold. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
@@ -593,24 +619,34 @@ def merge_knn(
     df1.loc[:, "id_lt"] = np.arange(len(df1))
     df2.loc[:, "id_lt"] = np.arange(len(df2))
 
+    model_is_api_embedding = isinstance(model, str) and (
+        _is_openai_embedding_model(model) or _is_gemini_embedding_model(model)
+    )
+
     if isinstance(right_on, list):
-        strings_right = serialize_columns(df2, right_on, model=model)
+        if model_is_api_embedding:
+            strings_right = serialize_columns(df2, right_on, sep_token="<SEP>")
+        else:
+            strings_right = serialize_columns(df2, right_on, model=model)
     if isinstance(left_on, list):
-        strings_left = serialize_columns(df1, left_on, model=model)
+        if model_is_api_embedding:
+            strings_left = serialize_columns(df1, left_on, sep_token="<SEP>")
+        else:
+            strings_left = serialize_columns(df1, left_on, model=model)
     else:
         strings_left = df1[left_on].tolist()
         strings_right = df2[right_on].tolist()
     
     ## Load the model
     if isinstance(model, str):
-        if openai_key is None:
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
             model = load_model(model)
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, return_numpy= True)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key,return_numpy= True)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True)
 
 
     ### Expand dim if embeddings are 1d (numpy)
@@ -671,6 +707,435 @@ def merge_knn(
         
 
     return df_lm_matched
+
+
+def _coerce_llm_match_and_confidence(response_text: str) -> Tuple[int, float]:
+    """
+    Parse an LLM response into a binary match flag and confidence in [0, 1].
+    Expected format is JSON with keys like `is_match` and `confidence`, but the
+    parser is intentionally permissive for robustness.
+    """
+    is_match = 0
+    confidence = 0.0
+
+    try:
+        payload = json.loads(response_text)
+        if isinstance(payload, dict):
+            raw_match = payload.get("is_match", payload.get("match", payload.get("label", 0)))
+            if isinstance(raw_match, bool):
+                is_match = int(raw_match)
+            elif isinstance(raw_match, (int, float)):
+                is_match = int(raw_match > 0)
+            elif isinstance(raw_match, str):
+                is_match = int(raw_match.strip().lower() in {"yes", "true", "1", "match"})
+
+            raw_conf = payload.get("confidence", payload.get("score", payload.get("probability", 0.0)))
+            try:
+                confidence = float(raw_conf)
+            except Exception:
+                confidence = 0.0
+        elif isinstance(payload, list) and len(payload) >= 2:
+            try:
+                is_match = int(float(payload[0]) > 0)
+                confidence = float(payload[1])
+            except Exception:
+                pass
+    except Exception:
+        lower_txt = response_text.lower()
+        if any(tok in lower_txt for tok in ["yes", "true", "match"]):
+            is_match = 1
+
+        score_matches = re.findall(r"([01](?:\.\d+)?)", response_text)
+        if score_matches:
+            try:
+                confidence = float(score_matches[-1])
+            except Exception:
+                confidence = 0.0
+
+    confidence = max(0.0, min(1.0, confidence))
+    return is_match, confidence
+
+
+def _is_openai_embedding_model(model: Any) -> bool:
+    if not isinstance(model, str):
+        return False
+    model_name = model.lower()
+    return "text-embedding" in model_name or "ada-002" in model_name
+
+
+def _resolve_knn_api_model(
+    knn_api_model: Optional[str],
+    openai_key: Optional[str],
+    gemini_key: Optional[str],
+) -> str:
+    if knn_api_model is not None and knn_api_model != "auto":
+        return knn_api_model
+
+    if gemini_key or os.getenv("GEMINI_API_KEY"):
+        return "gemini-embedding-001"
+    if openai_key or os.getenv("OPENAI_API_KEY"):
+        return "text-embedding-3-small"
+
+    raise ValueError(
+        "Could not resolve `knn_api_model`: provide `openai_key`/OPENAI_API_KEY or "
+        "`gemini_key`/GEMINI_API_KEY, or pass an explicit `knn_api_model`."
+    )
+
+
+def _resolve_knn_retrieval_config(
+    model: Union[str, LinkTransformer],
+    knn_sbert_model: Optional[Union[str, LinkTransformer]],
+    knn_api_model: Optional[str],
+    openai_key: Optional[str],
+    gemini_key: Optional[str],
+) -> Tuple[Union[str, LinkTransformer], Optional[str], Optional[str]]:
+    if knn_sbert_model is not None and knn_api_model is not None:
+        raise ValueError("Specify only one of `knn_sbert_model` or `knn_api_model`, not both.")
+
+    if knn_sbert_model is not None:
+        return knn_sbert_model, None, None
+
+    if knn_api_model is not None:
+        resolved_api_model = _resolve_knn_api_model(knn_api_model, openai_key=openai_key, gemini_key=gemini_key)
+        retrieval_openai_key = openai_key if _is_openai_embedding_model(resolved_api_model) else None
+        retrieval_gemini_key = gemini_key if _is_gemini_embedding_model(resolved_api_model) else None
+        return resolved_api_model, retrieval_openai_key, retrieval_gemini_key
+
+    warnings.warn(
+        "Using `model` as shared default. Key-resolved model behavior may apply for both KNN retrieval and classification. "
+        "Specify `knn_sbert_model` for SBERT retrieval.",
+        UserWarning,
+    )
+
+    retrieval_openai_key = openai_key if _is_openai_embedding_model(model) else None
+    retrieval_gemini_key = gemini_key if _is_gemini_embedding_model(model) else None
+    return model, retrieval_openai_key, retrieval_gemini_key
+
+
+def _infer_retrieval_mode(model: Union[str, LinkTransformer]) -> str:
+    if isinstance(model, str):
+        if _is_gemini_embedding_model(model):
+            return "api-gemini-embedding"
+        if _is_openai_embedding_model(model):
+            return "api-openai-embedding"
+        return "sbert-or-local"
+    return "loaded-linktransformer"
+
+
+def merge_k_judge(
+    df1: DataFrame,
+    df2: DataFrame,
+    on: Optional[Union[str, List[str]]] = None,
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    left_on: Optional[Union[str, List[str]]] = None,
+    right_on: Optional[Union[str, List[str]]] = None,
+    k: int = 3,
+    suffixes: Tuple[str, str] = ("_x", "_y"),
+    batch_size: int = 128,
+    openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
+    knn_sbert_model: Optional[Union[str, LinkTransformer]] = None,
+    knn_api_model: Optional[str] = None,
+    drop_sim_threshold: float = None,
+    judge_llm_model: Optional[str] = None,
+    llm_provider: str = "auto",
+    llm_prompt: Optional[str] = None,
+    llm_params: Optional[Dict[str, Any]] = None,
+    confidence_threshold: Optional[float] = None,
+    max_retries: int = 5,
+    ratelimit_sleep_time: int = 15,
+) -> DataFrame:
+    """
+    Retrieve candidate matches with `merge_knn`, then verify each pair with an LLM.
+    Adds:
+    - `llm_is_match` (0/1)
+    - `llm_confidence` (float in [0, 1])
+    - `llm_raw_response` (raw model output)
+
+    :param confidence_threshold: optional post-filter threshold on llm_confidence.
+    """
+    llm_params = llm_params or {}
+
+    if llm_provider not in {"auto", "openai", "gemini"}:
+        raise ValueError("llm_provider must be one of {'auto', 'openai', 'gemini'}")
+
+    if judge_llm_model is None or (isinstance(judge_llm_model, str) and judge_llm_model.strip() == ""):
+        raise ValueError(
+            "merge_k_judge requires `judge_llm_model`. "
+            "Use `merge_knn` if you do not want LLM-based judgement."
+        )
+
+    resolved_judge_model = judge_llm_model
+
+    resolved_provider = llm_provider
+    if resolved_provider == "auto":
+        resolved_provider = "gemini" if "gemini" in str(resolved_judge_model).lower() else "openai"
+
+    openai_api_key = openai_key or os.getenv("OPENAI_API_KEY")
+    gemini_api_key = gemini_key or os.getenv("GEMINI_API_KEY")
+
+    if resolved_provider == "openai" and openai_api_key is None:
+        raise ValueError("merge_k_judge with llm_provider='openai' requires `openai_key` or OPENAI_API_KEY.")
+    if resolved_provider == "gemini" and gemini_api_key is None:
+        raise ValueError("merge_k_judge with llm_provider='gemini' requires `gemini_key` or GEMINI_API_KEY.")
+
+    retrieval_model, retrieval_openai_key, retrieval_gemini_key = _resolve_knn_retrieval_config(
+        model=model,
+        knn_sbert_model=knn_sbert_model,
+        knn_api_model=knn_api_model,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+    )
+
+    if knn_sbert_model is not None:
+        retrieval_source = "knn_sbert_model"
+    elif knn_api_model is not None:
+        retrieval_source = "knn_api_model"
+    else:
+        retrieval_source = "model"
+
+    judge_source = "judge_llm_model"
+    resolution_msg = (
+        "merge_k_judge resolution -> "
+        f"retrieval_source={retrieval_source}, retrieval_model={retrieval_model}, "
+        f"retrieval_mode={_infer_retrieval_mode(retrieval_model)}, "
+        f"judge_source={judge_source}, judge_model={resolved_judge_model}, "
+        f"judge_provider={resolved_provider}."
+    )
+    warnings.warn(resolution_msg, UserWarning)
+
+    candidates = merge_knn(
+        df1=df1,
+        df2=df2,
+        on=on,
+        model=retrieval_model,
+        left_on=left_on,
+        right_on=right_on,
+        k=k,
+        suffixes=suffixes,
+        batch_size=batch_size,
+        openai_key=retrieval_openai_key,
+        gemini_key=retrieval_gemini_key,
+        drop_sim_threshold=drop_sim_threshold,
+    ).copy()
+
+    def _raise_judge_error(judge_error: Exception, stage: str) -> None:
+        raise RuntimeError(
+            "merge_k_judge failed during "
+            f"{stage} (provider={resolved_provider}, model={resolved_judge_model}). "
+            f"Underlying error: {repr(judge_error)}. "
+            "Use merge_knn if you do not want LLM-based judgement."
+        ) from judge_error
+
+    if llm_prompt is None:
+        llm_prompt = (
+            "You are a fuzzy entity/text-matching judge. This could be an entity or just text descriptions that need matching. Compare LEFT and RIGHT records and decide if they refer to "
+            "the same real-world entity. <SEP> signifies a concat of two variables in the record. Return ONLY compact JSON with keys: "
+            "is_match (0 or 1) and confidence (float between 0 and 1)."
+        )
+
+    if isinstance(left_on, str):
+        left_cols = [left_on]
+    elif isinstance(left_on, list):
+        left_cols = left_on
+    elif isinstance(on, str):
+        left_cols = [on]
+    elif isinstance(on, list):
+        left_cols = on
+    else:
+        left_cols = [c for c in df1.columns if c in df2.columns]
+
+    if isinstance(right_on, str):
+        right_cols = [right_on]
+    elif isinstance(right_on, list):
+        right_cols = right_on
+    elif isinstance(on, str):
+        right_cols = [on]
+    elif isinstance(on, list):
+        right_cols = on
+    else:
+        right_cols = left_cols
+
+    openai_client = None
+    gemini_model_client = None
+    try:
+        if resolved_provider == "openai":
+            openai_client = openai.OpenAI(
+                api_key=openai_api_key,
+                timeout=llm_params["request_timeout"] if "request_timeout" in llm_params else 15,
+            )
+        else:
+            try:
+                import google.generativeai as genai
+            except ImportError as exc:
+                raise ImportError(
+                    "Gemini LLM classification requires `google-generativeai`. Install it to use llm_provider='gemini'."
+                ) from exc
+            genai.configure(api_key=gemini_api_key)
+            gemini_model_client = genai.GenerativeModel(model_name=resolved_judge_model)
+    except Exception as judge_init_error:
+        _raise_judge_error(judge_init_error, stage="judge client initialization")
+
+    llm_matches: List[int] = []
+    llm_confidences: List[float] = []
+    llm_raw: List[str] = []
+
+    for _, row in candidates.iterrows():
+        left_payload = {}
+        right_payload = {}
+
+        for col in left_cols:
+            col_name = f"{col}{suffixes[0]}" if f"{col}{suffixes[0]}" in candidates.columns else col
+            left_payload[col] = None if col_name not in candidates.columns else row[col_name]
+
+        for col in right_cols:
+            col_name = f"{col}{suffixes[1]}" if f"{col}{suffixes[1]}" in candidates.columns else col
+            right_payload[col] = None if col_name not in candidates.columns else row[col_name]
+
+        user_content = json.dumps({"left": left_payload, "right": right_payload}, default=str)
+        response_text = ""
+        for retry in range(max_retries):
+            try:
+                if resolved_provider == "openai":
+                    response = openai_client.chat.completions.create(
+                        model=resolved_judge_model,
+                        messages=[
+                            {"role": "system", "content": llm_prompt},
+                            {"role": "user", "content": user_content},
+                        ],
+                        temperature=llm_params["temperature"] if "temperature" in llm_params else 0,
+                        max_tokens=llm_params["max_tokens"] if "max_tokens" in llm_params else 50,
+                        top_p=llm_params["top_p"] if "top_p" in llm_params else 1,
+                        frequency_penalty=llm_params["frequency_penalty"] if "frequency_penalty" in llm_params else 0,
+                        presence_penalty=llm_params["presence_penalty"] if "presence_penalty" in llm_params else 0,
+                    )
+                    response_text = response.choices[0].message.content or ""
+                else:
+                    prompt_text = (
+                        f"{llm_prompt}\n\n"
+                        f"Compare the following pair payload and return JSON only.\n"
+                        f"{user_content}"
+                    )
+                    response = gemini_model_client.generate_content(prompt_text)
+                    response_text = getattr(response, "text", None) or ""
+                break
+            except Exception as judge_runtime_error:
+                if retry == max_retries - 1:
+                    _raise_judge_error(judge_runtime_error, stage="judge inference")
+                else:
+                    time.sleep(ratelimit_sleep_time * (2 ** retry))
+
+        match_flag, match_conf = _coerce_llm_match_and_confidence(response_text)
+        llm_matches.append(match_flag)
+        llm_confidences.append(match_conf)
+        llm_raw.append(response_text)
+
+    candidates["llm_is_match"] = llm_matches
+    candidates["llm_confidence"] = llm_confidences
+    candidates["llm_raw_response"] = llm_raw
+
+    if confidence_threshold is not None:
+        candidates = candidates[candidates["llm_confidence"] >= confidence_threshold]
+
+    return candidates
+
+
+def merge_knn_with_llm(
+    df1: DataFrame,
+    df2: DataFrame,
+    on: Optional[Union[str, List[str]]] = None,
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    left_on: Optional[Union[str, List[str]]] = None,
+    right_on: Optional[Union[str, List[str]]] = None,
+    k: int = 3,
+    suffixes: Tuple[str, str] = ("_x", "_y"),
+    batch_size: int = 128,
+    openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
+    knn_sbert_model: Optional[Union[str, LinkTransformer]] = None,
+    knn_api_model: Optional[str] = None,
+    drop_sim_threshold: float = None,
+    judge_llm_model: Optional[str] = None,
+    llm_provider: str = "auto",
+    llm_prompt: Optional[str] = None,
+    llm_params: Optional[Dict[str, Any]] = None,
+    confidence_threshold: Optional[float] = None,
+    max_retries: int = 5,
+    ratelimit_sleep_time: int = 15,
+) -> DataFrame:
+    """Backward-compatible alias for `merge_k_judge`."""
+    return merge_k_judge(
+        df1=df1,
+        df2=df2,
+        on=on,
+        model=model,
+        left_on=left_on,
+        right_on=right_on,
+        k=k,
+        suffixes=suffixes,
+        batch_size=batch_size,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        knn_sbert_model=knn_sbert_model,
+        knn_api_model=knn_api_model,
+        drop_sim_threshold=drop_sim_threshold,
+        judge_llm_model=judge_llm_model,
+        llm_provider=llm_provider,
+        llm_prompt=llm_prompt,
+        llm_params=llm_params,
+        confidence_threshold=confidence_threshold,
+        max_retries=max_retries,
+        ratelimit_sleep_time=ratelimit_sleep_time,
+    )
+
+
+def merge_knn_openai(
+    df1: DataFrame,
+    df2: DataFrame,
+    on: Optional[Union[str, List[str]]] = None,
+    model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
+    left_on: Optional[Union[str, List[str]]] = None,
+    right_on: Optional[Union[str, List[str]]] = None,
+    k: int = 3,
+    suffixes: Tuple[str, str] = ("_x", "_y"),
+    batch_size: int = 128,
+    openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
+    knn_sbert_model: Optional[Union[str, LinkTransformer]] = None,
+    knn_api_model: Optional[str] = None,
+    drop_sim_threshold: float = None,
+    judge_llm_model: Optional[str] = None,
+    llm_provider: str = "openai",
+    llm_prompt: Optional[str] = None,
+    llm_params: Optional[Dict[str, Any]] = None,
+    confidence_threshold: Optional[float] = None,
+    max_retries: int = 5,
+    ratelimit_sleep_time: int = 15,
+) -> DataFrame:
+    """Backward-compatible alias for `merge_k_judge`."""
+    return merge_k_judge(
+        df1=df1,
+        df2=df2,
+        on=on,
+        model=model,
+        left_on=left_on,
+        right_on=right_on,
+        k=k,
+        suffixes=suffixes,
+        batch_size=batch_size,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        knn_sbert_model=knn_sbert_model,
+        knn_api_model=knn_api_model,
+        drop_sim_threshold=drop_sim_threshold,
+        judge_llm_model=judge_llm_model,
+        llm_provider=llm_provider,
+        llm_prompt=llm_prompt,
+        llm_params=llm_params,
+        confidence_threshold=confidence_threshold,
+        max_retries=max_retries,
+        ratelimit_sleep_time=ratelimit_sleep_time,
+    )
 
 
 def classify_rows(
@@ -791,3 +1256,99 @@ def classify_rows(
             df[f"clf_preds_{'-'.join(on)}"] = preds
 
     return df
+
+
+def transform_rows(
+    df: pd.DataFrame,
+    on: Optional[Union[str, List[str]]] = None,
+    *,
+    openai_key: Optional[str] = None,
+    model: str = "gpt-4o",
+    openai_prompt: Optional[str] = None,
+    openai_params: Optional[Dict[str, Any]] = None,
+    batch_size: int = 50,
+    output_column: Optional[str] = None,
+    progress_bar: bool = True
+) -> pd.DataFrame:
+    """
+    High-level wrapper: transform every cell in one or more columns via any batch transform fn.
+    By default uses OpenAI with a “Fix spelling mistakes” prompt.
+
+    :param df:            (pd.DataFrame)
+    :param on:            (str or list[str]) column(s) to transform
+    :param openai_key:    (str) your OpenAI API key
+    :param openai_model:  (str) which model to call
+    :param openai_prompt: (str) system prompt; if None defaults to:
+                           "Fix spelling mistakes in each of the following strings.
+                            Return a JSON array of the corrected strings."
+    :param openai_params: (dict) extra ChatCompletion params, plus:
+                           - request_timeout
+                           - max_retries
+                           - ratelimit_sleep_time
+    :param batch_size:    (int) number of rows in each chunk
+    :param output_column: (str) name for the new column; default "transformed_{on}"
+    :param progress_bar:  (bool)
+    :returns:             pd.DataFrame with an added column of transforms
+    """
+    df = df.copy()
+    openai_params = openai_params or {}
+
+    if on is None:
+        raise ValueError("Must specify `on=` to select which column(s) to transform.")
+    if openai_key is None:
+        raise ValueError("Must provide `openai_key` to use OpenAI.")
+
+    # default prompt
+    if openai_prompt is None:
+        openai_prompt = (
+            "Fix spelling mistakes in each of the following strings. "
+        )
+    
+    print(f"Transforming column(s) {on} with OpenAI model {model} using prompt: {openai_prompt}")
+
+    # serialize multi-column if needed
+    if isinstance(on, list):
+        tmp_col = "__lt_tmp__"
+        df[tmp_col] = serialize_columns(df, on, sep_token=" ")
+        column_to_use = tmp_col
+        key_name = "-".join(on)
+    else:
+        column_to_use = on
+        key_name = on
+    
+    ##drop if on is na in any row
+    df = df.dropna(subset=[column_to_use])
+
+    # final output column name
+    out_col = output_column or f"transformed_{key_name}"
+
+    # prepare the OpenAI client and fn_kwargs
+    client = openai.OpenAI(
+        api_key=openai_key,
+        timeout=openai_params.get("request_timeout", 10)
+    )
+    fn_kwargs = {
+        "client": client,
+        "model": model,
+        "prompt": openai_prompt,
+        "max_retries": openai_params.get("max_retries", 5),
+        "ratelimit_sleep_time": openai_params.get("ratelimit_sleep_time", 15),
+        "openai_params": openai_params
+    }
+
+    # use the generic transform_column util
+    result = transform_column(
+        df=df,
+        column=column_to_use,
+        transform_fn=openai_transform,
+        fn_kwargs=fn_kwargs,
+        chunk_size=batch_size,
+        output_column=out_col,
+        progress_bar=progress_bar
+    )
+
+    # clean up temp if used
+    if isinstance(on, list):
+        result = result.drop(columns=[tmp_col])
+
+    return result

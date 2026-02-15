@@ -1,5 +1,26 @@
 # Change Log
 
+## 0.1.18
+        - Added `merge_k_judge` as the primary end-to-end record linkage workflow:
+            1) retrieve top-k candidates with `merge_knn`, then
+            2) adjudicate candidate pairs with an LLM returning match + confidence.
+        - Added explicit retrieval and judge model controls for `merge_k_judge`:
+            `knn_sbert_model`, `knn_api_model`, and required `judge_llm_model`.
+        - Added judge provider routing (`llm_provider`) with support for both OpenAI and Gemini judge paths.
+        - Added strict failure semantics for judged linkage: retrieval errors and judge errors now raise clear exceptions
+            (with guidance to use `merge_knn` directly when judgement is not desired).
+        - Improved model resolution transparency with explicit warnings describing retrieval source/model/mode
+            and judge source/model/provider.
+        - Improved API-embedding serialization in `merge` and `merge_knn`:
+            multi-column joins now serialize with `<SEP>` and avoid unnecessary tokenizer/org probing logs.
+        - Added and stabilized row transformation workflows (`transform_rows`) for prompt-based normalization
+            over one or multiple columns.
+        - Expanded inference coverage with live-key-gated and monkeypatched tests across:
+            SBERT retrieval, OpenAI embeddings retrieval, OpenAI judge, Gemini judge, and mixed-provider workflows.
+        - Removed migration/debug artifacts in package source:
+            hardcoded local path defaults, hardcoded legacy OpenAI embedding model fallback,
+            and script-style debug runners in library modules.
+
 ## 0.1.0 Beta Release
 ## 0.1.1 Feature Updates and bug fixes
     - Bug fixes 

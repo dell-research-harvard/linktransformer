@@ -1,7 +1,7 @@
 import os
 import time
 import warnings
-from typing import List, Optional, Dict, Tuple, Union
+from typing import List, Optional, Dict, Tuple, Iterator, Any, Union, Callable, Sequence
 from linktransformer.modelling.LinkTransformer import LinkTransformer
 import numpy as np
 import pandas as pd
@@ -11,7 +11,58 @@ from datasets import Dataset
 from itertools import combinations
 import torch
 from tqdm import tqdm
+import json
 
+
+def _is_gemini_embedding_model(model: Any) -> bool:
+    if not isinstance(model, str):
+        return False
+    model_name = model.lower()
+    return (
+        "gemini" in model_name
+        or "text-embedding-004" in model_name
+        or "embedding-001" in model_name
+    )
+
+
+def _normalize_gemini_model_name(model: str) -> str:
+    if model.startswith("models/"):
+        return model
+    return f"models/{model}"
+
+
+def infer_embeddings_with_gemini(
+    strings: List[str],
+    model: str,
+    api_key: str,
+    return_numpy: bool = True,
+) -> Union[np.ndarray, torch.Tensor]:
+    try:
+        import google.generativeai as genai
+    except ImportError as exc:
+        raise ImportError(
+            "Gemini embeddings require `google-generativeai`. "
+            "Install it with: pip install google-generativeai"
+        ) from exc
+
+    genai.configure(api_key=api_key)
+    model_name = _normalize_gemini_model_name(model)
+
+    vectors: List[List[float]] = []
+    for text in strings:
+        response = genai.embed_content(
+            model=model_name,
+            content=text,
+            task_type="retrieval_document",
+        )
+        vector = response["embedding"] if isinstance(response, dict) else getattr(response, "embedding", None)
+        if vector is None:
+            raise ValueError("Gemini embedding response missing `embedding`")
+        vectors.append(vector)
+
+    if return_numpy:
+        return np.array(vectors, dtype=np.float32)
+    return torch.tensor(vectors, dtype=torch.float32)
 
 def load_model(model_path: str) -> LinkTransformer:
     """
@@ -73,6 +124,13 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
     :return: List of serialized strings.
     """
     
+    def _load_sep_token(model_name: str) -> Optional[str]:
+        try:
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+            return tokenizer.sep_token
+        except Exception:
+            return None
+
     ###if model is string
     if isinstance(model, str):
         if model is not None:
@@ -81,35 +139,45 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
                 print(
                     f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!")
                 ###Error handling
-                try:
-                    tokenizer = transformers.AutoTokenizer.from_pretrained(model)
-                    sep_token = tokenizer.sep_token
-                except:
-                    try:
-                        print(f"Trying sentence-transformers/{model}...")
-                        tokenizer = transformers.AutoTokenizer.from_pretrained("sentence-transformers/" + model)
-                        sep_token = tokenizer.sep_token
-                    except:
-                        try:
-                            print(f"Trying linktransformers/{model}...")
-                            tokenizer = transformers.AutoTokenizer.from_pretrained("linktransformers/" + model)
-                            sep_token = tokenizer.sep_token
-                        except:
-                            print("Probably an OpenAI model. Using defaul sep token of </s>")
+                loaded_sep_token = _load_sep_token(model)
+                if loaded_sep_token is not None:
+                    sep_token = loaded_sep_token
+                else:
+                    print(f"Trying sentence-transformers/{model}...")
+                    loaded_sep_token = _load_sep_token("sentence-transformers/" + model)
+                    if loaded_sep_token is not None:
+                        sep_token = loaded_sep_token
+                    else:
+                        print(f"Trying linktransformers/{model}...")
+                        loaded_sep_token = _load_sep_token("linktransformers/" + model)
+                        if loaded_sep_token is not None:
+                            sep_token = loaded_sep_token
+                        else:
+                            print("Could not load tokenizer for serialization. Using default sep token of </s>")
                             sep_token = "</s>"
             else:
-                tokenizer = transformers.AutoTokenizer.from_pretrained(model)
-                sep_token = tokenizer.sep_token
+                loaded_sep_token = _load_sep_token(model)
+                if loaded_sep_token is not None:
+                    sep_token = loaded_sep_token
+                else:
+                    print("Could not load tokenizer for serialization. Using default sep token of </s>")
+                    sep_token = "</s>"
     elif isinstance(model, LinkTransformer):
         sep_token = model.tokenizer.sep_token
     else:
         sep_token = "</s>"
 
-    return df[columns].apply(lambda x: sep_token.join(x.astype(str)), axis=1).tolist()
+    if not isinstance(sep_token, str) or sep_token == "":
+        sep_token = "</s>"
+
+    return df[columns].apply(
+        lambda x: sep_token.join(["" if pd.isna(v) else str(v) for v in x.tolist()]),
+        axis=1,
+    ).tolist()
 
 
 def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 128,
-                     sbert: bool = True, openai_key: str = None,return_numpy=True) -> Union[np.ndarray, torch.Tensor]:
+                     sbert: bool = True, openai_key: str = None, gemini_key: str = None, return_numpy=True) -> Union[np.ndarray, torch.Tensor]:
     """
     Infer embeddings for a list of strings using a language model.
 
@@ -118,9 +186,16 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
     :param batch_size: Batch size for inference (default: 128).
     :param sbert: If True, load model as LinkTransformer (default: True).
     :param openai_key: OpenAI API key (optional).
+    :param gemini_key: Gemini API key (optional). Preferred for Gemini embedding models.
     :param return_numpy: If True, return embeddings as a numpy array (default: True). Else return a tensor.
     :return: Embeddings as a numpy array or a tensor (depending on return_numpy).
     """
+
+    if _is_gemini_embedding_model(model):
+        api_key = gemini_key or os.getenv("GEMINI_API_KEY") or openai_key
+        if api_key is None:
+            raise ValueError("Gemini embedding models require an API key. Pass your key via `gemini_key` or set `GEMINI_API_KEY`.")
+        return infer_embeddings_with_gemini(strings, model=model, api_key=api_key, return_numpy=return_numpy)
 
     if openai_key is None:
         if isinstance(model, LinkTransformer):
@@ -159,7 +234,7 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
                 response = openai.embeddings.create(input=split_strings[i], model=model)["data"]
                 f = lambda x: x["embedding"]
             else:
-                response = openai.embeddings.create(input=split_strings[i],model="text-embedding-ada-002").data
+                response = openai.embeddings.create(input=split_strings[i], model=model).data
                 f = lambda x: x.embedding
             if return_numpy:
                 embeddings.append(np.array(list(map(f, response)), dtype=np.float32))
@@ -199,7 +274,7 @@ def get_completion_from_messages(
         openai_params: Dict = None
 ) -> Tuple[str, int]:
     """
-    This function takes text of an article and send it to OpenAI API as user input and
+    This function takes a string and sends it to OpenAI API as user input and
     collects the content of the API response and the total number of tokens used
 
     :param client: (openai.OpenAI) OpenAI client
@@ -304,3 +379,116 @@ def predict_rows_with_openai(
             "Failed to convert OpenAI text labels to numeric labels. Text labels are kept. \
             You may want to modify the prompt or the label dict. ")
         return preds
+    
+
+def apply_in_chunks(
+    items: Sequence[str],
+    fn: Callable[[List[str], Dict[str,Any]], List[str]],
+    fn_kwargs: Optional[Dict[str,Any]] = None,
+    *,
+    chunk_size: int = 50,
+    progress_bar: bool = True,
+) -> List[str]:
+    """
+    Break `items` into chunks and call `fn(batch, **fn_kwargs)` on each chunk,
+    returning a flat list of results in the original order.
+    """
+    fn_kwargs = fn_kwargs or {}
+    results: List[str] = []
+    chunks = [
+        items[i : i + chunk_size]
+        for i in range(0, len(items), chunk_size)
+    ]
+    iterator = tqdm(chunks, disable=not progress_bar, desc="applying transform")
+    for batch in iterator:
+        transformed = fn(batch, fn_kwargs)
+        if len(transformed) != len(batch):
+            raise ValueError("Transform function returned wrong batch size")
+        results.extend(transformed)
+    return results
+
+def openai_transform(
+    texts: List[str],
+    params: Dict[str,Any]
+) -> List[str]:
+    """
+    params must include:
+      - client: openai.OpenAI
+      - model: str
+      - prompt: str
+      - max_retries, ratelimit_sleep_time
+      - any extra openai_params dict
+    """
+    client     = params["client"]
+    model      = params["model"]
+    prompt     = params["prompt"]
+    retries    = params.get("max_retries", 5)
+    backoff    = params.get("ratelimit_sleep_time", 15)
+    extra      = params.get("openai_params", {})
+
+    # append JSON instructions automatically
+    json_instr = (
+        "\n\nPlease return only a JSON array of strings, "
+        "one entry per input, in the same order, with no extra text."
+    )
+    effective_prompt = prompt + json_instr
+
+    system_msg = {"role": "system", "content": effective_prompt}
+    user_msg   = {"role": "user",   "content": json.dumps(texts)}
+
+
+    for attempt in range(retries):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[system_msg, user_msg],
+                **{k: extra[k] for k in ("temperature","max_tokens","top_p",
+                                         "frequency_penalty","presence_penalty")
+                   if k in extra}
+            )
+            out = resp.choices[0].message.content
+            arr = json.loads(out)
+            if not isinstance(arr, list):
+                raise ValueError("expected JSON list")
+            if len(arr) != len(texts):
+                print(arr)
+                print("vs")
+                print(texts)
+                raise ValueError(f"expected {len(texts)} items, got {len(arr)}")
+            
+            return arr
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
+            wait = backoff * (2 ** attempt)
+            tqdm.write(f"OpenAI error {e!r}, retrying in {wait}s…")
+            time.sleep(wait)
+            
+def transform_column(
+    df: pd.DataFrame,
+    column: str,
+    transform_fn: Callable[[List[str], Dict[str,Any]], List[str]],
+    fn_kwargs: Dict[str,Any],
+    *,
+    chunk_size: int = 50,
+    output_column: Optional[str] = None,
+    progress_bar: bool = True
+) -> pd.DataFrame:
+    """
+    Generic: takes one column of strings, runs them through transform_fn in chunks,
+    and appends a new column of the transforms.
+    """
+    if column not in df.columns:
+        raise KeyError(column)
+    ser = df[column].astype(str).tolist()
+    transformed = apply_in_chunks(
+        ser,
+        transform_fn,
+        fn_kwargs,
+        chunk_size=chunk_size,
+        progress_bar=progress_bar
+    )
+    out_col = output_column or f"{column}_transformed"
+    df = df.copy()
+    df[out_col] = transformed
+    return df

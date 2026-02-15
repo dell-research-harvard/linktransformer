@@ -623,7 +623,9 @@ def prep_linkage_data(
     return train_data_dict, val_data, test_data
     
 
-def preprocess_mexican_tarrif_data(file_path="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/wiki_data/es_mexican_products.xlsx"):
+def preprocess_mexican_tarrif_data(file_path: str = None):
+    if file_path is None:
+        raise ValueError("Please provide `file_path` to the Mexican tariff dataset.")
     ##Load the df
     df=pd.read_excel(file_path)
     df=df.copy()
@@ -847,28 +849,3 @@ def prep_clus_data(
 
 
 
-
-##Run as script
-if __name__ == "__main__":
-   
-    # train_data,val_data=prep_linkage_data("/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/wiki_data/es_mexican_products.xlsx",left_col_names=["description47"],right_col_names=['description48'],left_id_name=['tariffcode47'],right_id_name=['tariffcode48'],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
-
-    # train_data,val_data,test_data=prep_clus_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
-    # # train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=False)
-    # print(train_data)
-    # print(val_data)
-    # print(test_data)
-    # train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/company_clusters.csv",clus_text_col_names=["company_name"],clus_id_col_name=["cluster_id"],model="all-mpnet-base-v2",val_perc=0.2,large_val=True)
-    # print(train_data)
-    # print(val_data)
-    # print(test_data)
-    train_data,val_data,test_data=preprocess_any_data(data="/mnt/122a7683-fa4b-45dd-9f13-b18cc4f4a187/deeprecordlinkage/linktransformer/src/linktransformer/data/es_mexican_products.xlsx",
-                                                      left_col_names=["description47"],
-                                                        right_col_names=['description48'],
-                                                        left_id_name=['tariffcode47'],
-                                                        right_id_name=['tariffcode48'],
-                                                      model="all-mpnet-base-v2",
-                                                      val_perc=0.2,large_val=True)
-    print(train_data)
-    print(val_data)
-    print(test_data)

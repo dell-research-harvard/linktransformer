@@ -1,12 +1,20 @@
 import math
 import os
 import sys
+from math import ceil
 from typing import Dict
-from linktransformer.modified_sbert import losses, data_loaders, evaluation
-from torch.utils.data import DataLoader# This is the same as torch.utils.data.DataLoader
+from unittest.mock import patch
+from datasets import Dataset as HFDataset
+from linktransformer.modified_sbert import losses, evaluation
+import torch
 import sentence_transformers
-from sentence_transformers import models, LoggingHandler 
-from sentence_transformers.datasets import SentenceLabelDataset
+from sentence_transformers import (
+    models,
+    LoggingHandler,
+    SentenceTransformerTrainer,
+    SentenceTransformerTrainingArguments,
+)
+from sentence_transformers.training_args import BatchSamplers
 import logging
 from transformers.utils import logging as lg
 import wandb    
@@ -28,6 +36,29 @@ logging.basicConfig(format='%(asctime)s - %(message)s',
                     level=logging.INFO,
                     handlers=[LoggingHandler()])
 logger = logging.getLogger(__name__)
+
+
+def _build_supcon_dataset(cluster_dict):
+    sentences = []
+    labels = []
+    cluster_label = 1
+    for cluster_id in list(cluster_dict.keys()):
+        for text in cluster_dict[cluster_id]:
+            sentences.append(text)
+            labels.append(cluster_label)
+        cluster_label += 1
+    print(f'{len(sentences)} training examples')
+    return HFDataset.from_dict({"sentence": sentences, "label": labels})
+
+
+def _build_onlinecontrastive_dataset(df):
+    source_text = df['left_text'].tolist()
+    target_text = df['right_text'].tolist()
+    label = df['label'].tolist()
+    label2int = {"same": 1, "different": 0, 1: 1, 0: 0}
+    labels = [int(label2int[val]) for val in label]
+    print(f'{len(labels)} training pairs')
+    return HFDataset.from_dict({"sentence1": source_text, "sentence2": target_text, "label": labels})
 
 
 def train_biencoder(
@@ -88,23 +119,10 @@ def train_biencoder(
         
 
 
-    # Special dataset "SentenceLabelDataset" to wrap out train_set
-    # It yields batches that contain at least two samples with the same label
-    '''
-    SentenceLabelDataset: 
-    https://github.com/UKPLab/sentence-transformers/blob/master/sentence_transformers/datasets/SentenceLabelDataset.py
-
-    '''
-
-    # Load data as individuals
-    ## train_data - You should organize it into cluster fformat
     if loss_type=="supcon":
-        train_samples = data_loaders.load_data_as_individuals(train_data, type="training")
-        train_data_sampler = SentenceLabelDataset(train_samples)
-        train_dataloader = DataLoader(train_data_sampler, batch_size=train_batch_size)
+        train_dataset = _build_supcon_dataset(train_data)
     elif loss_type=="onlinecontrastive":
-        train_samples = data_loaders.load_data_as_pairs(train_data, type="training")
-        train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=train_batch_size)
+        train_dataset = _build_onlinecontrastive_dataset(train_data)
     else:
         raise ValueError("loss_type can only be either 'supcon' or 'onlinecontrastive'")
     
@@ -142,20 +160,58 @@ def train_biencoder(
     logger.info("Evaluate model without training")
     seq_evaluator(model, epoch=0, steps=0, output_path=model_save_path)
 
-    # Train the model
-    model.fit(
-        train_objectives=[(train_dataloader, train_loss)],
-        evaluator=seq_evaluator,
-        epochs=num_epochs,
-        warmup_steps=math.ceil(len(train_dataloader) * num_epochs * warm_up_perc),
-        output_path=model_save_path,
-        evaluation_steps= math.ceil(len(train_dataloader)*eval_steps_perc),
-        checkpoint_save_steps=None,
-        checkpoint_path=None,
-        save_best_model=True,
-        checkpoint_save_total_limit=None,
-        optimizer_params = optimizer_params,
-    )
+    # Train the model using the modern trainer API
+    steps_per_epoch = max(1, ceil(len(train_dataset) / max(1, train_batch_size)))
+    logging_steps = max(1, ceil(steps_per_epoch * eval_steps_perc))
+
+    local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    distributed_mode = world_size > 1 or local_rank != -1
+
+    def _build_trainer_and_train():
+        training_args = SentenceTransformerTrainingArguments(
+            output_dir=model_save_path,
+            num_train_epochs=num_epochs,
+            per_device_train_batch_size=train_batch_size,
+            learning_rate=optimizer_params.get("lr", 2e-5),
+            warmup_ratio=warm_up_perc,
+            logging_steps=logging_steps,
+            eval_strategy="no",
+            save_strategy="no",
+            report_to="wandb" if wandb_names is not None else "none",
+            local_rank=local_rank if distributed_mode else -1,
+            ddp_backend="nccl" if distributed_mode else None,
+        )
+
+        if loss_type == "supcon":
+            training_args.batch_sampler = BatchSamplers.GROUP_BY_LABEL
+
+        trainer = SentenceTransformerTrainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            loss=train_loss,
+            evaluator=seq_evaluator,
+        )
+        trainer.train()
+        return trainer
+
+    if torch.cuda.is_available() and torch.cuda.device_count() > 1 and distributed_mode:
+        logger.info("Multiple CUDA devices detected with distributed launch. Using multi-GPU DDP training path.")
+        trainer = _build_trainer_and_train()
+    elif torch.cuda.is_available() and torch.cuda.device_count() > 1:
+        logger.warning(
+            "Multiple CUDA devices detected without distributed launch. "
+            "Skipping implicit DataParallel due to upstream incompatibility; "
+            "using a single-device path. For true multi-GPU, launch with torchrun "
+            "(e.g. `torchrun --nproc_per_node=<N> ...`)."
+        )
+        with patch("torch.cuda.device_count", return_value=1):
+            trainer = _build_trainer_and_train()
+    else:
+        trainer = _build_trainer_and_train()
+
+    trainer.save_model(model_save_path)
 
     ###Get the best model path among the saved checkpoints
     ##take the last saved checkpoints = best
