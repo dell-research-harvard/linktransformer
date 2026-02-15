@@ -1,12 +1,23 @@
 # LinkTransformer
 
 [![arXiv](https://img.shields.io/badge/arXiv-2309.00789-b31b1b.svg)](https://arxiv.org/abs/2309.00789)
+![LinkTransformer demo](https://github.com/dell-research-harvard/linktransformer/assets/60428420/15162828-b0fb-4ee3-8a0f-fdf3371d10a0)
 
 LinkTransformer is a Python package for semantic record linkage, candidate retrieval, row transformation, clustering, and text classification over tabular data.
 
 - Paper: https://arxiv.org/abs/2309.00789
 - Website: https://linktransformer.github.io/
 - Demo video: https://www.youtube.com/watch?v=Sn47nmCvV9M
+
+## Tutorials
+
+- Link records with LinkTransformer: https://colab.research.google.com/drive/1OqUB8sqpUvrnC8oa_1RoOUzV6DaAKL4N?usp=sharing
+- Train your own LinkTransformer model: https://colab.research.google.com/drive/1tHitPGjMMI2Nvh4wwA8rdcbYfbLaJDvg?usp=sharing
+- Classify text with LinkTransformer: https://colab.research.google.com/drive/1hSh_p8j7LP2RfdtxrPslOfnogC_CbYw5?usp=sharing
+- Demo app (Hugging Face Space): https://huggingface.co/spaces/96abhishekarora/linktransformer_merge
+- Feature deck: https://www.dropbox.com/scl/fi/dquxru8bndlyf9na14cw6/A-python-package-to-do-easy-record-linkage-using-Transformer-models.pdf?rlkey=fiv7j6c0vgl901y940054eptk&dl=0
+
+More tutorials are coming soon.
 
 ## Installation
 
