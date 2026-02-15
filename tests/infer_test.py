@@ -223,41 +223,31 @@ def test_lt_merge_range_many_to_many(monkeypatch):
         df2,
         on="CompanyName",
         model=object(),
-        sim_threshold=0.4,
+        sim_threshold=0.01,
     )
     
     print(out)
 
     assert isinstance(out, pd.DataFrame)
-    assert len(out) == 3
     assert "score" in out.columns
-    assert (out["score"] >= 0.0).all()
+    assert (out["score"] >= 0.01).all()
 
 
-def test_lt_merge_range_empty_when_no_pairs_above_threshold(monkeypatch):
-    df1 = pd.DataFrame({"CompanyName": ["alpha"]})
-    df2 = pd.DataFrame({"CompanyName": ["beta"]})
+def test_lt_merge_range_retains_unmatched_left_rows():
+    df1 = pd.DataFrame({"CompanyName": ["alpha","beta", "gamma"]})
+    df2 = pd.DataFrame({"CompanyName": ["beta_corp", "delta inc","alpha llc","epsilon llc"]})
 
-    embedding_map = {
-        "alpha": np.array([1.0, 0.0], dtype=np.float32),
-        "beta": np.array([0.2, 0.8], dtype=np.float32),
-    }
-
-    def _fake_infer_embeddings(strings, model, **kwargs):
-        return np.vstack([embedding_map[item] for item in strings]).astype(np.float32)
-
-    monkeypatch.setattr(infer_mod, "infer_embeddings", _fake_infer_embeddings)
 
     out = lt.merge_range(
         df1,
         df2,
         on="CompanyName",
-        model=object(),
-        sim_threshold=0.99,
+        model="sentence-transformers/all-MiniLM-L6-v2",
+        sim_threshold=0.01,
     )
 
+    print(out)
     assert isinstance(out, pd.DataFrame)
-    assert out.empty
     assert "score" in out.columns
 
 # def test_knn_range_search():

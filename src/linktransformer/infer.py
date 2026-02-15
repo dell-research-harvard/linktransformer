@@ -725,10 +725,11 @@ def merge_range(
     gemini_key: Optional[str] = None,
 ) -> DataFrame:
     """
-    Range-based many-to-many merge using FAISS ``range_search``.
+    Range-based left merge using FAISS ``range_search``.
 
     For each row in ``df1``, returns all rows in ``df2`` with cosine similarity
-    greater than or equal to ``sim_threshold``.
+    greater than or equal to ``sim_threshold``. If a left row has no matches
+    above threshold, it is retained with null right-side values and null score.
 
     :param df1 (DataFrame): First dataframe (left).
     :param df2 (DataFrame): Second dataframe (right).
@@ -741,7 +742,7 @@ def merge_range(
     :param batch_size (int): Batch size for embedding inference.
     :param openai_key (str, optional): OpenAI API key for OpenAI embedding models.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
-    :return: DataFrame: Many-to-many matched dataframe with ``score`` column.
+    :return: DataFrame: Left-join style matched dataframe with ``score`` column.
     """
     if sim_threshold < -1.0 or sim_threshold > 1.0:
         raise ValueError("sim_threshold must be between -1.0 and 1.0 for cosine similarity.")
@@ -828,31 +829,42 @@ def merge_range(
     per_left_counts = np.diff(lims)
     total_matches = int(per_left_counts.sum())
 
-    if total_matches == 0:
-        empty = df1.iloc[[]].merge(
-            df2.iloc[[]],
+    matched_frames = []
+
+    if total_matches > 0:
+        left_indices = np.repeat(np.arange(len(df1), dtype=np.int64), per_left_counts.astype(np.int64))
+        right_indices = indices.astype(np.int64)
+
+        df1_expanded = df1.iloc[left_indices].reset_index(drop=True)
+        df2_expanded = df2.iloc[right_indices].reset_index(drop=True)
+
+        matched_df = df1_expanded.merge(
+            df2_expanded,
             left_index=True,
             right_index=True,
             how="inner",
             suffixes=suffixes,
         )
-        empty["score"] = pd.Series(dtype=float)
-        return empty
+        matched_df["score"] = distances
+        matched_df["__left_order"] = left_indices
+        matched_frames.append(matched_df)
 
-    left_indices = np.repeat(np.arange(len(df1), dtype=np.int64), per_left_counts.astype(np.int64))
-    right_indices = indices.astype(np.int64)
+    unmatched_left_indices = np.where(per_left_counts == 0)[0]
+    if len(unmatched_left_indices) > 0:
+        unmatched_left = df1.iloc[unmatched_left_indices].reset_index(drop=True)
+        unmatched_df = unmatched_left.merge(
+            df2.iloc[[]],
+            left_index=True,
+            right_index=True,
+            how="left",
+            suffixes=suffixes,
+        )
+        unmatched_df["score"] = np.nan
+        unmatched_df["__left_order"] = unmatched_left_indices
+        matched_frames.append(unmatched_df)
 
-    df1_expanded = df1.iloc[left_indices].reset_index(drop=True)
-    df2_expanded = df2.iloc[right_indices].reset_index(drop=True)
-
-    df_lm_matched = df1_expanded.merge(
-        df2_expanded,
-        left_index=True,
-        right_index=True,
-        how="inner",
-        suffixes=suffixes,
-    )
-    df_lm_matched["score"] = distances
+    df_lm_matched = pd.concat(matched_frames, ignore_index=True)
+    df_lm_matched = df_lm_matched.sort_values("__left_order", kind="stable").drop(columns=["__left_order"]).reset_index(drop=True)
 
     print(
         f"Range matched rows: {len(df_lm_matched)} (threshold={sim_threshold}) on key columns "
