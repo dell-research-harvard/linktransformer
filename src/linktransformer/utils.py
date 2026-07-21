@@ -3,6 +3,7 @@ import time
 import warnings
 from typing import List, Optional, Dict, Tuple, Iterator, Any, Union, Callable, Sequence
 from linktransformer.modelling.LinkTransformer import LinkTransformer
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import transformers
@@ -176,8 +177,16 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
     ).tolist()
 
 
-def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 128,
-                     sbert: bool = True, openai_key: str = None, gemini_key: str = None, return_numpy=True) -> Union[np.ndarray, torch.Tensor]:
+def infer_embeddings(
+    strings: list,
+    model: LinkTransformer,
+    batch_size: int = 128,
+    sbert: bool = True,
+    openai_key: str = None,
+    gemini_key: str = None,
+    return_numpy=True,
+    cache_path: Optional[Union[str, os.PathLike]] = None
+) -> Union[np.ndarray, torch.Tensor]:
     """
     Infer embeddings for a list of strings using a language model.
 
@@ -191,62 +200,106 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
     :return: Embeddings as a numpy array or a tensor (depending on return_numpy).
     """
 
-    if _is_gemini_embedding_model(model):
-        api_key = gemini_key or os.getenv("GEMINI_API_KEY") or openai_key
-        if api_key is None:
-            raise ValueError("Gemini embedding models require an API key. Pass your key via `gemini_key` or set `GEMINI_API_KEY`.")
-        return infer_embeddings_with_gemini(strings, model=model, api_key=api_key, return_numpy=return_numpy)
+    if cache_path is not None and os.path.exists(cache_path):
+        cache_path = Path(cache_path)
+        embeddings = pd.read_pickle(cache_path)
 
-    if openai_key is None:
+        if len(embeddings) != len(strings):
+            raise ValueError("Cached embeddings do not match the input strings.")
+
+        if return_numpy:
+            return np.asarray(embeddings)
+
+        return torch.as_tensor(embeddings, dtype=torch.float32)
+
+    if _is_gemini_embedding_model(model):
+        api_key = (
+            gemini_key
+            or os.getenv("GEMINI_API_KEY")
+            or openai_key
+        )
+        if api_key is None:
+            raise ValueError(
+                "Gemini embedding models require an API key. "
+                "Pass `gemini_key` or set `GEMINI_API_KEY`."
+            )
+
+        embeddings = infer_embeddings_with_gemini(
+            strings,
+            model=model,
+            api_key=api_key,
+            return_numpy=return_numpy,
+        )
+    elif openai_key is None:
         if isinstance(model, LinkTransformer):
-            embeddings = model.encode(strings, batch_size=batch_size,convert_to_numpy=return_numpy,convert_to_tensor=not return_numpy)
+            embedding_model = model
+        elif isinstance(model, str) and sbert:
+            embedding_model = LinkTransformer(model)
         elif isinstance(model, str):
-            if sbert:
-                model = LinkTransformer(model)
-            else:
-                model = transformers.AutoModel.from_pretrained(model)
-                print("Warning: Use of non-sentence transformer models is not recommended and is not actively supported. This will probably not work")
-            embeddings = model.encode(strings, batch_size=batch_size,convert_to_numpy=return_numpy,convert_to_tensor=not return_numpy)
+            embedding_model = transformers.AutoModel.from_pretrained(
+                model
+            )
         else:
             raise ValueError(f"Invalid model type: {type(model)}")
+
+        embeddings = embedding_model.encode(
+            strings,
+            batch_size=batch_size,
+            convert_to_numpy=return_numpy,
+            convert_to_tensor=not return_numpy,
+        )
     else:
         openai.api_key = openai_key
-        ###Open ai has a token limit on  max number of tokens per request
-        char_count_string = [len(x) for x in strings]
-        ##Based on character count, split the list into multiple lists - each with a max of 5000 characters
-        ##This is a very rough approximation - we can do better
-        ##But this is a good starting point
-        ##Get the indices of the list where the split should happen. Aggregate the character count list and split when the sum is greater than 5000
-        split_indices = [0]
-        char_count_sum = 0
-        for i in range(len(char_count_string)):
-            char_count_sum += char_count_string[i]
-            if char_count_sum > 5000:
-                split_indices.append(i)
-                char_count_sum = 0
-        split_indices.append(len(char_count_string))
-        ##Split the list of strings into multiple lists
-        split_strings = [strings[split_indices[i]:split_indices[i + 1]] for i in range(len(split_indices) - 1)]
-        ##Get the embeddings for each of the split lists
+        batches = []
+        batch = []
+        batch_length = 0
+
+        for string in strings:
+            if batch and batch_length + len(string) > 5000:
+                batches.append(batch)
+                batch = []
+                batch_length = 0
+
+            batch.append(string)
+            batch_length += len(string)
+
+        if batch:
+            batches.append(batch)
+
         embeddings = []
-        for i in range(len(split_strings)):
-            if not openai.__version__ >= "1.0.0":
-                response = openai.embeddings.create(input=split_strings[i], model=model)["data"]
-                f = lambda x: x["embedding"]
-            else:
-                response = openai.embeddings.create(input=split_strings[i], model=model).data
-                f = lambda x: x.embedding
+
+        for batch in batches:
+            response = openai.embeddings.create(
+                input=batch,
+                model=model,
+            ).data
+            values = [item.embedding for item in response]
+
             if return_numpy:
-                embeddings.append(np.array(list(map(f, response)), dtype=np.float32))
-            else: #prep as tensor
-                embeddings.append(torch.tensor(list(map(f, response)), dtype=torch.float32))
+                embeddings.append(
+                    np.asarray(values, dtype=np.float32)
+                )
+            else:
+                embeddings.append(
+                    torch.tensor(values, dtype=torch.float32)
+                )
+
         if return_numpy:
-            embeddings = np.concatenate(embeddings, axis=0)
+            embeddings = np.concatenate(embeddings)
         else:
-            embeddings = torch.cat(embeddings, dim=0)
+            embeddings = torch.cat(embeddings)
+
+    if cache_path is not None:
+        cache_path = Path(cache_path)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+        embeddings_to_cache = embeddings
+        if isinstance(embeddings, torch.Tensor):
+            embeddings_to_cache = embeddings.detach().cpu().numpy()
+
+        pd.to_pickle(embeddings_to_cache, cache_path)
 
     return embeddings
-
 
 
 def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
