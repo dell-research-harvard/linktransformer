@@ -197,6 +197,7 @@ def infer_embeddings(
     :param openai_key: OpenAI API key (optional).
     :param gemini_key: Gemini API key (optional). Preferred for Gemini embedding models.
     :param return_numpy: If True, return embeddings as a numpy array (default: True). Else return a tensor.
+    :param cache_path: Path to a pickle file containing embeddings for the list of strings. Defaults to None.
     :return: Embeddings as a numpy array or a tensor (depending on return_numpy).
     """
 

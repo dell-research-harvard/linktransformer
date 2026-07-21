@@ -591,6 +591,7 @@ def merge_knn(
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param drop_sim_threshold (float, optional): Drop rows with similarity below this threshold. Defaults to None.
+    :param embeddings_cache_right (Union[str, os.PathLike], optional): Path to a pickle file containing the embeddings of the serialized right dataframe. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
 
@@ -744,6 +745,7 @@ def merge_range(
     :param batch_size (int): Batch size for embedding inference.
     :param openai_key (str, optional): OpenAI API key for OpenAI embedding models.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
+    :param embeddings_cache_right (Union[str, os.PathLike], optional): Path to a pickle file containing the embeddings of the serialized right dataframe. Defaults to None.
     :return: DataFrame: Left-join style matched dataframe with ``score`` column.
     """
     if sim_threshold < -1.0 or sim_threshold > 1.0:
@@ -1022,6 +1024,7 @@ def merge_k_judge(
     - `llm_raw_response` (raw model output)
 
     :param confidence_threshold: optional post-filter threshold on llm_confidence.
+    :param embeddings_cache_right (Union[str, os.PathLike], optional): Path to a pickle file containing the embeddings of the serialized right dataframe. Defaults to None.
     """
     llm_params = llm_params or {}
 
@@ -1234,7 +1237,8 @@ def merge_knn_with_llm(
     ratelimit_sleep_time: int = 15,
     embeddings_cache_right: Optional[Union[str, os.PathLike]] = None
 ) -> DataFrame:
-    """Backward-compatible alias for `merge_k_judge`."""
+    """Backward-compatible alias for ``merge_k_judge``.
+    """
     return merge_k_judge(
         df1=df1,
         df2=df2,
@@ -1285,7 +1289,8 @@ def merge_knn_openai(
     ratelimit_sleep_time: int = 15,
     embeddings_cache_right: Optional[Union[str, os.PathLike]] = None
 ) -> DataFrame:
-    """Backward-compatible alias for `merge_k_judge`."""
+    """Backward-compatible OpenAI alias for ``merge_k_judge``.
+    """
     return merge_k_judge(
         df1=df1,
         df2=df2,
