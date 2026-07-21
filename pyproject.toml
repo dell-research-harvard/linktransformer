@@ -50,6 +50,9 @@ Homepage = "https://linktransformer.github.io/"
 pythonpath = [
   "src"
 ]
+testpaths = [
+  "tests"
+]
 
 [tool.setuptools]
 # ...
@@ -59,3 +62,8 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
