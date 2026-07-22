@@ -15,6 +15,7 @@ from sentence_transformers.models import Transformer
 from torch import nn
 from linktransformer import __MODEL_HUB_ORGANIZATION__
 import tempfile
+from sentence_transformers.util import load_file_path
 
 
 
@@ -73,7 +74,32 @@ class LinkTransformer(SentenceTransformer):
             self.opt_model_description = opt_model_description
             self.opt_model_lang = opt_model_lang
             
+    def _get_model_type(
+        self,
+        model_name_or_path: str,
+        token: bool | str | None,
+        cache_folder: str | None,
+        revision: str | None = None,
+        local_files_only: bool = False,
+    ) -> str | None:
+        """defaults to own class name so that the model-type check passes for ST version 5+ (tomaarsen's suggested fix in sentence-transformer#3536)
+        """
+        
+        config_sentence_transformers_json_path = load_file_path(
+            model_name_or_path,
+            "config_sentence_transformers.json",
+            token=token,
+            cache_folder=cache_folder,
+            revision=revision,
+            local_files_only=local_files_only,
+        )
 
+        if config_sentence_transformers_json_path is None:
+            return "SentenceTransformer"
+
+        with open(config_sentence_transformers_json_path, encoding="utf8") as fIn:
+            config = json.load(fIn)
+            return config.get("model_type", self.__class__.__name__)  # Default to this class if not specified
 
 
     def save(self, path: str, model_name: Optional[str] = None, create_model_card: bool = True, train_datasets: Optional[List[str]] = None,override_model_description: Optional[str] = None, 
