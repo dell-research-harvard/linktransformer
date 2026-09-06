@@ -574,6 +574,7 @@ def merge_knn(
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
     drop_sim_threshold: float = None,
+    embeddings_cache_right: Optional[Union[str, os.PathLike]] = None
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings. This function would support k nearest neighbors matching for each row in df1.
@@ -590,6 +591,7 @@ def merge_knn(
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param drop_sim_threshold (float, optional): Drop rows with similarity below this threshold. Defaults to None.
+    :param embeddings_cache_right (Union[str, os.PathLike], optional): Path to a pickle file containing the embeddings of the serialized right dataframe. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
 
@@ -648,7 +650,7 @@ def merge_knn(
     ## Infer embeddings for df1
     embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True, cache_path=embeddings_cache_right)
 
 
     ### Expand dim if embeddings are 1d (numpy)
@@ -723,6 +725,7 @@ def merge_range(
     batch_size: int = 128,
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
+    embeddings_cache_right: Optional[Union[str, os.PathLike]] = None,
 ) -> DataFrame:
     """
     Range-based left merge using FAISS ``range_search``.
@@ -742,6 +745,7 @@ def merge_range(
     :param batch_size (int): Batch size for embedding inference.
     :param openai_key (str, optional): OpenAI API key for OpenAI embedding models.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
+    :param embeddings_cache_right (Union[str, os.PathLike], optional): Path to a pickle file containing the embeddings of the serialized right dataframe. Defaults to None.
     :return: DataFrame: Left-join style matched dataframe with ``score`` column.
     """
     if sim_threshold < -1.0 or sim_threshold > 1.0:
@@ -805,6 +809,7 @@ def merge_range(
         openai_key=openai_key,
         gemini_key=gemini_key,
         return_numpy=True,
+        cache_path=embeddings_cache_right,
     )
 
     if len(embeddings1.shape) == 1:
@@ -1009,6 +1014,7 @@ def merge_k_judge(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    embeddings_cache_right: Optional[Union[str, os.PathLike]] = None
 ) -> DataFrame:
     """
     Retrieve candidate matches with `merge_knn`, then verify each pair with an LLM.
@@ -1018,6 +1024,7 @@ def merge_k_judge(
     - `llm_raw_response` (raw model output)
 
     :param confidence_threshold: optional post-filter threshold on llm_confidence.
+    :param embeddings_cache_right (Union[str, os.PathLike], optional): Path to a pickle file containing the embeddings of the serialized right dataframe. Defaults to None.
     """
     llm_params = llm_params or {}
 
@@ -1082,6 +1089,7 @@ def merge_k_judge(
         openai_key=retrieval_openai_key,
         gemini_key=retrieval_gemini_key,
         drop_sim_threshold=drop_sim_threshold,
+        embeddings_cache_right=embeddings_cache_right,
     ).copy()
 
     def _raise_judge_error(judge_error: Exception, stage: str) -> None:
@@ -1227,8 +1235,10 @@ def merge_knn_with_llm(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    embeddings_cache_right: Optional[Union[str, os.PathLike]] = None
 ) -> DataFrame:
-    """Backward-compatible alias for `merge_k_judge`."""
+    """Backward-compatible alias for ``merge_k_judge``.
+    """
     return merge_k_judge(
         df1=df1,
         df2=df2,
@@ -1251,6 +1261,7 @@ def merge_knn_with_llm(
         confidence_threshold=confidence_threshold,
         max_retries=max_retries,
         ratelimit_sleep_time=ratelimit_sleep_time,
+        embeddings_cache_right=embeddings_cache_right,
     )
 
 
@@ -1276,8 +1287,10 @@ def merge_knn_openai(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    embeddings_cache_right: Optional[Union[str, os.PathLike]] = None
 ) -> DataFrame:
-    """Backward-compatible alias for `merge_k_judge`."""
+    """Backward-compatible OpenAI alias for ``merge_k_judge``.
+    """
     return merge_k_judge(
         df1=df1,
         df2=df2,
@@ -1300,6 +1313,7 @@ def merge_knn_openai(
         confidence_threshold=confidence_threshold,
         max_retries=max_retries,
         ratelimit_sleep_time=ratelimit_sleep_time,
+        embeddings_cache_right=embeddings_cache_right,
     )
 
 

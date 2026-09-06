@@ -125,3 +125,34 @@ def test_lt_gemini_import_error_message(monkeypatch):
             model="gemini-embedding-001",
             api_key="dummy",
         )
+
+
+def test_lt_embedding_cache_reuses_embeddings(tmp_path, monkeypatch):
+    expected = np.array([[0.1, 0.2], [0.3, 0.4]], dtype=np.float32)
+    calls = 0
+
+    def fake_gemini(strings, model, api_key, return_numpy=True):
+        nonlocal calls
+        calls += 1
+        return expected
+
+    cache_path = tmp_path / "embeddings" / "cache.pkl"
+    monkeypatch.setattr(utils_mod, "infer_embeddings_with_gemini", fake_gemini)
+
+    first = utils_mod.infer_embeddings(
+        strings=["alpha", "beta"],
+        model="gemini-embedding-001",
+        gemini_key="dummy-key",
+        cache_path=cache_path,
+    )
+    second = utils_mod.infer_embeddings(
+        strings=["alpha", "beta"],
+        model="gemini-embedding-001",
+        gemini_key="dummy-key",
+        cache_path=cache_path,
+    )
+
+    assert cache_path.exists()
+    assert calls == 1
+    np.testing.assert_array_equal(first, expected)
+    np.testing.assert_array_equal(second, expected)

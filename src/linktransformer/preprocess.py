@@ -632,7 +632,7 @@ def preprocess_mexican_tarrif_data(file_path: str = None):
     ##Drop missing descriptions
     df=df.dropna(subset=["description47","description48"])
     ##Make descriptions lowercase
-    df=df.applymap(lambda x: x.lower() if isinstance(x,str) else x)
+    df=df.map(lambda x: x.lower() if isinstance(x,str) else x)
     ##Drop dropna rows
     df=df.dropna()
     ##Get the left and right ids
