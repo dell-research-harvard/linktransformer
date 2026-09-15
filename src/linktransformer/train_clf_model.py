@@ -319,7 +319,11 @@ def preprocess_data(data,model,on,label_col_name):
 
     ##Check if on columns are strings - make strings if not
     for col_name in on:
-        if data[col_name].dtype!=object:
+
+        if not (
+            pd.api.types.is_object_dtype(data[col_name].dtype)
+            or pd.api.types.is_string_dtype(data[col_name].dtype)
+        ):
             data[col_name]=data[col_name].astype(str)
 
 
