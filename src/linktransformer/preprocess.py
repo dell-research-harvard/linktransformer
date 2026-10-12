@@ -549,7 +549,7 @@ def prep_linkage_data(
     else:
         if  val_data is None  and  test_data is None:
             ### Split by val perc - we want to split by cluster assignment. Only 20% of the clusters should be in the val set
-            train_cluster_assignment, val_cluster_assignment = train_test_split(list(set(data["cluster_assignment"])), test_size=val_perc, random_state=42)
+            train_cluster_assignment, val_cluster_assignment = train_test_split(sorted(set(data["cluster_assignment"])), test_size=val_perc, random_state=42)
             
             ###Split val into test and val
             if test_at_end:
@@ -736,7 +736,7 @@ def prep_clus_data(
     else:
         if  val_data is None  and  test_data is None:
             ### Split by val perc - we want to split by cluster assignment. Only 20% of the clusters should be in the val set
-            train_cluster_assignment, val_cluster_assignment = train_test_split(list(set(data["cluster_assignment"])), test_size=val_perc, random_state=42)
+            train_cluster_assignment, val_cluster_assignment = train_test_split(sorted(set(data["cluster_assignment"])), test_size=val_perc, random_state=42)
             
             ###Split val into test and val
             if test_at_end:
