@@ -1,3 +1,6 @@
+import importlib
+import json
+import logging
 import os
 import time
 import warnings
@@ -6,12 +9,43 @@ from linktransformer.modelling.LinkTransformer import LinkTransformer
 import numpy as np
 import pandas as pd
 import transformers
-import openai
-from datasets import Dataset
-from itertools import combinations
 import torch
+from packaging.version import Version
 from tqdm import tqdm
-import json
+
+logger = logging.getLogger(__name__)
+
+# pip distribution name and extra to suggest when an optional module is missing
+_OPTIONAL_MODULES = {
+    "openai": ("openai", None),
+    "datasets": ("datasets", None),
+    "google.genai": ("google-genai", "gemini"),
+    "hdbscan": ("hdbscan", None),
+    "wandb": ("wandb", "train"),
+    "evaluate": ("evaluate", "train"),
+}
+
+
+def _require(module_name: str, min_version: Optional[str] = None):
+    """
+    Import an optional dependency on first use, with an actionable error if it is missing.
+
+    :param module_name: Importable module name, e.g. "openai" or "google.genai".
+    :param min_version: Minimum supported version (compared against ``module.__version__``).
+    :return: The imported module.
+    """
+    dist_name, extra = _OPTIONAL_MODULES.get(module_name, (module_name, None))
+    hint = f"pip install 'linktransformer[{extra}]'" if extra else f"pip install {dist_name}"
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise ImportError(f"This feature requires `{dist_name}`. Install it with: {hint}") from exc
+    if min_version is not None and Version(module.__version__) < Version(min_version):
+        raise ValueError(
+            f"Requires {dist_name} version {min_version} or higher, but you have {module.__version__}. "
+            f"Upgrade with: pip install -U {dist_name}"
+        )
+    return module
 
 
 def _is_gemini_embedding_model(model: Any) -> bool:
@@ -71,15 +105,15 @@ def load_model(model_path: str) -> LinkTransformer:
     :param model_path: Path to the saved model.
     :return: The loaded LinkTransformer model.
     """
-    ###Throw an error if there is an error in loading the model
     try:
-        model = LinkTransformer(model_path)
-    except:
-        print("Can't load the model, please check your path. All transformer based models from [HuggingFace](https://huggingface.co/) are supported. \
-               We recommend [sentence-transformers](https://www.sbert.net/docs/pretrained_models.html) for these tasks as they are trained for \
-               semantic similarity tasks. ")
-
-    return model
+        return LinkTransformer(model_path)
+    except Exception as exc:
+        raise ValueError(
+            f"Can't load the model {model_path!r}; please check the path or Hugging Face model id. "
+            "All transformer based models from Hugging Face (https://huggingface.co/) are supported. "
+            "We recommend sentence-transformers models (https://www.sbert.net/docs/pretrained_models.html) "
+            "as they are trained for semantic similarity tasks."
+        ) from exc
 
 
 def load_clf(model_path: str, num_labels: int = 2) -> transformers.AutoModelForSequenceClassification:
@@ -91,12 +125,9 @@ def load_clf(model_path: str, num_labels: int = 2) -> transformers.AutoModelForS
     :return: The loaded Classification model
     """
     try:
-        model = transformers.AutoModelForSequenceClassification.from_pretrained(model_path, num_labels=num_labels)
-    except Exception as e:
-        print(repr(e))
-        raise ValueError("Error loading classification model. ")
-
-    return model
+        return transformers.AutoModelForSequenceClassification.from_pretrained(model_path, num_labels=num_labels)
+    except Exception as exc:
+        raise ValueError(f"Error loading classification model {model_path!r}.") from exc
 
 
 def cosine_similarity_corresponding_pairs(vector1, vector2):
@@ -135,32 +166,32 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
     if isinstance(model, str):
         if model is not None:
             if "/" not in model:
-                print("No base organization specified, if there is an error, it is likely because of that.")
-                print(
-                    f"Trying to append the model : sentence-transformers/{model} and linktransformers/{model}. Check your path otherwise!")
+                logger.info(
+                    f"No organization in model name {model!r}; also trying sentence-transformers/{model} "
+                    f"and linktransformers/{model}.")
                 ###Error handling
                 loaded_sep_token = _load_sep_token(model)
                 if loaded_sep_token is not None:
                     sep_token = loaded_sep_token
                 else:
-                    print(f"Trying sentence-transformers/{model}...")
+                    logger.info(f"Trying sentence-transformers/{model}...")
                     loaded_sep_token = _load_sep_token("sentence-transformers/" + model)
                     if loaded_sep_token is not None:
                         sep_token = loaded_sep_token
                     else:
-                        print(f"Trying linktransformers/{model}...")
+                        logger.info(f"Trying linktransformers/{model}...")
                         loaded_sep_token = _load_sep_token("linktransformers/" + model)
                         if loaded_sep_token is not None:
                             sep_token = loaded_sep_token
                         else:
-                            print("Could not load tokenizer for serialization. Using default sep token of </s>")
+                            logger.warning("Could not load tokenizer for serialization. Using default sep token of </s>")
                             sep_token = "</s>"
             else:
                 loaded_sep_token = _load_sep_token(model)
                 if loaded_sep_token is not None:
                     sep_token = loaded_sep_token
                 else:
-                    print("Could not load tokenizer for serialization. Using default sep token of </s>")
+                    logger.warning("Could not load tokenizer for serialization. Using default sep token of </s>")
                     sep_token = "</s>"
     elif isinstance(model, LinkTransformer):
         sep_token = model.tokenizer.sep_token
@@ -205,12 +236,13 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
                 model = LinkTransformer(model)
             else:
                 model = transformers.AutoModel.from_pretrained(model)
-                print("Warning: Use of non-sentence transformer models is not recommended and is not actively supported. This will probably not work")
+                warnings.warn("Use of non-sentence transformer models is not recommended and is not actively supported. This will probably not work")
             embeddings = model.encode(strings, batch_size=batch_size,convert_to_numpy=return_numpy,convert_to_tensor=not return_numpy)
         else:
             raise ValueError(f"Invalid model type: {type(model)}")
     else:
-        openai.api_key = openai_key
+        openai = _require("openai", min_version="1.0.0")
+        client = openai.OpenAI(api_key=openai_key)
         ###Open ai has a token limit on  max number of tokens per request
         char_count_string = [len(x) for x in strings]
         ##Based on character count, split the list into multiple lists - each with a max of 5000 characters
@@ -229,13 +261,9 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
         split_strings = [strings[split_indices[i]:split_indices[i + 1]] for i in range(len(split_indices) - 1)]
         ##Get the embeddings for each of the split lists
         embeddings = []
+        f = lambda x: x.embedding
         for i in range(len(split_strings)):
-            if not openai.__version__ >= "1.0.0":
-                response = openai.embeddings.create(input=split_strings[i], model=model)["data"]
-                f = lambda x: x["embedding"]
-            else:
-                response = openai.embeddings.create(input=split_strings[i], model=model).data
-                f = lambda x: x.embedding
+            response = client.embeddings.create(input=split_strings[i], model=model).data
             if return_numpy:
                 embeddings.append(np.array(list(map(f, response)), dtype=np.float32))
             else: #prep as tensor
@@ -250,7 +278,8 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
 
 
 def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
-    dataset = Dataset.from_dict({name: corpus})
+    datasets = _require("datasets")
+    dataset = datasets.Dataset.from_dict({name: corpus})
 
     # Instantiate tokenizer
     tokenizer = transformers.AutoTokenizer.from_pretrained(hf_model)
@@ -265,7 +294,7 @@ def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
 
 
 def get_completion_from_messages(
-        client: openai.OpenAI, 
+        client: "openai.OpenAI",
         text: str,
         model: str,
         openai_key: str,
@@ -341,8 +370,8 @@ def predict_rows_with_openai(
     :returns: (List[int]) a list of labels from OpenAI API
     """
 
-    if openai.__version__ < "1.0.0":
-        raise ValueError(f"Requires OpenAI API version 1.0.0 or higher, but you have {openai.__version__}")
+    openai = _require("openai", min_version="1.0.0")
+    openai_params = openai_params or {}
 
     preds = []
 
@@ -374,7 +403,7 @@ def predict_rows_with_openai(
     try:
         preds_numeric = [label_dict[x] for x in preds]
         return preds_numeric
-    except:
+    except KeyError:
         warnings.warn(
             "Failed to convert OpenAI text labels to numeric labels. Text labels are kept. \
             You may want to modify the prompt or the label dict. ")
@@ -451,10 +480,7 @@ def openai_transform(
             if not isinstance(arr, list):
                 raise ValueError("expected JSON list")
             if len(arr) != len(texts):
-                print(arr)
-                print("vs")
-                print(texts)
-                raise ValueError(f"expected {len(texts)} items, got {len(arr)}")
+                raise ValueError(f"expected {len(texts)} items, got {len(arr)}: {arr!r} for inputs {texts!r}")
             
             return arr
         except Exception as e:

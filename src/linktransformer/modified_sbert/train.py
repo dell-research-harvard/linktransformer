@@ -17,15 +17,10 @@ from sentence_transformers import (
 from sentence_transformers.training_args import BatchSamplers
 import logging
 from transformers.utils import logging as lg
-import wandb    
+from linktransformer.utils import _require
 
 from linktransformer.modelling.LinkTransformer import LinkTransformer
 
-currentdir = os.path.dirname(os.path.realpath(__file__))
-parentdir = os.path.dirname(currentdir)
-#grandparentdir = os.path.dirname(parentdir)
-sys.path.append(parentdir)
-#sys.path.append(grandparentdir)
 
 
 
@@ -84,6 +79,7 @@ def train_biencoder(
 
     # Logging
     if wandb_names: 
+        wandb = _require("wandb")
         if 'run' in wandb_names:
             wandb.init(project=wandb_names['project'], entity=wandb_names['id'], reinit=True, name=wandb_names['run'])
         else:
@@ -109,7 +105,7 @@ def train_biencoder(
         model = LinkTransformer(base_model,opt_model_description=opt_model_description,opt_model_lang=opt_model_lang)
 
     if wandb_names is not None:
-        wandb.watch(model)
+        _require("wandb").watch(model)
 
 
     if loss_type=="onlinecontrastive":

@@ -11,12 +11,10 @@ from torch import nn
 import sklearn
 from datasets import load_dataset, DatasetDict
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
-import evaluate
-import wandb
 import sklearn.model_selection
 from typing import Tuple, List, Union
 
-from linktransformer.utils import serialize_columns
+from linktransformer.utils import _require, serialize_columns
 from linktransformer.configs import CLF_CONFIG_PATH
 
 
@@ -96,6 +94,18 @@ def tokenize_data_for_finetuning(directory: str, hf_model: str, text_column: str
 
     return tokenized_dataset["data"]
 
+def _classification_scores(predictions, references, average: str = "binary") -> dict:
+    """Accuracy, precision, recall and F1, computed with the same sklearn calls the HF `evaluate` metrics wrap."""
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+
+    return {
+        "accuracy": accuracy_score(references, predictions),
+        "precision": precision_score(references, predictions, average=average),
+        "recall": recall_score(references, predictions, average=average),
+        "f1": f1_score(references, predictions, average=average),
+    }
+
+
 def compute_metrics(eval_pred: Tuple[np.ndarray, np.ndarray],averaging_type="weighted") -> dict:
     """
     Compute evaluation metrics for predictions. Note that averaging type is always weighted for now. 
@@ -104,11 +114,6 @@ def compute_metrics(eval_pred: Tuple[np.ndarray, np.ndarray],averaging_type="wei
 
     :return: A dictionary with accuracy, precision, recall, and f1 score.
     """
-    metric0 = evaluate.load("accuracy")
-    metric1 = evaluate.load("precision")
-    metric2 = evaluate.load("recall")
-    metric3 = evaluate.load("f1")
-
     logits, labels = eval_pred
 
     num_classes=labels.max()+1
@@ -117,25 +122,9 @@ def compute_metrics(eval_pred: Tuple[np.ndarray, np.ndarray],averaging_type="wei
         logits = logits[0]
 
     predictions = np.argmax(logits, axis=-1)
-    
-    accuracy = metric0.compute(predictions=predictions, references=labels)["accuracy"]
 
-    if num_classes==2:
-        precision = metric1.compute(predictions=predictions, references=labels)["precision"]
-        recall = metric2.compute(predictions=predictions, references=labels)["recall"]
-        f1 = metric3.compute(predictions=predictions, references=labels)["f1"]
-
-    else:
-        averaging_type=averaging_type
-        print(metric1.compute(predictions=predictions, references=labels,average=averaging_type))
-
-        precision = metric1.compute(predictions=predictions, references=labels,average=averaging_type)["precision"]
-        recall = metric2.compute(predictions=predictions, references=labels,average=averaging_type)["recall"]
-        f1 = metric3.compute(predictions=predictions, references=labels,average=averaging_type)["f1"]
-    ##When using weights, the metrics become an array
-
-
-    return {"accuracy": accuracy, "precision": precision, "recall": recall, "f1": f1}
+    average = "binary" if num_classes == 2 else averaging_type
+    return _classification_scores(predictions, labels, average=average)
 
 def train_model(
         train_dataset,
@@ -162,7 +151,7 @@ def train_model(
             loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
             return (loss, outputs) if return_outputs else loss
     if wandb_log:
-        wandb.init(project=wandb_name)
+        _require("wandb").init(project=wandb_name)
     
     ##Update training args - report_to should be none if wandb_log is false
     training_args["report_to"]="wandb" if wandb_log else "none"
@@ -243,27 +232,10 @@ def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=
             print("*****")
 
     print("***Test results***")
-    metric0 = evaluate.load("accuracy")
-    metric2 = evaluate.load("precision")
-    metric1 = evaluate.load("recall")
-    metric3 = evaluate.load("f1")
+    average = "binary" if num_labels == 2 else averaging_type
+    scores = _classification_scores(preds, predictions.label_ids, average=average)
+    results_dict = {f"test/{name}": value for name, value in scores.items()}
 
-
-    results_dict={}
-    results_dict["test/accuracy"]=metric0.compute(predictions=preds, references=predictions.label_ids)["accuracy"]
-
-    if num_labels==2:
-        averaging_type=None
-        results_dict["test/precision"]=metric2.compute(predictions=preds, references=predictions.label_ids)["precision"]
-        results_dict["test/recall"]=metric1.compute(predictions=preds, references=predictions.label_ids)["recall"]
-        results_dict["test/f1"]=metric3.compute(predictions=preds, references=predictions.label_ids)["f1"]
-
-    else:
-        averaging_type=averaging_type
-        results_dict["test/precision"]=metric2.compute(predictions=preds, references=predictions.label_ids,average=averaging_type)["precision"]
-        results_dict["test/recall"]=metric1.compute(predictions=preds, references=predictions.label_ids,average=averaging_type)["recall"]
-        results_dict["test/f1"]=metric3.compute(predictions=preds, references=predictions.label_ids,average=averaging_type)["f1"]
-    
     print(results_dict)
     return results_dict
 
@@ -481,7 +453,7 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
 
         ##Log test results to wandb
         if wandb_log:
-            wandb.log(test_results)
+            _require("wandb").log(test_results)
         with open(f"{best_model_path}/label_map.json","w") as f:
             json.dump(label_map,f)
     

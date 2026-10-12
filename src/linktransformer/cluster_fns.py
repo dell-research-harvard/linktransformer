@@ -1,7 +1,4 @@
 from itertools import combinations
-from sklearn.cluster import AgglomerativeClustering, DBSCAN
-import networkx as nx
-import hdbscan
 
 
 def cluster(cluster_type, cluster_params, corpus_embeddings, corpus_ids=None):
@@ -31,7 +28,8 @@ def cluster(cluster_type, cluster_params, corpus_embeddings, corpus_ids=None):
     # Get the default parameters based on cluster_type
     default_params_for_type = default_params.get(cluster_type, {})
 
-    # Update cluster_params with default values for missing keys
+    # Fill in defaults on a copy so the caller's dict is never modified
+    cluster_params = dict(cluster_params or {})
     for key, default_value in default_params_for_type.items():
         cluster_params.setdefault(key, default_value)
 
@@ -50,6 +48,8 @@ def cluster(cluster_type, cluster_params, corpus_embeddings, corpus_ids=None):
             raise ValueError(f'cluster_params must contain "{param}"')
 
     if cluster_type == "agglomerative":
+        from sklearn.cluster import AgglomerativeClustering
+
         clustering_model = AgglomerativeClustering(
             n_clusters=None,
             distance_threshold=cluster_params["threshold"],
@@ -58,6 +58,8 @@ def cluster(cluster_type, cluster_params, corpus_embeddings, corpus_ids=None):
         )
 
     if cluster_type == "SLINK":
+        from sklearn.cluster import DBSCAN
+
         clustering_model = DBSCAN(
             eps=cluster_params["threshold"],
             min_samples=cluster_params["min cluster size"],
@@ -65,6 +67,9 @@ def cluster(cluster_type, cluster_params, corpus_embeddings, corpus_ids=None):
         )
 
     if cluster_type == "HDBScan":
+        from linktransformer.utils import _require
+
+        hdbscan = _require("hdbscan")
         clustering_model = hdbscan.HDBSCAN(
             min_cluster_size=cluster_params["min cluster size"],
             min_samples=cluster_params["min samples"],
@@ -82,6 +87,8 @@ def clusters_from_edges(edges_list):
     """Identify clusters of passages given a dictionary of edges"""
 
     # clusters via NetworkX
+    import networkx as nx
+
     G = nx.Graph()
     G.add_edges_from(edges_list)
     sub_graphs = [G.subgraph(c).copy() for c in nx.connected_components(G)]

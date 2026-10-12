@@ -1,23 +1,37 @@
 ###Inference and Linkage script
 ###We want to link dfs together using embeddings
 import json
+import logging
 import os
 import re
+import time
 import warnings
 
 import numpy as np
 import pandas as pd
-import faiss
 from typing import Union, List, Optional, Tuple,Dict, Any
 from pandas import DataFrame
 
 from linktransformer.cluster_fns import cluster
-# from linktransformer.utils import serialize_columns, infer_embeddings, load_model, load_clf, cosine_similarity_corresponding_pairs, tokenize_data_for_inference, predict_rows_with_openai
-from linktransformer.utils import *
-from linktransformer.utils import _is_gemini_embedding_model
-from sklearn.metrics.pairwise import cosine_similarity
-from itertools import combinations
-from transformers import TrainingArguments, Trainer
+from linktransformer.modelling.LinkTransformer import LinkTransformer
+from linktransformer.search import knn_search, range_search
+from linktransformer.utils import (
+    _is_gemini_embedding_model,
+    _require,
+    cosine_similarity_corresponding_pairs,
+    infer_embeddings,
+    load_clf,
+    load_model,
+    openai_transform,
+    predict_rows_with_openai,
+    serialize_columns,
+    tokenize_data_for_inference,
+    transform_column,
+)
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_CLUSTER_PARAMS = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}
 
 
 
@@ -74,19 +88,19 @@ def merge(
 
     if merge_type == "1:m":
         if df1[left_on].duplicated().any():
-           print("Warning: Keys in df1 are not unique")
+           warnings.warn("Keys in df1 are not unique")
 
     if merge_type == "m:1":
         ## Check if keys in df2 are unique
         if df2[right_on].duplicated().any():
-            print("Warning: Keys in df2 are not unique")
+            warnings.warn("Keys in df2 are not unique")
     if merge_type == "1:1":
         ## Check if keys in df1 are unique
         if df1[left_on].duplicated().any():
-           print("Warning: Keys in df1 are not unique")
+           warnings.warn("Keys in df1 are not unique")
         ## Check if keys in df2 are unique
         if df2[right_on].duplicated().any():
-           print("Warning: Keys in df1 are not unique")
+           warnings.warn("Keys in df2 are not unique")
 
     df1 = df1.copy()
     df2 = df2.copy()
@@ -140,22 +154,14 @@ def merge(
 
     embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
     embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
-    ## Create index
-    index = faiss.IndexFlatIP(embeddings1.shape[1])
 
-    ## Add to index depending on merge type
-    index.add(embeddings2)
+    ## Nearest neighbour in df2 for each row of df1
+    D, I = knn_search(embeddings1, embeddings2, 1)
 
-
-    ## Search index
-    D, I = index.search(embeddings1, 1)
-  
-
-    ## Check nearest neighbor of the first text in df1 as a test
     df1 = df1.reset_index(drop=True)
     df2 = df2.reset_index(drop=True)
 
-    ## Fuzzily merge the dfs based on the faiss index queries
+    ## Fuzzily merge the dfs based on the nearest-neighbour search
     df_lm_matched = df1.merge(df2.iloc[I.flatten()].reset_index(drop=True), left_index=True, right_index=True, how="inner",suffixes=suffixes)
     ### Add score column
     df_lm_matched["score"] = D.flatten()
@@ -202,7 +208,7 @@ def merge_blocking(
     ### For blocking, we need to chunk the dfs into blocks
     ### First, we need to check if blocking vars are specified
     if blocking_vars is None:
-        print("No blocking vars specified, matching between all rows")
+        logger.info("No blocking vars specified, matching between all rows")
         df_lm_matched = merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
                                     right_on=right_on, suffixes=suffixes, batch_size=batch_size,
                                      openai_key=openai_key, gemini_key=gemini_key)
@@ -220,8 +226,8 @@ def merge_blocking(
         groupby_key = blocking_vars[0] if len(blocking_vars) == 1 else blocking_vars
         num_blocks_1 = len(df1.groupby(groupby_key))
         num_blocks_2 = len(df2.groupby(groupby_key))
-        print(f"Number of blocks in df1: {num_blocks_1}")
-        print(f"Number of blocks in df2: {num_blocks_2}")
+        logger.info(f"Number of blocks in df1: {num_blocks_1}")
+        logger.info(f"Number of blocks in df2: {num_blocks_2}")
 
         ## Now, get the blocks
         df1_blocks = df1.groupby(groupby_key)
@@ -247,7 +253,7 @@ def merge_blocking(
                 model = load_model(model)      
 
         for block_1 in common_keys:
-            print(f"Merging block {block_1}")
+            logger.info(f"Merging block {block_1}")
             df1_block = df1_blocks.get_group(block_1)
             df2_block = df2_blocks.get_group(block_1)
             ## Merge the blocks
@@ -379,7 +385,7 @@ def cluster_rows(
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     on: Union[str, List[str]]=None,
     cluster_type: str = "SLINK",
-    cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
+    cluster_params: Optional[Dict[str, Any]] = None,
     openai_key: str = None,
     gemini_key: str = None
 ) -> DataFrame:
@@ -390,7 +396,7 @@ def cluster_rows(
     :param model (str): Language model to use.
     :param on (Union[str, List[str]]): Column(s) to cluster on.
     :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
-    :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
+    :param cluster_params (Dict[str, Any], optional): Parameters for clustering method. Defaults to DEFAULT_CLUSTER_PARAMS ({'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}).
     :param openai_key (str): OpenAI API key.
 
     Supported clustering methods and their parameters:
@@ -414,6 +420,7 @@ def cluster_rows(
     """
 
     df = df.copy()
+    cluster_params = dict(DEFAULT_CLUSTER_PARAMS if cluster_params is None else cluster_params)
 
     ##Load model if string
     if isinstance(model, str):
@@ -446,7 +453,7 @@ def dedup_rows(
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
     on: Union[str, List[str]]=None,
     cluster_type: str = "SLINK",
-    cluster_params: Dict[str, Any] = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"},
+    cluster_params: Optional[Dict[str, Any]] = None,
     openai_key: str = None,
     gemini_key: str = None
 ) -> DataFrame:
@@ -458,7 +465,7 @@ def dedup_rows(
     :param model (str): Language model to use.
     :param on (Union[str, List[str]]): Column(s) to deduplicate on.
     :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
-    :param cluster_params (Dict[str, Any]): Parameters for clustering method. Defaults to {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}.
+    :param cluster_params (Dict[str, Any], optional): Parameters for clustering method. Defaults to DEFAULT_CLUSTER_PARAMS ({'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}).
     :param openai_key (str): OpenAI API key
     :return: DataFrame: The deduplicated dataframe.
     """
@@ -471,16 +478,16 @@ def dedup_rows(
             model = load_model(model)
     
 
-    print(f"Deduplicating dataframe with originally {len(df)} rows")
+    logger.info(f"Deduplicating dataframe with originally {len(df)} rows")
     ##Drop exact duplicates
-    print("Checking for and dropping exact duplicates")
+    logger.info("Checking for and dropping exact duplicates")
     df = df.drop_duplicates(subset=on, keep="first")
-    print(f"Number of rows after dropping exact duplicates: {len(df)}")
+    logger.info(f"Number of rows after dropping exact duplicates: {len(df)}")
 
     df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key, gemini_key)
     df = df.drop_duplicates(subset="cluster", keep="first")
     df = df.drop(columns=["cluster"])
-    print(f"Number of rows after deduplication: {len(df)}")
+    logger.info(f"Number of rows after deduplication: {len(df)}")
 
     return df
 
@@ -533,8 +540,8 @@ def all_pair_combos_evaluate(df: DataFrame,
     embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
     embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
 
-    ###calculate the cosine similarity between all pairs of rows
-    cosine_similarity_12_all_pairs = cosine_similarity(embeddings1,embeddings2)
+    ###calculate the cosine similarity between all pairs of rows (embeddings are already normalized)
+    cosine_similarity_12_all_pairs = embeddings1 @ embeddings2.T
     ##Flatten the matrix
     cosine_similarity_12_all_pairs = cosine_similarity_12_all_pairs.flatten()
 
@@ -665,24 +672,14 @@ def merge_knn(
 
 
 
-    ## Create index
-    index = faiss.IndexFlatIP(embeddings1.shape[1])
-    
-    print("Adding embeddings to index")
+    ## k nearest neighbours in df2 for each row of df1 (k is capped at len(df2))
+    D, I = knn_search(embeddings1, embeddings2, k)
+    k = I.shape[1]
 
-
-    index.add(embeddings2)
-
-    print("Searching index")
-
-    D, I = index.search(embeddings1, k)
-
-
-    ## Check nearest neighbor of the first text in df1 as a test
     df1 = df1.reset_index(drop=True)
     df2 = df2.reset_index(drop=True)
 
-    ## Fuzzily merge the dfs based on the faiss index queries
+    ## Fuzzily merge the dfs based on the nearest-neighbour search
     ###Each I sublst is a list of k nearest neighbors for each row in df1 in terms of indices of df2
     ###We need to expand the rows of df1 and df2 to match the number of rows in df1
     ###We also need to expand the scores to match the number of rows in df1
@@ -703,9 +700,9 @@ def merge_knn(
 
     if drop_sim_threshold is not None:
         df_lm_matched = df_lm_matched[df_lm_matched["score"]>=drop_sim_threshold]
-        print(f"Dropped rows with similarity below {drop_sim_threshold}")
+        logger.info(f"Dropped rows with similarity below {drop_sim_threshold}")
 
-    print(f"LM matched on key columns - left: {left_on}{suffixes[0]}, right: {right_on}{suffixes[1]}")
+    logger.info(f"LM matched on key columns - left: {left_on}{suffixes[0]}, right: {right_on}{suffixes[1]}")
         
 
     return df_lm_matched
@@ -815,13 +812,7 @@ def merge_range(
     embeddings1 = embeddings1 / np.clip(np.linalg.norm(embeddings1, axis=1, keepdims=True), 1e-12, None)
     embeddings2 = embeddings2 / np.clip(np.linalg.norm(embeddings2, axis=1, keepdims=True), 1e-12, None)
 
-    embeddings1 = np.ascontiguousarray(embeddings1.astype(np.float32))
-    embeddings2 = np.ascontiguousarray(embeddings2.astype(np.float32))
-
-    index = faiss.IndexFlatIP(embeddings1.shape[1])
-    index.add(embeddings2)
-
-    lims, distances, indices = index.range_search(embeddings1, sim_threshold)
+    lims, distances, indices = range_search(embeddings1, embeddings2, sim_threshold)
 
     df1 = df1.reset_index(drop=True)
     df2 = df2.reset_index(drop=True)
@@ -866,7 +857,7 @@ def merge_range(
     df_lm_matched = pd.concat(matched_frames, ignore_index=True)
     df_lm_matched = df_lm_matched.sort_values("__left_order", kind="stable").drop(columns=["__left_order"]).reset_index(drop=True)
 
-    print(
+    logger.info(
         f"Range matched rows: {len(df_lm_matched)} (threshold={sim_threshold}) on key columns "
         f"left={left_on}{suffixes[0]}, right={right_on}{suffixes[1]}"
     )
@@ -1125,6 +1116,7 @@ def merge_k_judge(
     gemini_model_client = None
     try:
         if resolved_provider == "openai":
+            openai = _require("openai")
             openai_client = openai.OpenAI(
                 api_key=openai_api_key,
                 timeout=llm_params["request_timeout"] if "request_timeout" in llm_params else 15,
@@ -1313,7 +1305,7 @@ def classify_rows(
     openai_key: Optional[str] = None,
     openai_topic: Optional[str] = None,
     openai_prompt: Optional[str] = None,
-    openai_params: Optional[dict] = {},
+    openai_params: Optional[dict] = None,
     progress_bar: bool = True
 ):
     """
@@ -1337,9 +1329,14 @@ def classify_rows(
     """
 
     df = df.copy()
+    openai_params = openai_params or {}
+
+    # check if the parameters for any inference method is properly specified
+    if openai_key is None and model is None:
+        raise ValueError("Must either specify a model or use an OpenAI key")
 
     # load label dict from model path if exists
-    if os.path.exists(os.path.join(model, "label_map.json")):
+    if model is not None and os.path.exists(os.path.join(model, "label_map.json")):
         with open(os.path.join(model, "label_map.json"), encoding="utf-8") as f:
             label_map = json.load(f)
 
@@ -1347,12 +1344,10 @@ def classify_rows(
     if label_map is not None and len(label_map) != num_labels:
         raise ValueError(f"label_dict has {label_map} entries, but num_labels is {num_labels}. ")
 
-    # check if the parameters for any inference method is properly specified
-    if openai_key is None and model is None:
-        raise ValueError("Must either specify a model or use an OpenAI key")
-
     # infer using HF or local models
     if openai_key is None:
+        from transformers import Trainer, TrainingArguments
+
         clf = load_clf(model, num_labels=num_labels)
 
         # join texts in columns if needed
@@ -1377,7 +1372,7 @@ def classify_rows(
             reversed_label_map = {val: key for (key, val) in label_map.items()}
             try:
                 preds = [reversed_label_map[pred] for pred in preds]
-            except:
+            except KeyError:
                 warnings.warn("Failed to convert from numeric labels to text labels. Text labels are kept. ")
 
         assert len(preds) == df.shape[0], "DEBUG: Length mismatch"
@@ -1469,7 +1464,7 @@ def transform_rows(
             "Fix spelling mistakes in each of the following strings. "
         )
     
-    print(f"Transforming column(s) {on} with OpenAI model {model} using prompt: {openai_prompt}")
+    logger.info(f"Transforming column(s) {on} with OpenAI model {model} using prompt: {openai_prompt}")
 
     # serialize multi-column if needed
     if isinstance(on, list):
@@ -1488,6 +1483,7 @@ def transform_rows(
     out_col = output_column or f"transformed_{key_name}"
 
     # prepare the OpenAI client and fn_kwargs
+    openai = _require("openai")
     client = openai.OpenAI(
         api_key=openai_key,
         timeout=openai_params.get("request_timeout", 10)

@@ -1,21 +1,8 @@
 import builtins
-import importlib.machinery
-import sys
-import types
 
 import numpy as np
+import openai
 import pytest
-
-
-try:
-    import faiss  # noqa: F401
-except ModuleNotFoundError:
-    if "faiss" not in sys.modules:
-        faiss_stub = types.ModuleType("faiss")
-        faiss_stub.IndexFlatIP = object
-        faiss_stub.__spec__ = importlib.machinery.ModuleSpec(name="faiss", loader=None)
-        sys.modules["faiss"] = faiss_stub
-
 
 import linktransformer.utils as utils_mod
 
@@ -98,9 +85,9 @@ def test_lt_gemini_missing_key_raises_clear_error(monkeypatch):
 
 
 def test_lt_predict_rows_with_openai_requires_v1(monkeypatch):
-    monkeypatch.setattr(utils_mod.openai, "__version__", "0.28.1")
+    monkeypatch.setattr(openai, "__version__", "0.28.1")
 
-    with pytest.raises(ValueError, match="Requires OpenAI API version 1.0.0 or higher"):
+    with pytest.raises(ValueError, match="Requires openai version 1.0.0 or higher"):
         utils_mod.predict_rows_with_openai(
             strings_col=["sample"],
             model="gpt-3.5-turbo",

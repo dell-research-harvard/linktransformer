@@ -4,7 +4,7 @@ import torch.nn as nn
 from sentence_transformers import LoggingHandler, losses, SentenceTransformer
 import logging
 from transformers.utils import logging as lg
-import wandb
+from linktransformer.utils import _require
 from torch import Tensor
 from torch.nn import functional as F
 from typing import Dict,Iterable
@@ -56,7 +56,7 @@ class OnlineContrastiveLoss_wandb(nn.Module):
         loss = positive_loss + negative_loss
 
         if self.wandb_names is not None:
-            wandb.log({"Loss": loss}) 
+            _require("wandb").log({"Loss": loss})
 
         return loss
     
@@ -163,7 +163,7 @@ class SupConLoss_wandb(nn.Module):
         loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
         loss = loss.view(anchor_count, batch_size).mean()
         if self.wandb_names is not None:
-            wandb.log({"Loss": loss}) 
+            _require("wandb").log({"Loss": loss})
 
         if math.isnan(loss):
             raise ValueError("Loss")

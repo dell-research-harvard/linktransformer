@@ -3,6 +3,7 @@ import importlib.machinery
 import sys
 import types
 
+import openai
 import pandas as pd
 import pytest
 
@@ -365,7 +366,7 @@ def test_lt_merge_k_judge_errors_on_openai_judge_failure(monkeypatch):
         def __init__(self, api_key, timeout):
             self.chat = _FailingChat()
 
-    monkeypatch.setattr(infer_mod.openai, "OpenAI", _FailingOpenAIClient)
+    monkeypatch.setattr(openai, "OpenAI", _FailingOpenAIClient)
 
     with pytest.raises(RuntimeError, match="Use merge_knn"):
         infer_mod.merge_k_judge(

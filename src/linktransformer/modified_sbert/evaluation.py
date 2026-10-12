@@ -6,16 +6,13 @@ from typing import List
 from sentence_transformers import evaluation, LoggingHandler
 import logging
 from transformers.utils import logging as lg
-import wandb
+from linktransformer.utils import _require
 from typing import List, Dict, Set, Callable
 from torch import Tensor
 
 from sklearn.metrics.pairwise import paired_cosine_distances, paired_euclidean_distances, paired_manhattan_distances
 from sklearn.metrics import average_precision_score
 
-currentdir = os.path.dirname(os.path.realpath(__file__))
-parentdir = os.path.dirname(currentdir)
-sys.path.append(parentdir)
 
 from tqdm.autonotebook import trange
 import torch
@@ -162,7 +159,7 @@ class InformationRetrievalEvaluator_wandb(evaluation.InformationRetrievalEvaluat
         for key in scores:
             logger.info(key + ": " + str(scores[key]))
             if self.wandb_names is not None:
-                wandb.log({key: scores[key]})
+                _require("wandb").log({key: scores[key]})
 
 
         # Write results to disc
@@ -485,7 +482,7 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
             }
             print(output_scores)
             if self.wandb_names:
-                wandb.log({
+                _require("wandb").log({
                     f"Classification Accuracy {name}": acc,
                     f"Classification Accuracy threshold {name}": acc_threshold,
                     f"Classification F1 {name}": f1,
