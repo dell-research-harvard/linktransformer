@@ -1,5 +1,4 @@
 import os
-import importlib.machinery
 import sys
 import types
 
@@ -395,24 +394,21 @@ def test_lt_merge_k_judge_errors_on_gemini_judge_failure(monkeypatch):
 
     monkeypatch.setattr(infer_mod, "merge_knn", lambda **kwargs: knn_out.copy())
 
-    class _FailingGeminiModel:
-        def __init__(self, model_name):
-            self.model_name = model_name
-
-        def generate_content(self, prompt):
+    class _FailingModels:
+        def generate_content(self, model, contents, config):
             raise RuntimeError("invalid gemini key or model")
 
-    fake_genai = types.ModuleType("google.generativeai")
-    fake_genai.configure = lambda api_key: None
-    fake_genai.GenerativeModel = _FailingGeminiModel
-    fake_genai.__spec__ = importlib.machinery.ModuleSpec(name="google.generativeai", loader=None)
+    class _FailingGeminiClient:
+        def __init__(self, api_key, http_options=None):
+            self.models = _FailingModels()
 
-    google_pkg = types.ModuleType("google")
-    google_pkg.__spec__ = importlib.machinery.ModuleSpec(name="google", loader=None)
-    google_pkg.generativeai = fake_genai
-
-    monkeypatch.setitem(sys.modules, "google", google_pkg)
-    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+    fake_genai = types.ModuleType("google.genai")
+    fake_genai.Client = _FailingGeminiClient
+    fake_genai.types = types.SimpleNamespace(
+        GenerateContentConfig=lambda **kwargs: kwargs,
+        HttpOptions=lambda **kwargs: kwargs,
+    )
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
 
     with pytest.raises(RuntimeError, match="Use merge_knn"):
         infer_mod.merge_k_judge(

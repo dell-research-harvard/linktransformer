@@ -70,29 +70,30 @@ def infer_embeddings_with_gemini(
     model: str,
     api_key: str,
     return_numpy: bool = True,
+    batch_size: int = 100,
 ) -> Union[np.ndarray, torch.Tensor]:
-    try:
-        import google.generativeai as genai
-    except ImportError as exc:
-        raise ImportError(
-            "Gemini embeddings require `google-generativeai`. "
-            "Install it with: pip install google-generativeai"
-        ) from exc
+    """
+    Embed strings with a Gemini embedding model through the `google-genai` SDK.
 
-    genai.configure(api_key=api_key)
+    :param strings: List of strings.
+    :param model: Gemini embedding model, e.g. "gemini-embedding-001".
+    :param api_key: Gemini API key.
+    :param return_numpy: If True, return a numpy array; else a torch tensor.
+    :param batch_size: Number of strings per API request (the API accepts at most 100).
+    :return: Embeddings, one row per string.
+    """
+    genai = _require("google.genai")
+    client = genai.Client(api_key=api_key)
+    config = genai.types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT")
     model_name = _normalize_gemini_model_name(model)
 
     vectors: List[List[float]] = []
-    for text in strings:
-        response = genai.embed_content(
-            model=model_name,
-            content=text,
-            task_type="retrieval_document",
-        )
-        vector = response["embedding"] if isinstance(response, dict) else getattr(response, "embedding", None)
-        if vector is None:
-            raise ValueError("Gemini embedding response missing `embedding`")
-        vectors.append(vector)
+    for start in range(0, len(strings), batch_size):
+        batch = strings[start:start + batch_size]
+        response = client.models.embed_content(model=model_name, contents=batch, config=config)
+        if response.embeddings is None or len(response.embeddings) != len(batch):
+            raise ValueError("Gemini embedding response does not contain one embedding per input string")
+        vectors.extend(embedding.values for embedding in response.embeddings)
 
     if return_numpy:
         return np.array(vectors, dtype=np.float32)

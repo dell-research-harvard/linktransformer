@@ -1,4 +1,5 @@
-import builtins
+import sys
+import types
 
 import numpy as np
 import openai
@@ -97,18 +98,45 @@ def test_lt_predict_rows_with_openai_requires_v1(monkeypatch):
 
 
 def test_lt_gemini_import_error_message(monkeypatch):
-    original_import = builtins.__import__
+    monkeypatch.setitem(sys.modules, "google.genai", None)  # makes the import fail
 
-    def fake_import(name, *args, **kwargs):
-        if name == "google.generativeai":
-            raise ImportError("No module named google.generativeai")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-
-    with pytest.raises(ImportError, match="google-generativeai"):
+    with pytest.raises(ImportError, match=r"google-genai.*linktransformer\[gemini\]"):
         utils_mod.infer_embeddings_with_gemini(
             strings=["hello"],
             model="gemini-embedding-001",
             api_key="dummy",
         )
+
+
+def _fake_genai(calls):
+    """A stand-in for the google.genai module that records embed_content calls."""
+
+    class _Models:
+        def embed_content(self, model, contents, config):
+            calls.append({"model": model, "contents": list(contents), "task_type": config.task_type})
+            return types.SimpleNamespace(
+                embeddings=[types.SimpleNamespace(values=[float(len(text)), 1.0]) for text in contents]
+            )
+
+    class _Client:
+        def __init__(self, api_key):
+            assert api_key == "gemini-key"
+            self.models = _Models()
+
+    genai = types.ModuleType("google.genai")
+    genai.Client = _Client
+    genai.types = types.SimpleNamespace(EmbedContentConfig=lambda task_type: types.SimpleNamespace(task_type=task_type))
+    return genai
+
+
+def test_lt_gemini_embeddings_are_batched_in_order(monkeypatch):
+    calls = []
+    monkeypatch.setitem(sys.modules, "google.genai", _fake_genai(calls))
+    strings = ["x" * (i % 7) for i in range(250)]
+
+    out = utils_mod.infer_embeddings_with_gemini(strings, model="gemini-embedding-001", api_key="gemini-key")
+
+    assert [len(c["contents"]) for c in calls] == [100, 100, 50]
+    assert all(c["model"] == "models/gemini-embedding-001" and c["task_type"] == "RETRIEVAL_DOCUMENT" for c in calls)
+    assert out.shape == (250, 2) and out.dtype == np.float32
+    assert np.array_equal(out[:, 0], [len(s) for s in strings])

@@ -25,7 +25,6 @@ from linktransformer.utils import (
     openai_transform,
     predict_rows_with_openai,
     serialize_columns,
-    tokenize_data_for_inference,
     transform_column,
 )
 
@@ -1113,7 +1112,8 @@ def merge_k_judge(
         right_cols = left_cols
 
     openai_client = None
-    gemini_model_client = None
+    gemini_client = None
+    gemini_config = None
     try:
         if resolved_provider == "openai":
             openai = _require("openai")
@@ -1122,14 +1122,17 @@ def merge_k_judge(
                 timeout=llm_params["request_timeout"] if "request_timeout" in llm_params else 15,
             )
         else:
-            try:
-                import google.generativeai as genai
-            except ImportError as exc:
-                raise ImportError(
-                    "Gemini LLM classification requires `google-generativeai`. Install it to use llm_provider='gemini'."
-                ) from exc
-            genai.configure(api_key=gemini_api_key)
-            gemini_model_client = genai.GenerativeModel(model_name=resolved_judge_model)
+            genai = _require("google.genai")
+            http_options = None
+            if "request_timeout" in llm_params:
+                http_options = genai.types.HttpOptions(timeout=int(llm_params["request_timeout"] * 1000))
+            gemini_client = genai.Client(api_key=gemini_api_key, http_options=http_options)
+            config_kwargs = {"response_mime_type": "application/json"}
+            if "temperature" in llm_params:
+                config_kwargs["temperature"] = llm_params["temperature"]
+            if "max_tokens" in llm_params:
+                config_kwargs["max_output_tokens"] = llm_params["max_tokens"]
+            gemini_config = genai.types.GenerateContentConfig(**config_kwargs)
     except Exception as judge_init_error:
         _raise_judge_error(judge_init_error, stage="judge client initialization")
 
@@ -1173,8 +1176,10 @@ def merge_k_judge(
                         f"Compare the following pair payload and return JSON only.\n"
                         f"{user_content}"
                     )
-                    response = gemini_model_client.generate_content(prompt_text)
-                    response_text = getattr(response, "text", None) or ""
+                    response = gemini_client.models.generate_content(
+                        model=resolved_judge_model, contents=prompt_text, config=gemini_config
+                    )
+                    response_text = response.text or ""
                 break
             except Exception as judge_runtime_error:
                 if retry == max_retries - 1:
@@ -1346,9 +1351,12 @@ def classify_rows(
 
     # infer using HF or local models
     if openai_key is None:
-        from transformers import Trainer, TrainingArguments
+        import torch
+        from tqdm import tqdm
+        from transformers import AutoTokenizer
 
         clf = load_clf(model, num_labels=num_labels)
+        tokenizer = AutoTokenizer.from_pretrained(model)
 
         # join texts in columns if needed
         if isinstance(on, list):
@@ -1356,16 +1364,16 @@ def classify_rows(
         else:
             strings_col = df[on].tolist()
 
-        # tokenize data
-        tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", model)
-        disable_tqdm = not progress_bar
-        # initialize trainer
-        inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size,disable_tqdm=disable_tqdm)
-        trainer = Trainer(model=clf, args=inference_args)
-
-        # predict and save results
-        predictions = trainer.predict(tokenized_data)
-        preds = np.argmax(predictions.predictions, axis=-1)
+        # predict in batches
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        clf.to(device).eval()
+        batch_preds = []
+        with torch.no_grad():
+            for start in tqdm(range(0, len(strings_col), batch_size), disable=not progress_bar):
+                batch = tokenizer(strings_col[start:start + batch_size], padding=True, truncation=True, return_tensors="pt")
+                logits = clf(**batch.to(device)).logits
+                batch_preds.append(logits.argmax(dim=-1).cpu().numpy())
+        preds = np.concatenate(batch_preds) if batch_preds else np.array([], dtype=np.int64)
 
         # convert numeric labels to text labels according to label_map if exists
         if label_map is not None:
