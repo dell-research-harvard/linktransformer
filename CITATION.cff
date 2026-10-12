@@ -4,7 +4,7 @@ cff-version: 1.2.0
 message: >
   If you use LinkTransformer in your research, please cite the following paper:
 title: "LinkTransformer: A Unified Package for Record Linkage with Transformer Language Models"
-version: "0.1.17"
+version: "0.2.0"
 doi: "10.18653/v1/2024.acl-demos.21"
 url: "https://aclanthology.org/2024.acl-demos.21/"
 type: conferencePaper

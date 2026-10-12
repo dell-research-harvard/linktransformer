@@ -5,7 +5,7 @@
 
 LinkTransformer is a Python package for semantic record linkage, candidate retrieval, row transformation, clustering, and text classification over tabular data.
 
-- Paper: https://arxiv.org/abs/2309.00789
+- Paper: https://aclanthology.org/2024.acl-demos.21/ (ACL 2024 System Demonstrations; preprint: https://arxiv.org/abs/2309.00789)
 - Website: https://linktransformer.github.io/
 - Demo video: https://www.youtube.com/watch?v=Sn47nmCvV9M
 
@@ -156,13 +156,40 @@ deduped = lt.dedup_rows(
 - API embedding models and local SBERT models are both supported.
 - For multi-column API retrieval, LinkTransformer serializes columns safely using `<SEP>`.
 
-## Test Naming Convention
+## Development and testing
+
+```bash
+uv venv --python 3.11
+uv pip install -e ".[dev]"
+pytest -m "not slow"   # fast suite, a few minutes on a laptop CPU
+pytest -m slow         # full training tests; long on CPU
+```
+
+To check the oldest supported dependency versions, install with `uv pip install --resolution lowest-direct -e ".[dev]"`. CI runs both on Linux and Apple Silicon macOS for Python 3.11-3.13. On a Mac, use a native arm64 Python (uv's managed Pythons are); tests that call the OpenAI or Gemini APIs run only when `OPENAI_API_KEY` / `GEMINI_API_KEY` are set.
 
 Tests use `test_lt_*` naming to mirror the package API surface and make workflows discoverable.
 
 ## Contributing
 
 Issues and pull requests are welcome.
+
+## Citation
+
+If you use LinkTransformer in your research, please cite:
+
+```bibtex
+@inproceedings{arora-dell-2024-linktransformer,
+    title = "{L}ink{T}ransformer: A Unified Package for Record Linkage with Transformer Language Models",
+    author = "Arora, Abhishek and Dell, Melissa",
+    booktitle = "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 3: System Demonstrations)",
+    year = "2024",
+    address = "Bangkok, Thailand",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.acl-demos.21/",
+    doi = "10.18653/v1/2024.acl-demos.21",
+    pages = "221--231"
+}
+```
 
 ## License
 
