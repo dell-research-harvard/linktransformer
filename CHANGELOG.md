@@ -1,5 +1,43 @@
 # Change Log
 
+## 0.2.0
+        Packaging
+        - Dependencies are now version ranges instead of exact pins, tested in CI at both the
+          oldest allowed and newest versions (numpy>=2.0, pandas>=2.2.2, torch>=2.4,
+          sentence-transformers>=5.0, transformers>=4.56, openai>=1.55.3, ...).
+        - Training and provider libraries moved to extras. `pip install linktransformer` covers
+          inference; use `linktransformer[train]` for train_model/train_clf_model (datasets,
+          accelerate), `[wandb]` for W&B logging, `[gemini]` for Gemini, or `[all]`.
+          Missing optional libraries raise an ImportError naming the extra to install.
+        - Removed unused or indirect dependencies: faiss-cpu, scipy, httpx, tiktoken, evaluate,
+          google-generativeai. Removed the stale requirements.txt.
+        - The package version is defined once, in linktransformer/__init__.py.
+
+        Behaviour and performance
+        - `import linktransformer` is now near-instant; modules load on first use. The public
+          API (every `lt.<name>`) is unchanged.
+        - Nearest-neighbour and range search run in torch instead of FAISS (exact search, same
+          results). This fixes segfaults/"OMP: Error #15" aborts on macOS when FAISS and torch
+          were used in one process, and runs on GPU when CUDA is available.
+        - merge_knn caps k at the size of the right dataframe (FAISS previously returned
+          invalid -1 indices that matched the last row).
+        - classify_rows with a local classifier predicts with a plain batched forward pass
+          (identical outputs) instead of a transformers Trainer.
+        - Classifier training metrics are computed with scikit-learn directly (same values as
+          the `evaluate` metrics, without downloading metric scripts).
+
+        Provider APIs
+        - Gemini uses the `google-genai` SDK (google-generativeai is deprecated). Embeddings
+          are requested in batches of 100 instead of one call per string; the merge_k_judge
+          Gemini judge requests JSON output.
+        - OpenAI embeddings use a client instance instead of the module-level `openai.api_key`.
+
+        Fixes
+        - cluster_rows/dedup_rows no longer mutate a shared default `cluster_params` dict.
+        - load_model raises a clear error instead of an UnboundLocalError when loading fails.
+        - Training modules no longer add the package directory to sys.path.
+        - Informational output uses the `logging` module instead of print.
+
 ## 0.1.18
         - Added `merge_k_judge` as the primary end-to-end record linkage workflow:
             1) retrieve top-k candidates with `merge_knn`, then

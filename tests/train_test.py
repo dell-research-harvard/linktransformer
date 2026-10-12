@@ -2,6 +2,9 @@ import os
 import linktransformer as lt
 from linktransformer.data import DATA_DIR_PATH
 import pandas as pd
+import pytest
+
+pytestmark = pytest.mark.slow
 
 
 

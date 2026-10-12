@@ -1,0 +1,65 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_slow:
+        description: "Also run the slow training tests"
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }} / ${{ matrix.resolution }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+        python: ["3.11", "3.12", "3.13"]
+        resolution: [highest]
+        include:
+          # Oldest versions allowed by the lower bounds in pyproject.toml
+          - os: ubuntu-latest
+            python: "3.11"
+            resolution: lowest-direct
+    env:
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+      WANDB_MODE: disabled
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+          activate-environment: true
+
+      - name: Use CPU-only torch wheels on Linux
+        if: runner.os == 'Linux'
+        run: |
+          echo "UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu" >> "$GITHUB_ENV"
+          echo "UV_INDEX_STRATEGY=unsafe-best-match" >> "$GITHUB_ENV"
+
+      - name: Install
+        run: uv pip install --resolution ${{ matrix.resolution }} -e ".[dev]"
+
+      - name: Show resolved versions
+        run: uv pip list | grep -iE "^(torch|transformers|sentence-transformers|huggingface-hub|datasets|accelerate|openai|google-genai|numpy|pandas|scikit-learn|hdbscan) "
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-${{ hashFiles('tests/**/*.py') }}
+          restore-keys: hf-${{ runner.os }}-
+
+      - name: Tests
+        run: pytest -q -m "not slow"
+
+      - name: Slow training tests
+        if: github.event_name == 'workflow_dispatch' && inputs.run_slow && matrix.resolution == 'highest' && matrix.python == '3.12'
+        run: pytest -q -m slow

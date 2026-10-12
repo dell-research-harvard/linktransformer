@@ -25,6 +25,17 @@ More tutorials are coming soon.
 pip install linktransformer
 ```
 
+The base install covers linking, clustering, deduplication, classification, and OpenAI-based features. Optional extras add:
+
+| Extra | Adds | Install |
+|---|---|---|
+| `train` | Fine-tuning with `train_model` and `train_clf_model` | `pip install "linktransformer[train]"` |
+| `wandb` | Weights & Biases logging during training | `pip install "linktransformer[wandb]"` |
+| `gemini` | Gemini embeddings and Gemini as the `merge_k_judge` LLM | `pip install "linktransformer[gemini]"` |
+| `all` | Everything above | `pip install "linktransformer[all]"` |
+
+On Apple Silicon Macs, use a native (arm64) Python. An Intel Python running under Rosetta, such as an x86 Miniconda, cannot install current versions of PyTorch.
+
 ## Quick Start
 
 ```python

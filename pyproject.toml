@@ -1,33 +1,29 @@
 [build-system]
-requires = ['setuptools']
+requires = ['setuptools>=64']
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "linktransformer"
-version = "0.1.18"
+dynamic = ["version"]
 
+# Lower bounds are the oldest versions CI tests against (the "lowest" job); there are no
+# upper bounds so the package installs alongside other libraries.
+# FAISS is no longer a dependency: exact search runs in torch (linktransformer/search.py).
 dependencies = [
-  "numpy==2.4.2",
-  "pandas==3.0.0",
-  "scipy==1.17.0",
-  "scikit-learn==1.8.0",
-  "torch==2.10.0",
-  "sentence-transformers==5.2.2",
-  "transformers==5.1.0",
-  "huggingface-hub==1.4.1",
-  "faiss-cpu==1.13.2",
-  "hdbscan==0.8.41",
-  "networkx==3.6.1",
-  "wandb==0.25.0",
-  "httpx==0.28.1",
-  "openai==2.20.0",
-  "openpyxl==3.1.5",
-  "datasets==4.5.0",
-  "accelerate==1.12.0",
-  "evaluate==0.4.6",
-  "google-generativeai==0.8.6",
-  "tiktoken==0.12.0",
-  "sentencepiece==0.2.1"
+  "numpy>=2.0",
+  "pandas>=2.2.2",
+  "scikit-learn>=1.4.2",
+  "torch>=2.4",
+  "sentence-transformers>=5.0",
+  "transformers>=4.56",
+  "huggingface-hub>=0.34",
+  "networkx>=3.2",
+  "hdbscan>=0.8.40",
+  "openai>=1.55.3",
+  "openpyxl>=3.1",
+  "sentencepiece>=0.2",
+  "tqdm>=4.66",
+  "packaging>=23",
 ]
 authors = [
   { name="Abhishek Arora and Melissa Dell", email="linktransformer23@gmail.com" },
@@ -42,20 +38,28 @@ classifiers = [
 ]
 license = {file = "LICENSE"}
 
+[project.optional-dependencies]
+# Fine-tuning linkage models (train_model) and classifiers (train_clf_model)
+train = ["datasets>=3.0", "accelerate>=1.0"]
+# Weights & Biases logging during training
+wandb = ["wandb>=0.17"]
+# Gemini embeddings and Gemini as the merge_k_judge LLM
+gemini = ["google-genai>=1.30"]
+all = ["linktransformer[train,wandb,gemini]"]
+dev = ["linktransformer[all]", "pytest>=8"]
+
 [project.urls]
 Homepage = "https://linktransformer.github.io/"
 
-
-[tool.pytest.ini_options]
-pythonpath = [
-  "src"
-]
 
 [tool.setuptools]
 # ...
 # By default, include-package-data is true in pyproject.toml, so you do
 # NOT have to specify this line.
 include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "linktransformer.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

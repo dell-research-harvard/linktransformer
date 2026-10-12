@@ -29,3 +29,7 @@ wiki_aliases_copy/**
 **data_outside_package**
 **archive_to_remove**
 
+
+# local virtual environments
+.venv/
+.venv-*/
