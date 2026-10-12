@@ -25,7 +25,7 @@ def load_data_as_pairs(data, type):
         label_id = label2int[label[i]]
         paired_data.append(InputExample(texts=[source_text_gt[i], target_text_gt[i]], label=float(label_id)))
 
-    print(f'{len(paired_data)} {type} pairs')
+    logger.info(f'{len(paired_data)} {type} pairs')
 
     return paired_data
 
@@ -48,6 +48,6 @@ def load_data_as_individuals(cluster_dict, type):
             guid += 1
         clus_id +=1
 
-    print(f'{len(indv_data)} {type} examples')
+    logger.info(f'{len(indv_data)} {type} examples')
     return indv_data
 

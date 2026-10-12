@@ -133,3 +133,23 @@ def test_lt_judge_passes_cache_to_retrieval(name, monkeypatch):
                       knn_sbert_model=MODEL, openai_key="dummy", llm_provider="openai", judge_llm_model="gpt-4o-mini",
                       embedding_cache="some/folder")
     assert seen["embedding_cache"] == "some/folder"
+
+
+def test_lt_cache_keeps_finished_chunks_when_interrupted(monkeypatch, model, tmp_path):
+    from linktransformer import embedding_cache
+
+    monkeypatch.setattr(embedding_cache, "_EMBED_CHUNK", 2)
+    texts = ["a", "b", "c", "d"]
+    calls = []
+
+    def flaky_embed(batch):
+        calls.append(list(batch))
+        if len(calls) == 2:
+            raise RuntimeError("interrupted")
+        return model.encode(batch)
+
+    with pytest.raises(RuntimeError):
+        embedding_cache.cached_embeddings(texts, str(tmp_path), "m", flaky_embed)
+    calls.clear()
+    embedding_cache.cached_embeddings(texts, str(tmp_path), "m", lambda batch: (calls.append(list(batch)), model.encode(batch))[1])
+    assert calls == [["c", "d"]]  # the first chunk was kept

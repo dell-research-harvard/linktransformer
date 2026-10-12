@@ -61,6 +61,23 @@
           token, and answers like "Yes." map to labels. Only rate limits, timeouts and server
           errors are retried (a 400 used to sleep for minutes per row).
 
+        Resumable, parallel API workflows (maintainer's feature work, merged into this release)
+        - checkpoint_path / resume / failure_log_path / retry_policy on API embeddings, merge,
+          merge_knn, merge_range, merge_k_judge, classify_rows and transform_rows: progress is
+          recorded in JSONL checkpoints, interrupted runs resume, failed calls are logged, and
+          retries are configurable (max_retries, base_sleep_seconds, jitter_seconds).
+        - judge_merge_k_out judges an existing candidate table; merge_k_judge is now retrieval
+          plus judge_merge_k_out. New judge_on / judge_left_on / judge_right_on, score-based
+          skipping (judge_skip_lower_thresh / judge_skip_upper_thresh) and judge_workers.
+        - classify_rows and transform_rows support Gemini (llm_provider), batching, workers,
+          throttling and checkpoint windows; transform_rows keeps rows with missing values.
+        - merge_blocking returns unmatched rows from both sides with a match_status column;
+          on=None uses the shared columns in left-dataframe order.
+        - lt.citation() / lt.print_citation(); the citation is printed on import unless
+          LINKTRANSFORMER_SILENCE_CITATION=1.
+        - Retries skip errors that cannot succeed on retry (bad request, authentication, not
+          found); rate limits, timeouts and server errors are still retried.
+
         Embedding cache
         - New `embedding_cache="folder"` argument on every function that embeds text and on
           infer_embeddings. Embeddings are stored per model and text in a SQLite file, so both
@@ -70,6 +87,14 @@
           their weights, so a retrained model never reuses stale embeddings.
 
         Fixes and contributions
+        - Japanese mLUKE models (e.g. lt-wikidata-comp-ja, lt-historicjapan-*): transformers 5.0-5.1
+          tokenize them incorrectly without an error (0.1.18 pinned transformers 5.1.0) and later
+          5.x versions cannot load them. LinkTransformer now raises a clear error on
+          transformers 5 for these models; use transformers 4.x (>=4.56) with them.
+        - Multi-GPU training with torchrun: processes no longer race when creating output folders,
+          wait for the main process to save the model, and evaluate the test set once.
+        - Train/validation splits of cluster-labelled training data are now reproducible; they
+          depended on Python's per-process hash seed despite random_state=42.
         - An explicit `sep_token` passed to serialize_columns is respected, and OpenAI/Gemini
           models use "<SEP>" without querying Hugging Face for a tokenizer (#27, @pranjalv123).
           Multi-column OpenAI classify_rows/transform_rows now join columns with a space as

@@ -77,7 +77,7 @@ def train_biencoder(
 
 ):
 
-    # Logging
+    # Logging is configured when training starts, not at import
     _configure_training_logging()
     if wandb_names: 
         _require("wandb").init(
@@ -176,6 +176,7 @@ def train_biencoder(
             logging_steps=logging_steps,
             eval_strategy="no",
             save_strategy="no",
+            dataloader_pin_memory=False,
             report_to="wandb" if wandb_names is not None else "none",
             local_rank=local_rank if distributed_mode else -1,
             ddp_backend="nccl" if distributed_mode else None,
@@ -209,13 +210,15 @@ def train_biencoder(
         trainer = _build_trainer_and_train()
 
     trainer.save_model(model_save_path)
+    # With torchrun only the main process writes the model; wait for it before any process reads it
+    trainer.accelerator.wait_for_everyone()
 
     ###Get the best model path among the saved checkpoints
     ##take the last saved checkpoints = best
     ###look in the dir and get the last checkpoint (subdirs are named as numbers, take the max one)
     # best_model_path = os.path.join(model_save_path, str(max([int(x) for x in os.listdir(model_save_path) if x.isdigit()])))
     ###Evaluate on the test set using the best model
-    if test_data is not None:
+    if test_data is not None and trainer.is_world_process_zero():
         logger.info("Evaluating on the test set (0.5 of val data)")
         ##Load the best model
         logger.info(f"Loading best model from: {model_save_path}")

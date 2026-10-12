@@ -113,7 +113,7 @@ def train_model(
     clus_id_col_name: Union[str,List[str]] = None,
     clus_text_col_names: List[str] = None,
     config_path: str = LINKAGE_CONFIG_PATH,
-    training_args: dict = {"num_epochs":10},
+    training_args: dict = None,
     log_wandb: bool = False,
 
 ) -> str:
@@ -140,16 +140,15 @@ def train_model(
         config = json.load(config_file)
 
     ####Override config using keys that are specified
+    if training_args is None:
+        training_args = {"num_epochs": 10}
+
     if training_args is not None:
         for key in training_args:
             config[key]=training_args[key]
     
-    ##Make model dir
-    if not os.path.exists(config["model_save_dir"]):
-        os.makedirs(config["model_save_dir"])
-    ##Make dir for this model
-    if not os.path.exists(os.path.join(config["model_save_dir"], config["model_save_name"])):
-        os.makedirs(os.path.join(config["model_save_dir"], config["model_save_name"]))
+    ##Make the model dir; exist_ok because with torchrun every process creates it at the same time
+    os.makedirs(os.path.join(config["model_save_dir"], config["model_save_name"]), exist_ok=True)
         
     
     logger.info(f"Loading config saved at {config_path}")
@@ -197,8 +196,7 @@ def train_model(
         config["eval_type"]="retrieval"
 
     ##Prep model directories if they don't exist
-    if not os.path.exists(config["model_save_dir"]):
-        os.makedirs(config["model_save_dir"])
+    os.makedirs(config["model_save_dir"], exist_ok=True)
 
 
     ##Add the dataset used in the config 

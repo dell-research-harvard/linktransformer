@@ -1,4 +1,7 @@
 import os
+import builtins
+import sys
+import types
 import pandas as pd
 import numpy as np
 from linktransformer import DATA_DIR_PATH
@@ -250,6 +253,215 @@ def test_lt_merge_range_retains_unmatched_left_rows():
     assert isinstance(out, pd.DataFrame)
     assert "score" in out.columns
 
+
+def test_lt_merge_invalid_merge_type_raises():
+    df1 = pd.DataFrame({"name": ["a"]})
+    df2 = pd.DataFrame({"name": ["b"]})
+
+    with pytest.raises(ValueError, match="Invalid merge type"):
+        lt.merge(df1, df2, merge_type="bad", on="name", model=object())
+
+
+def test_lt_merge_rejects_existing_id_lt():
+    df1 = pd.DataFrame({"name": ["a"], "id_lt": [0]})
+    df2 = pd.DataFrame({"name": ["b"]})
+
+    with pytest.raises(ValueError, match="id_lt already exists"):
+        lt.merge(df1, df2, on="name", model=object())
+
+
+def test_lt_merge_on_none_uses_left_shared_column_order(monkeypatch):
+    df1 = pd.DataFrame({"left_only": ["l"], "b": ["b1"], "a": ["a1"]})
+    df2 = pd.DataFrame({"a": ["a2"], "b": ["b2"], "right_only": ["r"]})
+
+    captured = {"left": None, "right": None}
+
+    def _fake_serialize(df, columns, **kwargs):
+        key = "left" if "left_only" in df.columns else "right"
+        captured[key] = columns
+        return [" ".join([str(df.iloc[0][col]) for col in columns])]
+
+    def _fake_embed(strings, model, **kwargs):
+        return np.array([[1.0, 0.0]], dtype=np.float32)
+
+    monkeypatch.setattr(infer_mod, "serialize_columns", _fake_serialize)
+    monkeypatch.setattr(infer_mod, "infer_embeddings", _fake_embed)
+
+    out = lt.merge(df1, df2, on=None, model=object())
+
+    assert isinstance(out, pd.DataFrame)
+    assert captured["left"] == ["b", "a"]
+    assert captured["right"] == ["b", "a"]
+
+
+def test_lt_merge_blocking_unmatched_rows_have_uniform_schema_and_status(monkeypatch):
+    df1 = pd.DataFrame(
+        {
+            "name": ["match_left", "left_only"],
+            "country": ["US", "CA"],
+        }
+    )
+    df2 = pd.DataFrame(
+        {
+            "name": ["match_right", "right_only"],
+            "country": ["US", "MX"],
+        }
+    )
+
+    def _fake_merge(df1, df2, **kwargs):
+        assert len(df1) == 1
+        assert len(df2) == 1
+        return pd.DataFrame(
+            {
+                "name_x": [df1.iloc[0]["name"]],
+                "country_x": [df1.iloc[0]["country"]],
+                "id_lt_x": [0],
+                "name_y": [df2.iloc[0]["name"]],
+                "country_y": [df2.iloc[0]["country"]],
+                "id_lt_y": [0],
+                "score": [0.99],
+            }
+        )
+
+    monkeypatch.setattr(infer_mod, "merge", _fake_merge)
+
+    out = lt.merge_blocking(
+        df1,
+        df2,
+        on="name",
+        model=object(),
+        blocking_vars=["country"],
+    )
+
+    assert "match_status" in out.columns
+    assert set(out["match_status"].dropna().unique()) == {"matched_block", "left_only_block", "right_only_block"}
+    assert {"name_x", "country_x", "name_y", "country_y", "score"}.issubset(set(out.columns))
+    left_only = out[out["match_status"] == "left_only_block"].iloc[0]
+    right_only = out[out["match_status"] == "right_only_block"].iloc[0]
+    assert pd.isna(left_only["name_y"])
+    assert pd.isna(right_only["name_x"])
+
+
+def test_lt_transform_rows_preserves_null_rows(monkeypatch):
+    df = pd.DataFrame({"text": ["alpha", None, "beta"]})
+
+    class _FakeClient:
+        pass
+
+    def _fake_transform_column(df, column, transform_fn, fn_kwargs, **kwargs):
+        out_col = kwargs["output_column"]
+        out = df.copy()
+        out[out_col] = [f"ok::{x}" for x in out[column].tolist()]
+        return out
+
+    monkeypatch.setattr(infer_mod.openai, "OpenAI", lambda **kwargs: _FakeClient())
+    monkeypatch.setattr(infer_mod, "transform_column", _fake_transform_column)
+
+    out = lt.transform_rows(
+        df,
+        on="text",
+        openai_key="dummy",
+        model="gpt-4o-mini",
+        progress_bar=False,
+    )
+
+    assert len(out) == 3
+    assert "transformed_text" in out.columns
+    assert out.loc[0, "transformed_text"] == "ok::alpha"
+    assert pd.isna(out.loc[1, "transformed_text"])
+    assert out.loc[2, "transformed_text"] == "ok::beta"
+
+
+def test_lt_transform_rows_requires_on_column():
+    with pytest.raises(ValueError, match="Must specify `on=`"):
+        lt.transform_rows(pd.DataFrame({"a": [1]}), on=None, openai_key="dummy")
+
+
+def test_lt_classify_rows_openai_requires_prompt_or_topic():
+    with pytest.raises(ValueError, match="openai_topic or openai_prompt"):
+        lt.classify_rows(
+            pd.DataFrame({"text": ["hello"]}),
+            on="text",
+            model="gpt-4o-mini",
+            openai_key="dummy",
+        )
+
+
+def test_lt_classify_rows_api_forwards_batch_and_throttle(monkeypatch):
+    df = pd.DataFrame({"text": ["a", "b", "c"]})
+    captured = {}
+
+    def _fake_predict_rows_with_llm(strings_col, model, **kwargs):
+        captured["strings_col"] = strings_col
+        captured["model"] = model
+        captured.update(kwargs)
+        return [1, 0, 1]
+
+    monkeypatch.setattr(infer_mod, "predict_rows_with_llm", _fake_predict_rows_with_llm)
+
+    out = lt.classify_rows(
+        df,
+        on="text",
+        model="gpt-4o-mini",
+        openai_key="dummy",
+        openai_prompt="Binary classify",
+        batch_size=2,
+        api_throttle_seconds=0.4,
+        api_workers=3,
+        progress_bar=False,
+    )
+
+    assert out["clf_preds_text"].tolist() == [1, 0, 1]
+    assert captured["strings_col"] == ["a", "b", "c"]
+    assert captured["batch_size"] == 2
+    assert captured["throttle_seconds"] == 0.4
+    assert captured["workers"] == 3
+    assert captured["progress_bar"] is False
+
+
+def test_lt_transform_rows_gemini_routes_to_gemini_transform(monkeypatch):
+    df = pd.DataFrame({"text": ["alpha"]})
+    captured = {}
+
+    class _FakeClient:
+        def __init__(self, api_key, http_options=None):
+            captured["api_key"] = api_key
+
+    fake_genai = types.ModuleType("google.genai")
+    fake_genai.Client = _FakeClient
+    fake_genai.types = types.SimpleNamespace(HttpOptions=lambda **kwargs: kwargs)
+
+    def _fake_transform_column(df, column, transform_fn, fn_kwargs, **kwargs):
+        captured["transform_fn"] = transform_fn
+        captured["model_name"] = fn_kwargs["model"]
+        captured["client"] = fn_kwargs["gemini_client"]
+        captured["throttle_seconds"] = kwargs.get("throttle_seconds")
+        out_col = kwargs["output_column"]
+        out = df.copy()
+        out[out_col] = ["gemini::ok"]
+        return out
+
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    monkeypatch.setattr(infer_mod, "transform_column", _fake_transform_column)
+
+    out = lt.transform_rows(
+        df,
+        on="text",
+        gemini_key="g-key",
+        llm_provider="gemini",
+        model="gemini-2.0-flash",
+        openai_prompt="Normalize",
+        batch_size=4,
+        api_throttle_seconds=0.2,
+        progress_bar=False,
+    )
+
+    assert out["transformed_text"].tolist() == ["gemini::ok"]
+    assert captured["api_key"] == "g-key"
+    assert captured["model_name"] == "gemini-2.0-flash"
+    assert captured["transform_fn"] is infer_mod.gemini_transform
+    assert captured["throttle_seconds"] == 0.2
+
 # def test_knn_range_search():
 #     df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
 #     df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
@@ -324,7 +536,7 @@ def test_lt_classify_rows_multi_col_ternary_openai():
 
     label_dict = {"Protest": 1, "Riot": 2, "Neither": 0}
     openai_prompt = "Determine whether the text is about protests, riots or neither. Protest/Riot/Neither: "
-    df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="gpt-3.5-turbo", num_labels=3,
+    df_clf_output = lt.classify_rows(df, on=["article", "image_id"], model="gpt-4o-mini", num_labels=3,
                                      openai_key=os.getenv("OPENAI_API_KEY"),
                                      openai_prompt=openai_prompt, label_map=label_dict)
     print(df_clf_output)

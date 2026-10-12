@@ -158,7 +158,7 @@ class SupConLoss_wandb(nn.Module):
         if self.wandb_names is not None:
             _require("wandb").log({"Loss": loss})
 
-        if torch.isnan(loss):
+        if torch.isnan(loss.detach()).any():
             raise ValueError("Loss")
 
         return loss

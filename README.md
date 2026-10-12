@@ -160,7 +160,13 @@ out = lt.merge_knn(new_rows, reference_df, on="CompanyName", model="dell-researc
 
 Both sides and all functions share one cache. Local models are identified by a fingerprint of their weights, so retraining a model never returns stale embeddings; OpenAI and Gemini models are identified by name.
 
+## Long-running API jobs
+
+API-based workflows (OpenAI/Gemini embeddings, `merge_k_judge`, `judge_merge_k_out`, `classify_rows`, `transform_rows`) accept `checkpoint_path` (a JSONL progress file), `resume=True` to continue an interrupted run, `failure_log_path` to record failed calls, and `retry_policy={"max_retries": 5, "base_sleep_seconds": 15, "jitter_seconds": 2}`. `judge_workers` / `api_workers` run API calls in parallel.
+
 ## Provider Notes
+
+- Japanese models built on mLUKE (`lt-wikidata-comp-ja`, `lt-wikidata-comp-prod-ind-ja`, `lt-historicjapan-*`) need transformers 4.x: `pip install "transformers>=4.56,<5" "sentence-transformers>=5,<6"`. transformers 5 does not tokenize them correctly, and LinkTransformer raises an error rather than returning wrong embeddings.
 
 - OpenAI key: set `OPENAI_API_KEY` or pass `openai_key`.
 - Gemini key: set `GEMINI_API_KEY` or pass `gemini_key`.

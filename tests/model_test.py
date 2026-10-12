@@ -3,6 +3,8 @@ import os
 
 import numpy as np
 import pytest
+import transformers
+from packaging.version import Version
 from sentence_transformers import SentenceTransformer
 
 import linktransformer as lt
@@ -58,3 +60,14 @@ def test_lt_load_model_error_is_clear(tmp_path):
     missing = os.path.join(str(tmp_path), "does-not-exist")
     with pytest.raises(ValueError, match="Can't load the model"):
         lt.load_model(missing)
+
+
+def test_lt_mluke_models_get_a_clear_error_on_transformers_5(tmp_path):
+    # transformers 5 mis-tokenizes (5.0-5.1) or cannot load (later) the mLUKE tokenizer used by Japanese models
+    (tmp_path / "tokenizer_config.json").write_text(json.dumps({"tokenizer_class": "MLukeTokenizer"}))
+    with pytest.raises(Exception) as info:
+        lt.LinkTransformer(str(tmp_path))
+    if Version(transformers.__version__).major >= 5:
+        assert isinstance(info.value, RuntimeError) and "transformers>=4.56,<5" in str(info.value)
+    else:
+        assert "MLukeTokenizer" not in str(info.value)

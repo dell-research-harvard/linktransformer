@@ -16,6 +16,7 @@ import torch
 
 CACHE_FILE_NAME = "embeddings.sqlite"
 _SQL_BATCH = 500  # keys per SELECT; stays under SQLite's limit on query parameters
+_EMBED_CHUNK = 2048  # texts embedded and stored per step, so an interrupted run keeps what it finished
 
 
 def model_fingerprint(model: torch.nn.Module) -> str:
@@ -97,11 +98,12 @@ def cached_embeddings(strings: Sequence, cache_folder: str, model_key: str,
 
     first_text = dict(zip(reversed(keys), reversed(list(strings))))  # key -> one text with that key
     missing = [k for k in unique_keys if k not in found]
-    if missing:
-        vectors = np.asarray(embed([first_text[k] for k in missing]), dtype=np.float32)
-        if vectors.ndim != 2 or len(vectors) != len(missing):
-            raise ValueError(f"Expected {len(missing)} embeddings, got an array of shape {vectors.shape}")
-        cache.put(model_key, missing, vectors)
-        found.update(zip(missing, vectors))
+    for start in range(0, len(missing), _EMBED_CHUNK):
+        chunk = missing[start:start + _EMBED_CHUNK]
+        vectors = np.asarray(embed([first_text[k] for k in chunk]), dtype=np.float32)
+        if vectors.ndim != 2 or len(vectors) != len(chunk):
+            raise ValueError(f"Expected {len(chunk)} embeddings, got an array of shape {vectors.shape}")
+        cache.put(model_key, chunk, vectors)
+        found.update(zip(chunk, vectors))
 
     return np.stack([found[k] for k in keys]).astype(np.float32, copy=False)

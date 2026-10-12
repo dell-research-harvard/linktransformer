@@ -5,19 +5,39 @@
 # providers) get imported.
 
 import importlib
+import os
 import sys
 import types
 from typing import TYPE_CHECKING
 
 __version__ = "0.2.0"
-__MODEL_HUB_ORGANIZATION__ = 'sentence-transformers' #For compatibility with sentence-transformers
 
+# For compatibility with sentence-transformers / existing model-card behavior.
+from .constants import __MODEL_HUB_ORGANIZATION__
 from .data import DATA_DIR_PATH
+from .citation import citation, print_citation
+
+_CITATION_PRINTED = False
+
+
+def _maybe_print_citation() -> None:
+    global _CITATION_PRINTED
+    if _CITATION_PRINTED:
+        return
+    if os.getenv("LINKTRANSFORMER_SILENCE_CITATION", "").strip() in {"1", "true", "True", "yes", "YES"}:
+        _CITATION_PRINTED = True
+        return
+
+    print(citation())
+    _CITATION_PRINTED = True
+
+
+_maybe_print_citation()
 
 _LAZY_ATTRS = {
     "linktransformer.infer": [
         "aggregate_rows", "all_pair_combos_evaluate", "classify_rows", "cluster_rows", "dedup_rows",
-        "evaluate_pairs", "merge", "merge_blocking", "merge_k_judge", "merge_knn", "merge_knn_openai",
+        "evaluate_pairs", "judge_merge_k_out", "merge", "merge_blocking", "merge_k_judge", "merge_knn", "merge_knn_openai",
         "merge_knn_with_llm", "merge_range", "transform_rows",
     ],
     "linktransformer.utils": [
@@ -39,11 +59,11 @@ _LAZY_ATTRS = {
 }
 _ATTR_TO_MODULE = {attr: module for module, attrs in _LAZY_ATTRS.items() for attr in attrs}
 _SUBMODULES = {
-    "cluster_fns", "configs", "data", "embedding_cache", "infer", "modelling", "modified_sbert", "preprocess", "search",
-    "train_clf_model", "train_model", "utils",
+    "api_runtime", "cluster_fns", "configs", "constants", "data", "embedding_cache", "infer", "modelling",
+    "modified_sbert", "preprocess", "search", "train_clf_model", "train_model", "utils",
 }
 
-__all__ = ["DATA_DIR_PATH", *sorted(_ATTR_TO_MODULE)]
+__all__ = ["DATA_DIR_PATH", "citation", "print_citation", *sorted(_ATTR_TO_MODULE)]
 
 
 def __getattr__(name):
@@ -61,10 +81,10 @@ def __dir__():
     return sorted(set(globals()) | set(__all__) | _SUBMODULES)
 
 
-# `train_model` and `train_clf_model` are both public functions and submodules. Importing a
+# `train_model`, `train_clf_model` and `citation` are both public functions and submodules. Importing a
 # submodule makes Python bind it as an attribute of this package, which would shadow the
 # function, so the package ignores that rebinding for these names.
-_FUNCTIONS_NAMED_LIKE_SUBMODULES = {"train_model", "train_clf_model"}
+_FUNCTIONS_NAMED_LIKE_SUBMODULES = {"train_model", "train_clf_model", "citation"}
 
 
 class _LinkTransformerPackage(types.ModuleType):
@@ -81,8 +101,8 @@ if TYPE_CHECKING:  # let static type checkers and IDEs see the real definitions
     from .cluster_fns import cluster, clusters_from_edges
     from .infer import (
         aggregate_rows, all_pair_combos_evaluate, classify_rows, cluster_rows, dedup_rows, evaluate_pairs,
-        merge, merge_blocking, merge_k_judge, merge_knn, merge_knn_openai, merge_knn_with_llm, merge_range,
-        transform_rows,
+        judge_merge_k_out, merge, merge_blocking, merge_k_judge, merge_knn, merge_knn_openai, merge_knn_with_llm,
+        merge_range, transform_rows,
     )
     from .modelling.LinkTransformer import LinkTransformer
     from .modelling.LinkTransformerClassifier import LinkTransformerClassifier

@@ -17,6 +17,42 @@ import tempfile
 
 logger = logging.getLogger(__name__)
 
+# Tokenizers that transformers 5 does not handle correctly: 5.0 and 5.1 load them but produce wrong token ids
+# (silently wrong embeddings), later versions fail to load them. Checked up to transformers 5.19.
+_TOKENIZERS_BROKEN_IN_TRANSFORMERS_5 = {"MLukeTokenizer"}
+
+
+def _transformers_is_v5_or_later() -> bool:
+    import transformers
+    from packaging.version import Version
+
+    return Version(transformers.__version__).major >= 5
+
+
+def _declared_tokenizer_class(model_name_or_path: str) -> Optional[str]:
+    """The tokenizer class a checkpoint declares in tokenizer_config.json, read without loading the tokenizer."""
+    try:
+        if os.path.isdir(model_name_or_path):
+            config_path = os.path.join(model_name_or_path, "tokenizer_config.json")
+        else:
+            from huggingface_hub import hf_hub_download
+
+            config_path = hf_hub_download(model_name_or_path, "tokenizer_config.json")
+        with open(config_path, encoding="utf8") as fIn:
+            return json.load(fIn).get("tokenizer_class")
+    except Exception:
+        return None
+
+
+def _unsupported_tokenizer_error(model_name_or_path: Optional[str], tokenizer_class: str) -> RuntimeError:
+    import transformers
+
+    return RuntimeError(
+        f"{model_name_or_path!r} uses the {tokenizer_class}, which transformers {transformers.__version__} does not "
+        "handle correctly (transformers 5.0-5.1 produce wrong token ids; later versions fail to load it). "
+        "Use transformers 4.x for this model: pip install 'transformers>=4.56,<5' 'sentence-transformers>=5,<6'"
+    )
+
 
 def _copy_dir_contents(src_dir: str, dst_dir: str):
     for name in os.listdir(src_dir):
@@ -49,7 +85,17 @@ class LinkTransformer(SentenceTransformer):
                  ):
 
 
-        super().__init__(model_name_or_path=model_name_or_path, modules=modules, device=device, cache_folder=cache_folder, token=use_auth_token)
+        try:
+            super().__init__(model_name_or_path=model_name_or_path, modules=modules, device=device, cache_folder=cache_folder, token=use_auth_token)
+        except Exception as exc:
+            if model_name_or_path is not None and _transformers_is_v5_or_later():
+                declared = _declared_tokenizer_class(model_name_or_path)
+                if declared in _TOKENIZERS_BROKEN_IN_TRANSFORMERS_5:
+                    raise _unsupported_tokenizer_error(model_name_or_path, declared) from exc
+            raise
+        loaded_tokenizer_class = type(getattr(self, "tokenizer", None)).__name__
+        if loaded_tokenizer_class in _TOKENIZERS_BROKEN_IN_TRANSFORMERS_5 and _transformers_is_v5_or_later():
+            raise _unsupported_tokenizer_error(model_name_or_path, loaded_tokenizer_class)
 
         self.base_model_name_or_path = model_name_or_path
         self.opt_model_description = opt_model_description

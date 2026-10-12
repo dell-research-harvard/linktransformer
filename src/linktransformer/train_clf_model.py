@@ -138,7 +138,7 @@ def train_model(
         hf_model=None,
         save_dir=None,
         num_labels=2,
-        training_args={},
+        training_args=None,
         wandb_log=False,
         wandb_name="topic",
         weight_list=None, 
@@ -158,11 +158,14 @@ def train_model(
             return (loss, outputs) if return_outputs else loss
     if wandb_log:
         _require("wandb").init(project=wandb_name)
+
+    training_args = {} if training_args is None else dict(training_args)
     
     ##Update training args - report_to should be none if wandb_log is false
     training_args["report_to"]="wandb" if wandb_log else "none"
     ##output_dir = save_dir if save_dir is not None else f"." 
     training_args["output_dir"]=save_dir
+    training_args.setdefault("dataloader_pin_memory", False)
 
     model = AutoModelForSequenceClassification.from_pretrained(hf_model, num_labels=num_labels)
 
@@ -336,8 +339,8 @@ def load_default_training_args(config_path):
 
 
 
-def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="label",train_data=None,val_data=None,test_data=None,data_dir=".",
-                    training_args={},config=CLF_CONFIG_PATH,
+def train_clf_model(data=None,model="distilroberta-base",on=None,label_col_name="label",train_data=None,val_data=None,test_data=None,data_dir=".",
+                    training_args=None,config=CLF_CONFIG_PATH,
                     eval_steps=None,save_steps=None,batch_size=None,lr=None,
                     epochs=None,model_save_dir=".", weighted_loss=False,weight_list=None,
                     wandb_log=False,wandb_name="topic",
@@ -377,6 +380,8 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
         `data` is provided, it will be split into train, validation, and test sets.
     """
     
+    on = [] if on is None else on
+
     if train_data is None and val_data is None and test_data is None:
         ##Read csv or dataframe object
         data = pd.read_csv(data) if isinstance(data,str) else data
@@ -404,7 +409,7 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
             hf_model=model
         )
 
-    specified_training_args = training_args
+    specified_training_args = {} if training_args is None else dict(training_args)
 
     ##Load config as training args
     training_args = load_default_training_args(config)

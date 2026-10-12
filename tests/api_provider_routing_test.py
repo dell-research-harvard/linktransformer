@@ -6,6 +6,7 @@ import openai
 import pytest
 
 import linktransformer.utils as utils_mod
+import linktransformer.infer as infer_mod
 
 
 def test_lt_gemini_key_takes_priority_over_openai_key(monkeypatch):
@@ -88,7 +89,7 @@ def test_lt_gemini_missing_key_raises_clear_error(monkeypatch):
 def test_lt_predict_rows_with_openai_requires_v1(monkeypatch):
     monkeypatch.setattr(openai, "__version__", "0.28.1")
 
-    with pytest.raises(ValueError, match="Requires openai version 1.0.0 or higher"):
+    with pytest.raises(ValueError, match="Requires OpenAI API version 1.0.0 or higher"):
         utils_mod.predict_rows_with_openai(
             strings_col=["sample"],
             model="gpt-3.5-turbo",
