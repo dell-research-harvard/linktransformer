@@ -61,6 +61,14 @@
           token, and answers like "Yes." map to labels. Only rate limits, timeouts and server
           errors are retried (a 400 used to sleep for minutes per row).
 
+        Embedding cache
+        - New `embedding_cache="folder"` argument on every function that embeds text and on
+          infer_embeddings. Embeddings are stored per model and text in a SQLite file, so both
+          sides of a merge and all functions share them and only new texts are embedded, e.g.
+          matching new rows against a precomputed corpus (#18, @Rinderkm; follows the design
+          discussion in #31 with @julienberman). Local models are keyed by a fingerprint of
+          their weights, so a retrained model never reuses stale embeddings.
+
         Fixes and contributions
         - An explicit `sep_token` passed to serialize_columns is respected, and OpenAI/Gemini
           models use "<SEP>" without querying Hugging Face for a tokenizer (#27, @pranjalv123).

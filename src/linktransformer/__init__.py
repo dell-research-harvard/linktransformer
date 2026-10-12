@@ -39,7 +39,7 @@ _LAZY_ATTRS = {
 }
 _ATTR_TO_MODULE = {attr: module for module, attrs in _LAZY_ATTRS.items() for attr in attrs}
 _SUBMODULES = {
-    "cluster_fns", "configs", "data", "infer", "modelling", "modified_sbert", "preprocess", "search",
+    "cluster_fns", "configs", "data", "embedding_cache", "infer", "modelling", "modified_sbert", "preprocess", "search",
     "train_clf_model", "train_model", "utils",
 }
 

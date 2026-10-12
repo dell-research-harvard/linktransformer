@@ -149,6 +149,17 @@ deduped = lt.dedup_rows(
 
 - `lt.train_model(...)`: train a linkage model from paired or clustered data.
 
+## Caching embeddings
+
+Pass a folder as `embedding_cache` to any function that embeds text (`merge`, `merge_knn`, `merge_range`, `merge_k_judge`, `merge_blocking`, `aggregate_rows`, `evaluate_pairs`, `all_pair_combos_evaluate`, `cluster_rows`, `dedup_rows`, `infer_embeddings`). Embeddings are stored there per model and text, so later calls embed only texts that are not cached yet. For example, embed a large reference table once and then match small batches of new rows against it:
+
+```python
+out = lt.merge_knn(new_rows, reference_df, on="CompanyName", model="dell-research-harvard/lt-wikidata-comp-en",
+                   k=5, embedding_cache="embeddings_cache")
+```
+
+Both sides and all functions share one cache. Local models are identified by a fingerprint of their weights, so retraining a model never returns stale embeddings; OpenAI and Gemini models are identified by name.
+
 ## Provider Notes
 
 - OpenAI key: set `OPENAI_API_KEY` or pass `openai_key`.

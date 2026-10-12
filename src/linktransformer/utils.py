@@ -244,8 +244,22 @@ def _load_tokenizer(model_path: str, tokenizer: Optional[str] = None):
     return transformers.AutoTokenizer.from_pretrained(model_path)
 
 
+def _embedding_model_key(model, sbert: bool, openai_key: Optional[str]):
+    """The cache key for a model, plus the model itself (loaded if it was given as a local/HF name)."""
+    from linktransformer.embedding_cache import model_fingerprint
+
+    if _is_gemini_embedding_model(model):
+        return f"gemini:{model}", model
+    if openai_key is not None:
+        return f"openai:{model}", model
+    if isinstance(model, str):
+        model = LinkTransformer(model) if sbert else transformers.AutoModel.from_pretrained(model)
+    return f"local:{model_fingerprint(model)}", model
+
+
 def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 128,
-                     sbert: bool = True, openai_key: str = None, gemini_key: str = None, return_numpy=True) -> Union[np.ndarray, torch.Tensor]:
+                     sbert: bool = True, openai_key: str = None, gemini_key: str = None, return_numpy=True,
+                     embedding_cache: Optional[str] = None) -> Union[np.ndarray, torch.Tensor]:
     """
     Infer embeddings for a list of strings using a language model.
 
@@ -256,8 +270,21 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
     :param openai_key: OpenAI API key (optional).
     :param gemini_key: Gemini API key (optional). Preferred for Gemini embedding models.
     :param return_numpy: If True, return embeddings as a numpy array (default: True). Else return a tensor.
+    :param embedding_cache: Folder for an on-disk embedding cache (optional). Embeddings are stored per
+        model and text, and only texts not already in the cache are embedded.
     :return: Embeddings as a numpy array or a tensor (depending on return_numpy).
     """
+
+    if embedding_cache is not None and len(strings) > 0:
+        from linktransformer.embedding_cache import cached_embeddings
+
+        model_key, model = _embedding_model_key(model, sbert, openai_key)
+        embeddings = cached_embeddings(
+            strings, embedding_cache, model_key,
+            lambda texts: infer_embeddings(texts, model, batch_size=batch_size, sbert=sbert, openai_key=openai_key,
+                                           gemini_key=gemini_key, return_numpy=True),
+        )
+        return embeddings if return_numpy else torch.from_numpy(embeddings)
 
     if _is_gemini_embedding_model(model):
         api_key = gemini_key or os.getenv("GEMINI_API_KEY") or openai_key

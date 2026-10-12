@@ -50,6 +50,7 @@ def merge(
     batch_size: int = 128,
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings.
@@ -67,6 +68,7 @@ def merge(
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
     ## Set common columns as on if not specified
@@ -144,9 +146,9 @@ def merge(
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
 
     ### Expand dim if embeddings are 1d (numpy)
     if len(embeddings1.shape) == 1:
@@ -188,6 +190,7 @@ def merge_blocking(
     batch_size: int = 128,
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings with optional blocking.
@@ -206,6 +209,7 @@ def merge_blocking(
     :param batch_size (int): Batch size for inferencing embeddings. Defaults to 128.
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
     ### For blocking, we need to chunk the dfs into blocks
@@ -214,7 +218,7 @@ def merge_blocking(
         logger.info("No blocking vars specified, matching between all rows")
         df_lm_matched = merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
                                     right_on=right_on, suffixes=suffixes, batch_size=batch_size,
-                                     openai_key=openai_key, gemini_key=gemini_key)
+                                     openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
         return df_lm_matched
     else:
         ## Partition the dfs into blocks
@@ -262,7 +266,7 @@ def merge_blocking(
             ## Merge the blocks
             df_block_matched = merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
                                            left_on=left_on, right_on=right_on, suffixes=suffixes,
-                                           batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
+                                           batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
             ## Add to merged dfs
             merged_dfs.append(df_block_matched)
 
@@ -293,6 +297,7 @@ def aggregate_rows(
     right_on: Union[str, List[str]]=None,
     openai_key: str = None,
     gemini_key: str = None,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """
     Aggregate the dataframe based on a reference dataframe using a language model.
@@ -302,6 +307,7 @@ def aggregate_rows(
     :param model (str): Language model to use.
     :param left_on (Union[str, List[str]]): Column(s) to aggregate on in df.
     :param right_on (Union[str, List[str]]): Reference column(s) to aggregate on in ref_df.
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :return: DataFrame: The aggregated dataframe.
     """
 
@@ -316,7 +322,7 @@ def aggregate_rows(
     ## Each row of df is matched to its nearest row of ref_df
     df_lm_matched = merge(df, ref_df, on=None, model=model, left_on=left_on,
                                 right_on=right_on, suffixes=("_x", "_y"), batch_size=128,
-                                 openai_key=openai_key, gemini_key=gemini_key)
+                                 openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
 
     return df_lm_matched
 
@@ -327,7 +333,8 @@ def evaluate_pairs(df: DataFrame,
     left_on: Union[str, List[str]]=None,
     right_on: Union[str, List[str]]=None,
     openai_key: str = None,
-    gemini_key: str = None
+    gemini_key: str = None,
+    embedding_cache: Optional[str] = None,
     ) -> DataFrame:
     """
     This function evaluates paired columns in a dataframe and gives a match score (cosine similarity). 
@@ -337,6 +344,7 @@ def evaluate_pairs(df: DataFrame,
     :param model (str): Language model to use.
     :param left_on (Union[str, List[str]]): Column(s) to evaluate on in df.
     :param right_on (Union[str, List[str]]): Reference column(s) to evaluate on in df.
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :return: DataFrame: The evaluated dataframe.
     """
 
@@ -361,9 +369,9 @@ def evaluate_pairs(df: DataFrame,
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
 
     ### Expand dim if embeddings are 1d (numpy)
     if len(embeddings1.shape) == 1:
@@ -390,7 +398,8 @@ def cluster_rows(
     cluster_type: str = "SLINK",
     cluster_params: Optional[Dict[str, Any]] = None,
     openai_key: str = None,
-    gemini_key: str = None
+    gemini_key: str = None,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """
     Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.
@@ -419,6 +428,8 @@ def cluster_rows(
         - "threshold": 0.1
         - "metric": "cosine"
 
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+
     :return: DataFrame: The deduplicated dataframe.
     """
 
@@ -438,7 +449,7 @@ def cluster_rows(
         strings = df[on].tolist()
     
     ## Infer embeddings for df
-    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
     ## Normalize embedding tensors using numpy
     embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
     ### Now, cluster the embeddings based on similarity threshold
@@ -458,7 +469,8 @@ def dedup_rows(
     cluster_type: str = "SLINK",
     cluster_params: Optional[Dict[str, Any]] = None,
     openai_key: str = None,
-    gemini_key: str = None
+    gemini_key: str = None,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """
     Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
@@ -470,6 +482,7 @@ def dedup_rows(
     :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
     :param cluster_params (Dict[str, Any], optional): Parameters for clustering method. Defaults to DEFAULT_CLUSTER_PARAMS ({'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}).
     :param openai_key (str): OpenAI API key
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :return: DataFrame: The deduplicated dataframe.
     """
 
@@ -487,7 +500,7 @@ def dedup_rows(
     df = df.drop_duplicates(subset=on, keep="first")
     logger.info(f"Number of rows after dropping exact duplicates: {len(df)}")
 
-    df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key, gemini_key)
+    df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key, gemini_key, embedding_cache=embedding_cache)
     df = df.drop_duplicates(subset="cluster", keep="first")
     df = df.drop(columns=["cluster"])
     logger.info(f"Number of rows after deduplication: {len(df)}")
@@ -502,7 +515,8 @@ def all_pair_combos_evaluate(df: DataFrame,
     left_on: Union[str, List[str]]=None,
     right_on: Union[str, List[str]]=None,
     openai_key: str = None,
-    gemini_key: str = None
+    gemini_key: str = None,
+    embedding_cache: Optional[str] = None,
     ) -> DataFrame:
     """
     Get similarity scores for every pair of rows in a dataframe. 
@@ -513,6 +527,7 @@ def all_pair_combos_evaluate(df: DataFrame,
     :param left_on (Union[str, List[str]]): Column(s) to evaluate on in df.
     :param right_on (Union[str, List[str]]): Reference column(s) to evaluate on in df.
     :param openai_key (str): OpenAI API key
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :return: DataFrame: The evaluated dataframe.
     """
 
@@ -530,7 +545,7 @@ def all_pair_combos_evaluate(df: DataFrame,
         strings_left = df[left_on].tolist()
     
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
     embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
 
     ###Get the embeddings for the right_on column
@@ -540,7 +555,7 @@ def all_pair_combos_evaluate(df: DataFrame,
         strings_right = df[right_on].tolist()
     
     ## Infer embeddings for df1
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
     embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
 
     ###calculate the cosine similarity between all pairs of rows (embeddings are already normalized)
@@ -584,6 +599,7 @@ def merge_knn(
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
     drop_sim_threshold: float = None,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings. This function would support k nearest neighbors matching for each row in df1.
@@ -600,6 +616,7 @@ def merge_knn(
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param drop_sim_threshold (float, optional): Drop rows with similarity below this threshold. Defaults to None.
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :return: DataFrame: The merged dataframe.
     """
 
@@ -656,9 +673,9 @@ def merge_knn(
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True, embedding_cache=embedding_cache)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True, embedding_cache=embedding_cache)
 
 
     ### Expand dim if embeddings are 1d (numpy)
@@ -723,6 +740,7 @@ def merge_range(
     batch_size: int = 128,
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """
     Range-based left merge using FAISS ``range_search``.
@@ -742,6 +760,7 @@ def merge_range(
     :param batch_size (int): Batch size for embedding inference.
     :param openai_key (str, optional): OpenAI API key for OpenAI embedding models.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :return: DataFrame: Left-join style matched dataframe with ``score`` column.
     """
     if sim_threshold < -1.0 or sim_threshold > 1.0:
@@ -797,6 +816,7 @@ def merge_range(
         openai_key=openai_key,
         gemini_key=gemini_key,
         return_numpy=True,
+        embedding_cache=embedding_cache,
     )
     embeddings2 = infer_embeddings(
         strings_right,
@@ -805,6 +825,7 @@ def merge_range(
         openai_key=openai_key,
         gemini_key=gemini_key,
         return_numpy=True,
+        embedding_cache=embedding_cache,
     )
 
     if len(embeddings1.shape) == 1:
@@ -996,6 +1017,7 @@ def merge_k_judge(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """
     Retrieve candidate matches with `merge_knn`, then verify each pair with an LLM.
@@ -1005,6 +1027,7 @@ def merge_k_judge(
     - `llm_raw_response` (raw model output)
 
     :param confidence_threshold: optional post-filter threshold on llm_confidence.
+    :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     """
     llm_params = llm_params or {}
 
@@ -1069,6 +1092,7 @@ def merge_k_judge(
         openai_key=retrieval_openai_key,
         gemini_key=retrieval_gemini_key,
         drop_sim_threshold=drop_sim_threshold,
+        embedding_cache=embedding_cache,
     ).copy()
 
     def _raise_judge_error(judge_error: Exception, stage: str) -> None:
@@ -1219,6 +1243,7 @@ def merge_knn_with_llm(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """Backward-compatible alias for `merge_k_judge`."""
     return merge_k_judge(
@@ -1243,6 +1268,7 @@ def merge_knn_with_llm(
         confidence_threshold=confidence_threshold,
         max_retries=max_retries,
         ratelimit_sleep_time=ratelimit_sleep_time,
+        embedding_cache=embedding_cache,
     )
 
 
@@ -1268,6 +1294,7 @@ def merge_knn_openai(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    embedding_cache: Optional[str] = None,
 ) -> DataFrame:
     """Backward-compatible alias for `merge_k_judge`."""
     return merge_k_judge(
@@ -1292,6 +1319,7 @@ def merge_knn_openai(
         confidence_threshold=confidence_threshold,
         max_retries=max_retries,
         ratelimit_sleep_time=ratelimit_sleep_time,
+        embedding_cache=embedding_cache,
     )
 
 
