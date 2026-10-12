@@ -17,6 +17,10 @@ from linktransformer.modelling.LinkTransformer import LinkTransformer
 from linktransformer.search import knn_search, range_search
 from linktransformer.utils import (
     _is_gemini_embedding_model,
+    _is_openai_embedding_model,
+    _chat_completion,
+    _is_retryable,
+    _load_tokenizer,
     _require,
     cosine_similarity_corresponding_pairs,
     infer_embeddings,
@@ -309,8 +313,8 @@ def aggregate_rows(
         if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
             model = load_model(model)
 
-    ## Just use the merge function with merge type 1:m
-    df_lm_matched = merge(df, ref_df, merge_type="1:1", on=None, model=model, left_on=left_on,
+    ## Each row of df is matched to its nearest row of ref_df
+    df_lm_matched = merge(df, ref_df, on=None, model=model, left_on=left_on,
                                 right_on=right_on, suffixes=("_x", "_y"), batch_size=128,
                                  openai_key=openai_key, gemini_key=gemini_key)
 
@@ -911,13 +915,6 @@ def _coerce_llm_match_and_confidence(response_text: str) -> Tuple[int, float]:
     return is_match, confidence
 
 
-def _is_openai_embedding_model(model: Any) -> bool:
-    if not isinstance(model, str):
-        return False
-    model_name = model.lower()
-    return "text-embedding" in model_name or "ada-002" in model_name
-
-
 def _resolve_knn_api_model(
     knn_api_model: Optional[str],
     openai_key: Optional[str],
@@ -1157,17 +1154,15 @@ def merge_k_judge(
         for retry in range(max_retries):
             try:
                 if resolved_provider == "openai":
-                    response = openai_client.chat.completions.create(
-                        model=resolved_judge_model,
+                    response = _chat_completion(
+                        openai_client,
+                        resolved_judge_model,
                         messages=[
                             {"role": "system", "content": llm_prompt},
                             {"role": "user", "content": user_content},
                         ],
-                        temperature=llm_params["temperature"] if "temperature" in llm_params else 0,
-                        max_tokens=llm_params["max_tokens"] if "max_tokens" in llm_params else 50,
-                        top_p=llm_params["top_p"] if "top_p" in llm_params else 1,
-                        frequency_penalty=llm_params["frequency_penalty"] if "frequency_penalty" in llm_params else 0,
-                        presence_penalty=llm_params["presence_penalty"] if "presence_penalty" in llm_params else 0,
+                        params=llm_params,
+                        defaults={"temperature": 0},
                     )
                     response_text = response.choices[0].message.content or ""
                 else:
@@ -1182,7 +1177,7 @@ def merge_k_judge(
                     response_text = response.text or ""
                 break
             except Exception as judge_runtime_error:
-                if retry == max_retries - 1:
+                if retry == max_retries - 1 or not _is_retryable(judge_runtime_error):
                     _raise_judge_error(judge_runtime_error, stage="judge inference")
                 else:
                     time.sleep(ratelimit_sleep_time * (2 ** retry))
@@ -1311,7 +1306,8 @@ def classify_rows(
     openai_topic: Optional[str] = None,
     openai_prompt: Optional[str] = None,
     openai_params: Optional[dict] = None,
-    progress_bar: bool = True
+    progress_bar: bool = True,
+    tokenizer: Optional[str] = None,
 ):
     """
     Classify texts in all rows of one or more columns whether they are relevant to a certain topic. The function uses
@@ -1330,6 +1326,8 @@ def classify_rows(
     :param openai_prompt: (str, optional) Custom system prompt for OpenAI ChatCompletion endpoint. Defaults to None.
     :param openai_params: (str, optional) Custom parameters for OpenAI ChatCompletion endpoint. Defaults to None.
     :param progress_bar: (bool) Whether to show progress bar. Defaults to True.
+    :param tokenizer: (str, optional) Tokenizer path or id, for classifiers saved without tokenizer files.
+        Defaults to the model's own tokenizer, or the base model's tokenizer if the checkpoint records it.
     :returns: DataFrame: The dataframe with a new column "clf_preds_{on}" that stores the classification results.
     """
 
@@ -1353,14 +1351,13 @@ def classify_rows(
     if openai_key is None:
         import torch
         from tqdm import tqdm
-        from transformers import AutoTokenizer
 
         clf = load_clf(model, num_labels=num_labels)
-        tokenizer = AutoTokenizer.from_pretrained(model)
+        tokenizer = _load_tokenizer(model, tokenizer)
 
         # join texts in columns if needed
         if isinstance(on, list):
-            strings_col = serialize_columns(df, on, model=model)
+            strings_col = serialize_columns(df, on, sep_token=tokenizer.sep_token)
         else:
             strings_col = df[on].tolist()
 

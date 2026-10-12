@@ -18,11 +18,10 @@ logger = logging.getLogger(__name__)
 # pip distribution name and extra to suggest when an optional module is missing
 _OPTIONAL_MODULES = {
     "openai": ("openai", None),
-    "datasets": ("datasets", None),
+    "datasets": ("datasets", "train"),
     "google.genai": ("google-genai", "gemini"),
     "hdbscan": ("hdbscan", None),
     "wandb": ("wandb", "train"),
-    "evaluate": ("evaluate", "train"),
 }
 
 
@@ -145,17 +144,30 @@ def cosine_similarity_corresponding_pairs_torch(vector1, vector2):
     cosine_sim = dot_product / (norm_vector1 * norm_vector2)
     return cosine_sim
 
-def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", model: str = None) -> list:
+def _is_openai_embedding_model(model: Any) -> bool:
+    if not isinstance(model, str):
+        return False
+    model_name = model.lower()
+    return "text-embedding" in model_name or "ada-002" in model_name
+
+
+# Separator for multi-column text sent to API embedding models, which have no Hugging Face tokenizer
+API_SEP_TOKEN = "<SEP>"
+
+
+def serialize_columns(df: pd.DataFrame, columns: list, sep_token: Optional[str] = None, model: str = None) -> list:
     """
     Serialize columns of a DataFrame into a single string.
 
     :param df: The DataFrame.
     :param columns: The columns to serialize.
-    :param sep_token: The token to use to separate columns.
-    :param model: The language model to use for tokenization (optional).
+    :param sep_token: The token to use to separate columns. If None, it is chosen from the model: the
+        tokenizer's sep token for Hugging Face models, "<SEP>" for OpenAI/Gemini embedding models, and
+        "</s>" when no tokenizer is found.
+    :param model: The language model whose separator token to use (optional).
     :return: List of serialized strings.
     """
-    
+
     def _load_sep_token(model_name: str) -> Optional[str]:
         try:
             tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
@@ -163,41 +175,19 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
         except Exception:
             return None
 
-    ###if model is string
-    if isinstance(model, str):
-        if model is not None:
-            if "/" not in model:
-                logger.info(
-                    f"No organization in model name {model!r}; also trying sentence-transformers/{model} "
-                    f"and linktransformers/{model}.")
-                ###Error handling
-                loaded_sep_token = _load_sep_token(model)
-                if loaded_sep_token is not None:
-                    sep_token = loaded_sep_token
-                else:
-                    logger.info(f"Trying sentence-transformers/{model}...")
-                    loaded_sep_token = _load_sep_token("sentence-transformers/" + model)
-                    if loaded_sep_token is not None:
-                        sep_token = loaded_sep_token
-                    else:
-                        logger.info(f"Trying linktransformers/{model}...")
-                        loaded_sep_token = _load_sep_token("linktransformers/" + model)
-                        if loaded_sep_token is not None:
-                            sep_token = loaded_sep_token
-                        else:
-                            logger.warning("Could not load tokenizer for serialization. Using default sep token of </s>")
-                            sep_token = "</s>"
+    if sep_token is None:
+        if isinstance(model, LinkTransformer):
+            sep_token = model.tokenizer.sep_token
+        elif isinstance(model, str) and (_is_openai_embedding_model(model) or _is_gemini_embedding_model(model)):
+            sep_token = API_SEP_TOKEN
+        elif isinstance(model, str):
+            candidates = [model] if "/" in model else [model, f"sentence-transformers/{model}", f"linktransformers/{model}"]
+            for candidate in candidates:
+                sep_token = _load_sep_token(candidate)
+                if sep_token is not None:
+                    break
             else:
-                loaded_sep_token = _load_sep_token(model)
-                if loaded_sep_token is not None:
-                    sep_token = loaded_sep_token
-                else:
-                    logger.warning("Could not load tokenizer for serialization. Using default sep token of </s>")
-                    sep_token = "</s>"
-    elif isinstance(model, LinkTransformer):
-        sep_token = model.tokenizer.sep_token
-    else:
-        sep_token = "</s>"
+                logger.warning("Could not load tokenizer for serialization. Using default sep token of </s>")
 
     if not isinstance(sep_token, str) or sep_token == "":
         sep_token = "</s>"
@@ -206,6 +196,52 @@ def serialize_columns(df: pd.DataFrame, columns: list, sep_token: str = "</s>", 
         lambda x: sep_token.join(["" if pd.isna(v) else str(v) for v in x.tolist()]),
         axis=1,
     ).tolist()
+
+
+_TOKENIZER_FILES = ("tokenizer.json", "tokenizer_config.json", "vocab.json", "vocab.txt", "spiece.model",
+                    "sentencepiece.bpe.model", "tokenizer.model")
+
+
+def _base_model_name(model_path: str) -> Optional[str]:
+    """The base model a local checkpoint was fine-tuned from, if the checkpoint records it."""
+    lt_config_path = os.path.join(model_path, "LT_training_config.json")
+    if os.path.isfile(lt_config_path):  # written by train_clf_model
+        with open(lt_config_path, encoding="utf-8") as f:
+            base = json.load(f).get("base_model_path")
+        if base:
+            return base
+    config_path = os.path.join(model_path, "config.json")
+    if os.path.isfile(config_path):  # older transformers versions save _name_or_path
+        with open(config_path, encoding="utf-8") as f:
+            base = json.load(f).get("_name_or_path")
+        if base and os.path.normpath(base) != os.path.normpath(model_path):
+            return base
+    return None
+
+
+def _load_tokenizer(model_path: str, tokenizer: Optional[str] = None):
+    """
+    Load the tokenizer for a (classification) model.
+
+    Checkpoints saved by a plain transformers Trainer often have no tokenizer files. Recent transformers
+    versions then build an empty tokenizer without raising, so local checkpoints are checked for tokenizer
+    files and fall back to the base model's tokenizer.
+
+    :param model_path: Model path or Hugging Face model id.
+    :param tokenizer: Optional tokenizer path or id to use instead.
+    """
+    if tokenizer is not None:
+        return transformers.AutoTokenizer.from_pretrained(tokenizer)
+    if os.path.isdir(model_path) and not any(os.path.exists(os.path.join(model_path, f)) for f in _TOKENIZER_FILES):
+        base_model = _base_model_name(model_path)
+        if base_model is None:
+            raise OSError(
+                f"No tokenizer files found in {model_path!r} and the checkpoint does not record its base model. "
+                "Pass the tokenizer of the base model, e.g. tokenizer='distilroberta-base'."
+            )
+        warnings.warn(f"No tokenizer files found in {model_path!r}; using the tokenizer of its base model {base_model!r}.")
+        return transformers.AutoTokenizer.from_pretrained(base_model)
+    return transformers.AutoTokenizer.from_pretrained(model_path)
 
 
 def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 128,
@@ -244,31 +280,24 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
     else:
         openai = _require("openai", min_version="1.0.0")
         client = openai.OpenAI(api_key=openai_key)
-        ###Open ai has a token limit on  max number of tokens per request
-        char_count_string = [len(x) for x in strings]
-        ##Based on character count, split the list into multiple lists - each with a max of 5000 characters
-        ##This is a very rough approximation - we can do better
-        ##But this is a good starting point
-        ##Get the indices of the list where the split should happen. Aggregate the character count list and split when the sum is greater than 5000
-        split_indices = [0]
-        char_count_sum = 0
-        for i in range(len(char_count_string)):
-            char_count_sum += char_count_string[i]
-            if char_count_sum > 5000:
-                split_indices.append(i)
-                char_count_sum = 0
-        split_indices.append(len(char_count_string))
-        ##Split the list of strings into multiple lists
-        split_strings = [strings[split_indices[i]:split_indices[i + 1]] for i in range(len(split_indices) - 1)]
-        ##Get the embeddings for each of the split lists
+        # OpenAI limits the tokens per request; group strings into batches of about 5000 characters
+        batches, batch, batch_length = [], [], 0
+        for string in strings:
+            if batch and batch_length + len(string) > 5000:
+                batches.append(batch)
+                batch, batch_length = [], 0
+            batch.append(string)
+            batch_length += len(string)
+        if batch:
+            batches.append(batch)
+
         embeddings = []
-        f = lambda x: x.embedding
-        for i in range(len(split_strings)):
-            response = client.embeddings.create(input=split_strings[i], model=model).data
+        for batch in batches:
+            values = [item.embedding for item in client.embeddings.create(input=batch, model=model).data]
             if return_numpy:
-                embeddings.append(np.array(list(map(f, response)), dtype=np.float32))
-            else: #prep as tensor
-                embeddings.append(torch.tensor(list(map(f, response)), dtype=torch.float32))
+                embeddings.append(np.asarray(values, dtype=np.float32))
+            else:  # prep as tensor
+                embeddings.append(torch.tensor(values, dtype=torch.float32))
         if return_numpy:
             embeddings = np.concatenate(embeddings, axis=0)
         else:
@@ -283,7 +312,7 @@ def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
     dataset = datasets.Dataset.from_dict({name: corpus})
 
     # Instantiate tokenizer
-    tokenizer = transformers.AutoTokenizer.from_pretrained(hf_model)
+    tokenizer = _load_tokenizer(hf_model)
 
     # Tokenize datasets
     def tokenize_function(dataset):
@@ -292,6 +321,45 @@ def tokenize_data_for_inference(corpus: str, name: str, hf_model: str):
     tokenized_dataset = dataset.map(tokenize_function, batched=True)
 
     return tokenized_dataset
+
+_CHAT_PARAMS = ("temperature", "max_tokens", "max_completion_tokens", "top_p", "frequency_penalty", "presence_penalty")
+
+
+def _chat_completion(client, model: str, messages: list, params: Optional[Dict] = None, defaults: Optional[Dict] = None):
+    """
+    Create an OpenAI chat completion, adapting the sampling parameters to the model.
+
+    `max_tokens` is sent as `max_completion_tokens` (newer models reject the former), and any parameter
+    the API reports as unsupported (e.g. temperature or top_p for reasoning models) is dropped and the
+    request retried.
+    """
+    kwargs = dict(defaults or {})
+    kwargs.update({k: v for k, v in (params or {}).items() if k in _CHAT_PARAMS})
+    if "max_tokens" in kwargs:
+        kwargs.setdefault("max_completion_tokens", kwargs.pop("max_tokens"))
+    openai = _require("openai")
+    while True:
+        try:
+            return client.chat.completions.create(model=model, messages=messages, **kwargs)
+        except openai.BadRequestError as exc:
+            rejected = getattr(exc, "param", None)
+            if rejected not in kwargs:
+                raise
+            logger.info(f"Model {model} does not support `{rejected}`; retrying without it.")
+            kwargs.pop(rejected)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Rate limits, timeouts, connection and server errors are worth retrying; other client errors are not."""
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    return not (isinstance(status, int) and 400 <= status < 500 and status not in (408, 409, 429))
+
+
+def _match_label(text: str, label_dict: dict):
+    """Map a model answer such as "Yes." or " yes" to a key of label_dict; None if it matches no label."""
+    normalized = {str(k).strip().lower(): v for k, v in label_dict.items()}
+    answer = (text or "").strip().strip(".!\"'").strip().lower()
+    return normalized.get(answer)
 
 
 def get_completion_from_messages(
@@ -322,30 +390,20 @@ def get_completion_from_messages(
     else:
         sys_prompt = openai_prompt
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": sys_prompt
-            },
-            {
-                "role": "user",
-                "content": text
-            }
-        ],
-        temperature=openai_params["temperature"] if "temperature" in openai_params else 0,
-        max_tokens=openai_params["max_tokens"] if "max_tokens" in openai_params else 1,
-        top_p=openai_params["top_p"] if "top_p" in openai_params else 0,
-        frequency_penalty=openai_params["frequency_penalty"] if "frequency_penalty" in openai_params else 0,
-        presence_penalty=openai_params["presence_penalty"] if "presence_penalty" in openai_params else 0,
+    # No default token limit: reasoning models spend completion tokens before answering
+    response = _chat_completion(
+        client,
+        model,
+        messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": text}],
+        params=openai_params,
+        defaults={"temperature": 0},
     )
     return response.choices[0].message.content, response.usage.total_tokens
     
 
 def predict_rows_with_openai(
         strings_col: List[str],
-        model: str = "gpt-3.5-turbo",
+        model: str = "gpt-4o-mini",
         openai_key: str = None,
         openai_topic: Optional[str] = None,
         openai_prompt: Optional[str] = None,
@@ -393,7 +451,9 @@ def predict_rows_with_openai(
                 )
                 preds.append(r)
                 break
-            except Exception as e:  # handles RateLimit or Timeout Error
+            except Exception as e:  # retry rate limits, timeouts and server errors only
+                if not _is_retryable(e) or num_retry == max_retries - 1:
+                    raise
                 tqdm.write(
                     f"Encountered error: {repr(e)}. Will retry after sleeping for {ratelimit_sleep_time * (2 ** num_retry)} seconds (attempt {num_retry + 1}/{max_retries})")
                 time.sleep(ratelimit_sleep_time * (2 ** num_retry))
@@ -401,14 +461,13 @@ def predict_rows_with_openai(
     if label_dict is None:
         label_dict = {"Yes": 1, "No": 0}
 
-    try:
-        preds_numeric = [label_dict[x] for x in preds]
-        return preds_numeric
-    except KeyError:
+    preds_numeric = [_match_label(x, label_dict) for x in preds]
+    if any(p is None for p in preds_numeric):
         warnings.warn(
             "Failed to convert OpenAI text labels to numeric labels. Text labels are kept. \
             You may want to modify the prompt or the label dict. ")
         return preds
+    return preds_numeric
     
 
 def apply_in_chunks(
@@ -469,13 +528,7 @@ def openai_transform(
 
     for attempt in range(retries):
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[system_msg, user_msg],
-                **{k: extra[k] for k in ("temperature","max_tokens","top_p",
-                                         "frequency_penalty","presence_penalty")
-                   if k in extra}
-            )
+            resp = _chat_completion(client, model, messages=[system_msg, user_msg], params=extra)
             out = resp.choices[0].message.content
             arr = json.loads(out)
             if not isinstance(arr, list):
@@ -485,7 +538,7 @@ def openai_transform(
             
             return arr
         except Exception as e:
-            if attempt == retries - 1:
+            if attempt == retries - 1 or not _is_retryable(e):
                 raise
             wait = backoff * (2 ** attempt)
             tqdm.write(f"OpenAI error {e!r}, retrying in {wait}s…")
