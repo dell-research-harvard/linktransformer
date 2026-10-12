@@ -6,15 +6,16 @@ build-backend = "setuptools.build_meta"
 name = "linktransformer"
 dynamic = ["version"]
 
-# Lower bounds are the oldest versions CI tests against (the "lowest" job); there are no
-# upper bounds so the package installs alongside other libraries.
+# Lower bounds are the oldest versions CI tests against (the "lowest" job). The only upper bound
+# is on sentence-transformers, whose internals LinkTransformer subclasses: a new major version
+# can change model loading silently, so lift it once tests/model_test.py passes on it.
 # FAISS is no longer a dependency: exact search runs in torch (linktransformer/search.py).
 dependencies = [
   "numpy>=2.0",
   "pandas>=2.2.2",
   "scikit-learn>=1.4.2",
-  "torch>=2.4",
-  "sentence-transformers>=5.0",
+  "torch>=2.6",
+  "sentence-transformers>=5.0,<7",
   "transformers>=4.56",
   "huggingface-hub>=0.34",
   "networkx>=3.2",
@@ -40,9 +41,9 @@ license = {file = "LICENSE"}
 
 [project.optional-dependencies]
 # Fine-tuning linkage models (train_model) and classifiers (train_clf_model)
-train = ["datasets>=3.0", "accelerate>=1.0"]
+train = ["datasets>=3.0", "accelerate>=1.3"]
 # Weights & Biases logging during training
-wandb = ["wandb>=0.17"]
+wandb = ["wandb>=0.17.2"]
 # Gemini embeddings and Gemini as the merge_k_judge LLM
 gemini = ["google-genai>=1.30"]
 all = ["linktransformer[train,wandb,gemini]"]

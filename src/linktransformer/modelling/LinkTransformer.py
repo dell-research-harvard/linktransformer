@@ -3,19 +3,13 @@ import logging
 from sentence_transformers import SentenceTransformer
 from typing import Optional, List, Iterable, Union
 from huggingface_hub import HfApi, get_token
-import transformers
-from sentence_transformers import __version__ 
 import os
-import torch
 import json
-from linktransformer.model_card_templates import ModelCardTemplate
+from linktransformer.model_card_templates import render_linktransformer_card
 import shutil
 import stat
-from sentence_transformers.models import Transformer
 from torch import nn
-from linktransformer import __MODEL_HUB_ORGANIZATION__
 import tempfile
-from sentence_transformers.util import load_file_path
 
 
 
@@ -55,25 +49,33 @@ class LinkTransformer(SentenceTransformer):
                  ):
 
 
-        super().__init__(model_name_or_path=model_name_or_path, modules=modules, device=device, cache_folder=cache_folder, use_auth_token=use_auth_token)
+        super().__init__(model_name_or_path=model_name_or_path, modules=modules, device=device, cache_folder=cache_folder, token=use_auth_token)
 
-        ##If it is a local path, we need to load the config (LT) from the file FLAG - CLEAN THIS UP
-        if os.path.isdir(model_name_or_path):
-            ###If config file exists, load it. It will be in the parent folder of the model
-            if os.path.isfile(os.path.join(model_name_or_path, 'LT_training_config.json')):
-                with open(os.path.join(model_name_or_path, 'LT_training_config.json'), 'r') as fIn:
-                    self._lt_model_config = json.load(fIn)
-                    print("Loaded LinkTransformer model config from {}".format(os.path.join(model_name_or_path, 'LT_training_config.json')))
-                self.base_model_name_or_path = self._lt_model_config['base_model_path']
-                self.opt_model_description = self._lt_model_config['opt_model_description']
-                self.opt_model_lang = self._lt_model_config['opt_model_lang']
-        else:
-            ###If huggningface model, then assign ##Implement later
-            self.base_model_name_or_path = model_name_or_path
+        self.base_model_name_or_path = model_name_or_path
+        self.opt_model_description = opt_model_description
+        self.opt_model_lang = opt_model_lang
 
-            self.opt_model_description = opt_model_description
-            self.opt_model_lang = opt_model_lang
+        ##A locally saved LinkTransformer model carries its training config; use it for what was not passed explicitly
+        config_path = os.path.join(model_name_or_path, 'LT_training_config.json') if model_name_or_path is not None else None
+        if config_path is not None and os.path.isfile(config_path):
+            with open(config_path, 'r') as fIn:
+                self._lt_model_config = json.load(fIn)
+            logger.info("Loaded LinkTransformer model config from {}".format(config_path))
+            self.base_model_name_or_path = self._lt_model_config.get('base_model_path', model_name_or_path)
+            if opt_model_description is None:
+                self.opt_model_description = self._lt_model_config.get('opt_model_description')
+            if opt_model_lang is None:
+                self.opt_model_lang = self._lt_model_config.get('opt_model_lang')
             
+    def _expected_model_type(self) -> str:
+        """The model type sentence-transformers compares a checkpoint against when loading it into this class."""
+        # sentence-transformers < 5.4 compares against _model_config["model_type"] (the class name);
+        # later versions compare against the `model_type` class attribute ("SentenceTransformer").
+        model_config = getattr(self, "_model_config", None)
+        if isinstance(model_config, dict) and "model_type" in model_config:
+            return model_config["model_type"]
+        return getattr(type(self), "model_type", type(self).__name__)
+
     def _get_model_type(
         self,
         model_name_or_path: str,
@@ -82,24 +84,23 @@ class LinkTransformer(SentenceTransformer):
         revision: str | None = None,
         local_files_only: bool = False,
     ) -> str | None:
-        """defaults to own class name so that the model-type check passes for ST version 5+ (tomaarsen's suggested fix in sentence-transformer#3536)
         """
-        
-        config_sentence_transformers_json_path = load_file_path(
+        Report SentenceTransformer and LinkTransformer checkpoints as this class's own model type, so
+        sentence-transformers loads their saved modules as-is (see sentence-transformers#3536).
+
+        Any other mismatch makes sentence-transformers rebuild the model with default modules (for
+        example dropping a Normalize layer or changing the pooling), which silently changes embeddings.
+        """
+        stored_type = super()._get_model_type(
             model_name_or_path,
-            "config_sentence_transformers.json",
             token=token,
             cache_folder=cache_folder,
             revision=revision,
             local_files_only=local_files_only,
         )
-
-        if config_sentence_transformers_json_path is None:
-            return "SentenceTransformer"
-
-        with open(config_sentence_transformers_json_path, encoding="utf8") as fIn:
-            config = json.load(fIn)
-            return config.get("model_type", self.__class__.__name__)  # Default to this class if not specified
+        if stored_type in (None, "SentenceTransformer", "LinkTransformer"):
+            return self._expected_model_type()
+        return stored_type
 
 
     def save(self, path: str, model_name: Optional[str] = None, create_model_card: bool = True, train_datasets: Optional[List[str]] = None,override_model_description: Optional[str] = None, 
@@ -126,97 +127,61 @@ class LinkTransformer(SentenceTransformer):
         if override_model_lang is not None:
             self.opt_model_lang = override_model_lang
 
-        os.makedirs(path, exist_ok=True)
-
-        logger.info("Save model to {}".format(path))
-        modules_config = []
-
-        #Save some model info
-        if '__version__' not in self._model_config:
-            self._model_config['__version__'] = {
-                    'sentence_transformers': __version__,
-                    'transformers': transformers.__version__,
-                    'pytorch': torch.__version__,
-                }
-
-        with open(os.path.join(path, 'config_sentence_transformers.json'), 'w') as fOut:
-            json.dump(self._model_config, fOut, indent=2)
-
-        #Save modules
-        for idx, name in enumerate(self._modules):
-            module = self._modules[name]
-            if idx == 0 and isinstance(module, Transformer):    #Save transformer model in the main folder
-                model_path = path + "/"
-            else:
-                model_path = os.path.join(path, str(idx)+"_"+type(module).__name__)
-
-            os.makedirs(model_path, exist_ok=True)
-            module.save(model_path)
-            modules_config.append({'idx': idx, 'name': name, 'path': os.path.basename(model_path), 'type': type(module).__module__})
-
-        with open(os.path.join(path, 'modules.json'), 'w') as fOut:
-            json.dump(modules_config, fOut, indent=2)
-
-        # Create model card
-        if create_model_card:
-            self._create_model_card(path, model_name, train_datasets)
+        # Record the checkpoint as a SentenceTransformer so plain sentence-transformers loads it without
+        # conversion (sentence-transformers < 5.4 would otherwise write "LinkTransformer" here).
+        model_config = getattr(self, "_model_config", None)
+        own_model_type = model_config.get("model_type") if isinstance(model_config, dict) else None
+        if own_model_type is not None:
+            model_config["model_type"] = "SentenceTransformer"
+        try:
+            # sentence-transformers writes the modules and configs in its current format and calls
+            # self._create_model_card, so the LinkTransformer model card is kept.
+            super().save(
+                path,
+                model_name=model_name,
+                create_model_card=create_model_card,
+                train_datasets=train_datasets,
+                safe_serialization=safe_serialization,
+            )
+        finally:
+            if own_model_type is not None:
+                model_config["model_type"] = own_model_type
 
     def _create_model_card(self, path: str, model_name: Optional[str] = None, train_datasets: Optional[List[str]] = None):
         """
-        Create an automatic model and stores it in path
+        Write the model card (README.md) to path.
+
+        As in sentence-transformers, a card loaded from the Hub is kept as is unless the model has been
+        trained since; trained models get a LinkTransformer card describing the base model and training.
         """
-        if self._model_card_text is not None and len(self._model_card_text) > 0:
+        card_data = getattr(self, "model_card_data", None)
+        trained = "generated_from_trainer" in (getattr(card_data, "tags", None) or [])
+        if self._model_card_text and not trained:
             model_card = self._model_card_text
         else:
-            tags = ModelCardTemplate.__TAGS__.copy()
-            model_card = ModelCardTemplate.__MODEL_CARD__
+            # train_model writes LT_training_config.json into the save directory before training
+            training_config = getattr(self, "_lt_model_config", None)
+            config_path = os.path.join(path, "LT_training_config.json")
+            if os.path.isfile(config_path):
+                with open(config_path, encoding="utf8") as fIn:
+                    training_config = json.load(fIn)
+            training_config = training_config or {}
 
-            # Print full model
-            model_card = model_card.replace("{FULL_MODEL_STR}", str(self))
-
-            # Add tags
-            model_card = model_card.replace("{TAGS}", "\n".join(["- "+t for t in tags]))
-
-            datasets_str = ""
-            if train_datasets is not None:
-                datasets_str = "datasets:\n"+"\n".join(["- " + d for d in train_datasets])
-            model_card = model_card.replace("{DATASETS}", datasets_str)
-
-            ###Add base model name
-            model_card=model_card.replace("{BASE_MODEL}",self.base_model_name_or_path)
-
-            ##ADd optional model description
-            if self.opt_model_description is not None:
-                model_card=model_card.replace("{MODEL_DESCRIPTION}",self.opt_model_description)
-            else:
-                model_card=model_card.replace("{MODEL_DESCRIPTION}","")
-                
-            ##ADd optional model language
-            if self.opt_model_lang is not None:
-                if isinstance(self.opt_model_lang,list):
-                    model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in self.opt_model_lang]))
-                else:
-                    model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in [self.opt_model_lang]]))
-            else:
-                model_card = model_card.replace("language: \n{LANGUAGE}", "")
-                model_card = model_card.replace("It is pretrained for the language : {LANGUAGE}.", "")
-
-            # Add dim info
-            self._model_card_vars["{NUM_DIMENSIONS}"] = self.get_sentence_embedding_dimension()
-
-            # Replace vars we created while using the model
-            for name, value in self._model_card_vars.items():
-                model_card = model_card.replace(name, str(value))
-
-            # Replace remaining vars with default values
-            for name, value in ModelCardTemplate.__DEFAULT_VARS__.items():
-                model_card = model_card.replace(name, str(value))
-
-        if model_name is not None:
-            model_card = model_card.replace("{MODEL_NAME}", model_name.strip())
+            # get_embedding_dimension replaces get_sentence_embedding_dimension in sentence-transformers >= 5.4
+            get_dimension = getattr(self, "get_embedding_dimension", None) or self.get_sentence_embedding_dimension
+            model_card = render_linktransformer_card(
+                model_name=(model_name or path).strip(),
+                num_dimensions=get_dimension(),
+                architecture=str(self),
+                base_model=training_config.get("base_model_path") or getattr(self, "base_model_name_or_path", None),
+                languages=self.opt_model_lang,
+                description=self.opt_model_description,
+                train_datasets=train_datasets if isinstance(train_datasets, (list, tuple)) else None,
+                training_config=training_config,
+            )
 
         with open(os.path.join(path, "README.md"), "w", encoding='utf8') as fOut:
-            fOut.write(model_card.strip())
+            fOut.write(model_card)
 
     def save_to_hub(self,
                     repo_name: str,
@@ -247,7 +212,7 @@ class LinkTransformer(SentenceTransformer):
         """
         token = get_token() or os.getenv("HF_TOKEN")
         if token is None:
-            raise ValueError("You must login to the Hugging Face hub. Run `huggingface-cli login` or set `HF_TOKEN`.")
+            raise ValueError("You must login to the Hugging Face hub. Run `hf auth login` or set `HF_TOKEN`.")
 
         if '/' in repo_name:
             splits = repo_name.split('/', maxsplit=1)
@@ -315,7 +280,7 @@ class LinkTransformer(SentenceTransformer):
                 try:
                     os.chmod(path, stat.S_IWRITE)
                     os.unlink(path)
-                except:
+                except OSError:
                     pass
 
             try:

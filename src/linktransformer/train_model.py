@@ -6,6 +6,9 @@ from linktransformer.preprocess import preprocess_any_data, preprocess_mexican_t
 from linktransformer.configs import LINKAGE_CONFIG_PATH
 import pandas as pd
 import pickle
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
@@ -88,10 +91,8 @@ def create_new_train_config(base_config_path:str=LINKAGE_CONFIG_PATH,
     with open(config_save_path, "w") as config_file:
         json.dump(config, config_file)
 
-    print("Config saved at: ", config_save_path)
-    print("Keep it handy for future use")
-          
-
+    logger.info(f"Config saved at: {config_save_path}")
+    logger.info("Keep it handy for future use")
     return config_save_path
     
     
@@ -151,13 +152,10 @@ def train_model(
         os.makedirs(os.path.join(config["model_save_dir"], config["model_save_name"]))
         
     
-    print(f"Loading config saved at {config_path}")
-    print(f"Using base model: {model_path}")
-
-    print(f"Currently wandb logging is set to {log_wandb}. Your training run can be logged on wandb by setting log_wandb=True , setting approriate parameters in the config and  making an account on wandb if you don't have one yet")
-
-    print("Testing at end: ", config["test_at_end"])
-
+    logger.info(f"Loading config saved at {config_path}")
+    logger.info(f"Using base model: {model_path}")
+    logger.info(f"Currently wandb logging is set to {log_wandb}. Your training run can be logged on wandb by setting log_wandb=True , setting approriate parameters in the config and  making an account on wandb if you don't have one yet")
+    logger.info(f"Testing at end: {config['test_at_end']}")
     train_data, val_data, test_data = preprocess_any_data(
         data=data,
         train_data=train_data,
@@ -180,21 +178,19 @@ def train_model(
     
     ##Save val and test pickles
     if config["save_val_test_pickles"]:
-        print("Saving val and test pickles")
+        logger.info("Saving val and test pickles")
         with open(os.path.join(config["model_save_dir"], config["model_save_name"], "val_data.pickle"), "wb") as val_file:
             pickle.dump(val_data, val_file)
         with open(os.path.join(config["model_save_dir"], config["model_save_name"], "test_data.pickle"), "wb") as test_file:
             pickle.dump(test_data, test_file)
 
-        print("Saved val and test pickles")
-
-
+        logger.info("Saved val and test pickles")
     ##If label_col_name is not None, specify that the eval type is classification
     if label_col_name is not None:
         config["eval_type"]="classification"
-        print("Since label_col_name is provided, the eval type is set to classification")
+        logger.info("Since label_col_name is provided, the eval type is set to classification")
         if config["loss_type"]=="supcon":
-            print("You can also consider loss_type=='onlinecontrastive'")
+            logger.info("You can also consider loss_type=='onlinecontrastive'")
     elif clus_id_col_name is not None:
         config["eval_type"]="retrieval"
     else:
@@ -213,7 +209,7 @@ def train_model(
     with open(os.path.join(config["model_save_dir"], config["model_save_name"], "LT_training_config.json"), "w") as config_file:
         json.dump(config, config_file)
 
-    print("Training")
+    logger.info("Training")
     best_model_path = train_biencoder(
         train_data=train_data,
         dev_data=val_data,
@@ -234,10 +230,7 @@ def train_model(
         loss_params=config["loss_params"],
 
     )
-    print(f"Best model saved on the path: {best_model_path} ")
-
-
-        
+    logger.info(f"Best model saved on the path: {best_model_path} ")
     ##Add the best model path in the config
     config["best_model_path"]=best_model_path
     

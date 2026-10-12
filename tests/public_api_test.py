@@ -21,13 +21,13 @@ PUBLIC_API = [
 NOT_NEEDED_FOR_INFERENCE = ["faiss", "wandb", "openai", "google.genai", "google.generativeai", "hdbscan", "evaluate"]
 
 
-def test_public_names_resolve():
+def test_lt_public_names_resolve():
     for name in PUBLIC_API:
         assert hasattr(lt, name), name
     assert sorted(lt.__all__) == sorted(PUBLIC_API)
 
 
-def test_functions_shadowing_submodules_stay_functions():
+def test_lt_functions_shadowing_submodules_stay_functions():
     # importing the submodules first must not replace the public functions of the same name
     import linktransformer.train_clf_model  # noqa: F401
     import linktransformer.train_model  # noqa: F401
@@ -45,12 +45,12 @@ def _modules_loaded_after(code):
     return set(out.split(","))
 
 
-def test_import_is_lightweight():
+def test_lt_import_is_lightweight():
     loaded = _modules_loaded_after("import linktransformer")
     heavy = {"torch", "transformers", "sentence_transformers", "sklearn", "pandas", *NOT_NEEDED_FOR_INFERENCE}
     assert not heavy & loaded, heavy & loaded
 
 
-def test_inference_does_not_import_optional_libraries():
+def test_lt_inference_does_not_import_optional_libraries():
     loaded = _modules_loaded_after("import linktransformer as lt\nlt.merge; lt.merge_knn; lt.cluster_rows")
     assert not set(NOT_NEEDED_FOR_INFERENCE) & loaded, set(NOT_NEEDED_FOR_INFERENCE) & loaded

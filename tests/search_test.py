@@ -16,7 +16,7 @@ def small_chunks(monkeypatch):
 
 
 @pytest.mark.parametrize("chunked", [False, True])
-def test_knn_search_matches_brute_force(request, chunked):
+def test_lt_knn_search_matches_brute_force(request, chunked):
     if chunked:
         request.getfixturevalue("small_chunks")
     rng = np.random.default_rng(0)
@@ -30,20 +30,20 @@ def test_knn_search_matches_brute_force(request, chunked):
     assert np.allclose(scores, np.take_along_axis(sims, expected, axis=1), atol=1e-6)
 
 
-def test_knn_search_caps_k_at_corpus_size():
+def test_lt_knn_search_caps_k_at_corpus_size():
     rng = np.random.default_rng(1)
     scores, indices = search.knn_search(_normalized(rng, 3), _normalized(rng, 2), k=5)
     assert indices.shape == scores.shape == (3, 2)
 
 
-def test_knn_search_empty_queries():
+def test_lt_knn_search_empty_queries():
     rng = np.random.default_rng(2)
     scores, indices = search.knn_search(_normalized(rng, 0), _normalized(rng, 4), k=2)
     assert indices.shape == (0, 2)
 
 
 @pytest.mark.parametrize("chunked", [False, True])
-def test_range_search_matches_brute_force(request, chunked):
+def test_lt_range_search_matches_brute_force(request, chunked):
     if chunked:
         request.getfixturevalue("small_chunks")
     rng = np.random.default_rng(3)
@@ -59,7 +59,7 @@ def test_range_search_matches_brute_force(request, chunked):
         assert np.allclose(scores[lims[i]:lims[i + 1]], sims[i, expected], atol=1e-6)
 
 
-def test_range_search_empty_corpus():
+def test_lt_range_search_empty_corpus():
     rng = np.random.default_rng(4)
     lims, scores, indices = search.range_search(_normalized(rng, 3), _normalized(rng, 0), threshold=0.5)
     assert np.array_equal(lims, np.zeros(4)) and len(scores) == len(indices) == 0

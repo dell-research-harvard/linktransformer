@@ -1,6 +1,6 @@
 import os
 import sys
-from sentence_transformers.readers import InputExample
+from sentence_transformers import InputExample
 import logging
 
 logger = logging.getLogger(__name__)

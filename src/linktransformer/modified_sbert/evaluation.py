@@ -3,10 +3,13 @@ import sys
 import numpy as np
 import pandas as pd
 from typing import List
-from sentence_transformers import evaluation, LoggingHandler
 import logging
-from transformers.utils import logging as lg
 from linktransformer.utils import _require
+
+try:  # sentence-transformers >= 5.4
+    from sentence_transformers.sentence_transformer import evaluation
+except ImportError:  # sentence-transformers < 5.4
+    from sentence_transformers import evaluation
 from typing import List, Dict, Set, Callable
 from torch import Tensor
 
@@ -18,11 +21,6 @@ from tqdm.autonotebook import trange
 import torch
 import heapq
 
-lg.set_verbosity_error()
-logging.basicConfig(format='%(asctime)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    level=logging.INFO,
-                    handlers=[LoggingHandler()])
 logger = logging.getLogger(__name__)
 
 
@@ -198,11 +196,11 @@ class InformationRetrievalEvaluator_wandb(evaluation.InformationRetrievalEvaluat
         
 
         if self.main_score_function is None:
-            print("Using max accuracy@k as main score - ", scores[name]['accuracy@k'][1])
+            logger.info(f"Using max accuracy@k as main score - {scores[name]['accuracy@k'][1]}")
             return max([scores[name]['accuracy@k'][1] for name in self.score_function_names])
         
         else:
-            print("Using max accuracy@k as main score - ", scores[name]['accuracy@k'][1])
+            logger.info(f"Using max accuracy@k as main score - {scores[name]['accuracy@k'][1]}")
             return scores[self.main_score_function]['accuracy@k'][1]    
 
     def calculate_matching_accuracy(self, queries_result_list) -> float:
@@ -397,7 +395,7 @@ class InformationRetrievalEvaluator_wandb(evaluation.InformationRetrievalEvaluat
             df.to_csv("current_best_matches.csv", index=False,encoding="utf-8")
         
         output_scores={'accuracy@k': num_hits_at_k, 'precision@k': precisions_at_k, 'recall@k': recall_at_k, 'ndcg@k': ndcg, 'mrr@k': MRR, 'map@k': AveP_at_k}
-        print(output_scores)
+        logger.info(output_scores)
  
         return output_scores
 
@@ -415,8 +413,8 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
         self.similarity_fn_names = ['cossim']
         self.similarity_fn_name = self.similarity_fn_names[0]
         self.primary_metric = f"{self.similarity_fn_name}_ap"
-        print(self.sentences1[0])
-        print(self.sentences2[0])
+        logger.info(self.sentences1[0])
+        logger.info(self.sentences2[0])
         assert len(self.sentences1) == len(self.sentences2)
         assert len(self.sentences1) == len(self.labels)
         for label in labels:
@@ -440,7 +438,7 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
 
     def compute_metrices(self, model):
 
-        print("*********************EVALUATION STARTED******************************")
+        logger.info("*********************EVALUATION STARTED******************************")
 
         sentences = list(set(self.sentences1 + self.sentences2))
         embeddings = model.encode(sentences, batch_size=self.batch_size, show_progress_bar=self.show_progress_bar, convert_to_numpy=True)
@@ -480,7 +478,7 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
                 'recall': recall,
                 'ap': ap
             }
-            print(output_scores)
+            logger.info(output_scores)
             if self.wandb_names:
                 _require("wandb").log({
                     f"Classification Accuracy {name}": acc,
@@ -493,3 +491,6 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
                 })
 
         return output_scores
+
+    # sentence-transformers >= 5.4 calls compute_metrics (it used to call compute_metrices)
+    compute_metrics = compute_metrices

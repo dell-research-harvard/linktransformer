@@ -1,6 +1,7 @@
 ###Preprocess datasets for training linker
 ###Prepare data for fine-tuning sbert
 
+import logging
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from collections import defaultdict
@@ -9,6 +10,8 @@ import pandas as pd
 
 from linktransformer.utils import serialize_columns
 from linktransformer.cluster_fns import clusters_from_edges
+
+logger = logging.getLogger(__name__)
 
 def convert_to_text(unicode_string):
     return unicode_string.encode('ascii','ignore').decode('ascii')
@@ -45,15 +48,14 @@ def check_clust_data(data,model,text_col_names,clus_id_col_name):
         
     ## Check if text columns form a unique key
     if not data[text_col_names].duplicated().any():
-        print(f" Warning text columns do not form a unique key, please check the text column names")
-    
+        logger.warning(f"text columns do not form a unique key, please check the text column names")
     ###Make an idcol as group id
     data["cluster_assignment"] = data.groupby(clus_id_col_name).ngroup().astype(str) + "_g"
     clus_id_col_name="cluster_assignment"
 
     ## Serialize if there are more than one columns. Feature plan: Later implement deduplication and expansion to avoid rembedding the same string multiple times
     if len(text_col_names) > 1:
-        print("Serializing text columns")
+        logger.info("Serializing text columns")
         data["text"] = serialize_columns(data, text_col_names, model=model)
     else:
         data["text"] = data[text_col_names[0]]
@@ -115,22 +117,20 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
     
     ##Updated v 0.1.12 - We used to deduplicate by only the right column. Now, we deduplicate by both left and right columns
     ## This wouldn't affect training, but would affet eval. 
-    print("Dropping duplicates if any from left + right columns")
+    logger.info("Dropping duplicates if any from left + right columns")
     data = data.drop_duplicates(subset=left_col_names+right_col_names)
 
     ## Check if left columns form a unique key
     if not data[left_col_names].duplicated().any():
-        print(f" Warning Left columns do not form a unique key, please check the left column names. Drop duplicates before if this was unexpected.")
-
+        logger.warning(f"Left columns do not form a unique key, please check the left column names. Drop duplicates before if this was unexpected.")
     #### Check if right columns form a unique key, leave a warning if not and drop duplicates. ##Disabling dup drop in v 0.1.12
     if data[right_col_names].duplicated().any():
-        print("Warning: Right columns do not form a unique key, please check the right column names. Drop duplicates before if this was unexpected.")
-
+        logger.warning("Right columns do not form a unique key, please check the right column names. Drop duplicates before if this was unexpected.")
     ## If left_id_name is not specified, we will assume left data is unique and use the index as the id
     if not left_id_name:
         data["left_id"] =  data.groupby(left_col_names).ngroup().astype(str) + "_l"
         left_id_name = "left_id"
-        print("Warning: left id column not specified, using the left columns to group the data and using the groupby index as the id")
+        logger.warning("left id column not specified, using the left columns to group the data and using the groupby index as the id")
     else:
         ### If left id is specified, we can group by the left id column and use the groupby index as the id
         data["left_id"] = data.groupby(left_id_name).ngroup().astype(str) + "_l" ## Convert to string
@@ -140,8 +140,7 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
     if not right_id_name:
         data["right_id"] = data.groupby(right_col_names).ngroup().astype(str) + "_r"
         right_id_name = "right_id"
-        print("Warning: right id column not specified, using the right columns to group the data and using the groupby index as the id")
-
+        logger.warning("right id column not specified, using the right columns to group the data and using the groupby index as the id")
     else:
         ## If right id is specified, we can group by the right id column and use the groupby index as the id
         data["right_id"] = data.groupby(right_id_name).ngroup().astype(str) + "_r"
@@ -150,7 +149,7 @@ def check_and_prep_data(data, model,left_col_names, right_col_names, left_id_nam
     
     ## Serialize if there are more than one columns. Feature plan: Later implement deduplication and expansion to avoid rembedding the same string multiple times
     if len(left_col_names) > 1:
-        print("Serializing left columns")
+        logger.info("Serializing left columns")
         data["left_text"] = serialize_columns(data, left_col_names, model=model)
     else:
         data["left_text"] = data[left_col_names[0]]
@@ -363,14 +362,14 @@ def prep_paired_label_data(
         train_data = data
         val_data = data
         ## Throw warning that train=val data
-        print("Warning: train and val data are the same")
+        logger.warning("train and val data are the same")
     else:
         if  val_data is None  and  test_data is None:
         ### Split by val perc - we want to split this dataframe directly since we are dealing with pairs
             train_data,val_data = train_test_split(data, test_size=val_perc, random_state=42)
             ###Split val into test and val
             if test_at_end:
-                print("Splitting val into test and val (equally) ")
+                logger.info("Splitting val into test and val (equally) ")
                 val_data, test_data= train_test_split(val_data, test_size=0.5, random_state=42)
 
         else:
@@ -546,7 +545,7 @@ def prep_linkage_data(
         train_data = data
         val_data = data
         ## Throw warning that train=val data
-        print("Warning: train and val data are the same")
+        logger.warning("train and val data are the same")
     else:
         if  val_data is None  and  test_data is None:
             ### Split by val perc - we want to split by cluster assignment. Only 20% of the clusters should be in the val set
@@ -554,7 +553,7 @@ def prep_linkage_data(
             
             ###Split val into test and val
             if test_at_end:
-                print("Splitting val into test and val (equally) ")
+                logger.info("Splitting val into test and val (equally) ")
                 val_cluster_assignment, test_cluster_assignment = train_test_split(val_cluster_assignment, test_size=0.5, random_state=42)
                 train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
                 val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
@@ -574,9 +573,9 @@ def prep_linkage_data(
     ###get value counts of cluster assignment
 
     
-    print("Train data shape: ", train_data.shape)
-    print("Val data shape: ", val_data.shape)
-    print("Test data shape: ", test_data.shape)
+    logger.info(f"Train data shape: {train_data.shape}")
+    logger.info(f"Val data shape: {val_data.shape}")
+    logger.info(f"Test data shape: {test_data.shape}")
     ### Now, group by cluster assignment and make a dict with cluster_assignment:[left_text, right_text1, right_text2, right_text3...]
     train_data_dict = defaultdict(list)
     for index, row in train_data.iterrows():
@@ -632,7 +631,7 @@ def preprocess_mexican_tarrif_data(file_path: str = None):
     ##Drop missing descriptions
     df=df.dropna(subset=["description47","description48"])
     ##Make descriptions lowercase
-    df=df.applymap(lambda x: x.lower() if isinstance(x,str) else x)
+    df=df.map(lambda x: x.lower() if isinstance(x,str) else x)
     ##Drop dropna rows
     df=df.dropna()
     ##Get the left and right ids
@@ -733,7 +732,7 @@ def prep_clus_data(
         train_data = data
         val_data = data
         ## Throw warning that train=val data
-        print("Warning: train and val data are the same")
+        logger.warning("train and val data are the same")
     else:
         if  val_data is None  and  test_data is None:
             ### Split by val perc - we want to split by cluster assignment. Only 20% of the clusters should be in the val set
@@ -741,7 +740,7 @@ def prep_clus_data(
             
             ###Split val into test and val
             if test_at_end:
-                print("Splitting val into test and val (equally) ")
+                logger.info("Splitting val into test and val (equally) ")
                 val_cluster_assignment, test_cluster_assignment = train_test_split(val_cluster_assignment, test_size=0.5, random_state=42)
                 train_data = data[data["cluster_assignment"].isin(train_cluster_assignment)]
                 val_data = data[data["cluster_assignment"].isin(val_cluster_assignment)]
@@ -767,8 +766,7 @@ def prep_clus_data(
     # train_data_dict = {k: list(set(v)) for k, v in train_data_dict.items()}
     train_data_dict = train_data.groupby("cluster_assignment")["text"].apply(set).apply(list).to_dict()
 
-    print("Preparing val data")
-
+    logger.info("Preparing val data")
     queries = {}
     corpus = {}
     relevant_docs = defaultdict(set)
@@ -811,8 +809,7 @@ def prep_clus_data(
 
     ##Now, prepare the test data
     if test_at_end:
-        print("Preparing test data")
-
+        logger.info("Preparing test data")
         queries = {}
         corpus = {}
         relevant_docs = defaultdict(set)

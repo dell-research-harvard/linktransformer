@@ -1,20 +1,13 @@
-import math
 import torch
 import torch.nn as nn
-from sentence_transformers import LoggingHandler, losses, SentenceTransformer
+from sentence_transformers import SentenceTransformer
 import logging
-from transformers.utils import logging as lg
 from linktransformer.utils import _require
 from torch import Tensor
 from torch.nn import functional as F
 from typing import Dict,Iterable
 from enum import Enum
 
-lg.set_verbosity_error()
-logging.basicConfig(format='%(asctime)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    level=logging.INFO,
-                    handlers=[LoggingHandler()])
 logger = logging.getLogger(__name__)
 
 
@@ -165,7 +158,7 @@ class SupConLoss_wandb(nn.Module):
         if self.wandb_names is not None:
             _require("wandb").log({"Loss": loss})
 
-        if math.isnan(loss):
+        if torch.isnan(loss):
             raise ValueError("Loss")
 
         return loss

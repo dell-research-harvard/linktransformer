@@ -1,36 +1,36 @@
-import math
+import logging
 import os
-import sys
 from math import ceil
 from typing import Dict
 from unittest.mock import patch
-from datasets import Dataset as HFDataset
-from linktransformer.modified_sbert import losses, evaluation
+
 import torch
-import sentence_transformers
-from sentence_transformers import (
-    models,
-    LoggingHandler,
-    SentenceTransformerTrainer,
-    SentenceTransformerTrainingArguments,
-)
-from sentence_transformers.training_args import BatchSamplers
-import logging
+from sentence_transformers import LoggingHandler, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from transformers.utils import logging as lg
-from linktransformer.utils import _require
 
 from linktransformer.modelling.LinkTransformer import LinkTransformer
+from linktransformer.modified_sbert import evaluation, losses
+from linktransformer.utils import _require
 
+try:  # sentence-transformers >= 5.4
+    from sentence_transformers.sentence_transformer import modules as models
+    from sentence_transformers.sentence_transformer.evaluation import SequentialEvaluator
+except ImportError:  # sentence-transformers < 5.4
+    from sentence_transformers import models
+    from sentence_transformers.evaluation import SequentialEvaluator
 
-
-
-
-lg.set_verbosity_error()
-logging.basicConfig(format='%(asctime)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    level=logging.INFO,
-                    handlers=[LoggingHandler()])
 logger = logging.getLogger(__name__)
+
+
+def _configure_training_logging():
+    """Show linktransformer's training logs unless the application has configured logging itself."""
+    lg.set_verbosity_error()
+    package_logger = logging.getLogger("linktransformer")
+    if not package_logger.handlers and not logging.getLogger().handlers:
+        handler = LoggingHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+        package_logger.addHandler(handler)
+        package_logger.setLevel(logging.INFO)
 
 
 def _build_supcon_dataset(cluster_dict):
@@ -42,8 +42,8 @@ def _build_supcon_dataset(cluster_dict):
             sentences.append(text)
             labels.append(cluster_label)
         cluster_label += 1
-    print(f'{len(sentences)} training examples')
-    return HFDataset.from_dict({"sentence": sentences, "label": labels})
+    logger.info(f'{len(sentences)} training examples')
+    return _require("datasets").Dataset.from_dict({"sentence": sentences, "label": labels})
 
 
 def _build_onlinecontrastive_dataset(df):
@@ -52,8 +52,8 @@ def _build_onlinecontrastive_dataset(df):
     label = df['label'].tolist()
     label2int = {"same": 1, "different": 0, 1: 1, 0: 0}
     labels = [int(label2int[val]) for val in label]
-    print(f'{len(labels)} training pairs')
-    return HFDataset.from_dict({"sentence1": source_text, "sentence2": target_text, "label": labels})
+    logger.info(f'{len(labels)} training pairs')
+    return _require("datasets").Dataset.from_dict({"sentence1": source_text, "sentence2": target_text, "label": labels})
 
 
 def train_biencoder(
@@ -78,26 +78,25 @@ def train_biencoder(
 ):
 
     # Logging
+    _configure_training_logging()
     if wandb_names: 
-        wandb = _require("wandb")
-        if 'run' in wandb_names:
-            wandb.init(project=wandb_names['project'], entity=wandb_names['id'], reinit=True, name=wandb_names['run'])
-        else:
-            wandb.init(project=wandb_names['project'], entity=wandb_names['id'], reinit=True)
+        _require("wandb").init(
+            project=wandb_names['project'],
+            entity=wandb_names['id'],
+            name=wandb_names.get('run'),
+            reinit=True,
+            config={"epochs": num_epochs, "batch_size": train_batch_size, "warm_up": warm_up_perc},
+        )
 
-        wandb.config = {
-            "epochs": num_epochs,
-            "batch_size": train_batch_size,
-            "warm_up": warm_up_perc,
-        }
-        
 
     os.makedirs(model_save_path, exist_ok=True)
 
     # Base language model
     if add_pooling_layer:
         word_embedding_model = models.Transformer(base_model, max_seq_length=512)
-        pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension(), pooling_mode='mean')
+        # get_embedding_dimension replaces get_word_embedding_dimension in sentence-transformers >= 5.4
+        get_dimension = getattr(word_embedding_model, "get_embedding_dimension", None) or word_embedding_model.get_word_embedding_dimension
+        pooling_model = models.Pooling(get_dimension(), pooling_mode='mean')
         model = LinkTransformer(modules=[word_embedding_model, pooling_model],opt_model_description=opt_model_description,opt_model_lang=opt_model_lang)
     elif type(base_model) == LinkTransformer:
         model = base_model
@@ -124,30 +123,30 @@ def train_biencoder(
     
     ##Force eval_type="classification" if loss_type=="onlinecontrastive"
     if loss_type=="onlinecontrastive":
-        print("Forcing eval_type='classification' since loss_type='onlinecontrastive'")
+        logger.info("Forcing eval_type='classification' since loss_type='onlinecontrastive'")
         eval_type="classification"
     
     if eval_type=="retrieval":
-        print("Evaluating on retrieval task")
+        logger.info("Evaluating on retrieval task")
         queries,corpus,relevant_docs=dev_data
         evaluators = [evaluation.InformationRetrievalEvaluator_wandb(queries,corpus,relevant_docs,wandb_names=wandb_names,name="eval")]
-        seq_evaluator = sentence_transformers.evaluation.SequentialEvaluator(evaluators, main_score_function=lambda scores: scores[-1])
+        seq_evaluator = SequentialEvaluator(evaluators, main_score_function=lambda scores: scores[-1])
         ###We also want to evaluate on the test set
         if test_data is not None:
             queries,corpus,relevant_docs=test_data
             test_evaluators = [evaluation.InformationRetrievalEvaluator_wandb(queries,corpus,relevant_docs,wandb_names=wandb_names,name="test")]
-            test_evaluator = sentence_transformers.evaluation.SequentialEvaluator(test_evaluators, main_score_function=lambda scores: scores[-1])
+            test_evaluator = SequentialEvaluator(test_evaluators, main_score_function=lambda scores: scores[-1])
 
     elif eval_type=="classification":
-        print("Evaluating on pair-wise classification task")
+        logger.info("Evaluating on pair-wise classification task")
         sentences1, sentences2, labels = dev_data
         evaluators = [evaluation.BinaryClassificationEvaluator_wandb(sentences1, sentences2, labels,wandb_names=wandb_names,name="eval")]
-        seq_evaluator = sentence_transformers.evaluation.SequentialEvaluator(evaluators, main_score_function=lambda scores: scores[-1])
+        seq_evaluator = SequentialEvaluator(evaluators, main_score_function=lambda scores: scores[-1])
         ###We also want to evaluate on the test set
         if test_data is not None:
             sentences1, sentences2, labels = test_data
             test_evaluators = [evaluation.BinaryClassificationEvaluator_wandb(sentences1, sentences2, labels,wandb_names=wandb_names,name="test")]
-            test_evaluator = sentence_transformers.evaluation.SequentialEvaluator(test_evaluators, main_score_function=lambda scores: scores[-1])
+            test_evaluator = SequentialEvaluator(test_evaluators, main_score_function=lambda scores: scores[-1])
     else:
         raise ValueError("eval_type can only be either 'retrieval' or 'classification'")
     
@@ -159,6 +158,9 @@ def train_biencoder(
     # Train the model using the modern trainer API
     steps_per_epoch = max(1, ceil(len(train_dataset) / max(1, train_batch_size)))
     logging_steps = max(1, ceil(steps_per_epoch * eval_steps_perc))
+    # An explicit step count keeps warm_up_perc's meaning (a fraction of all training steps) across
+    # library versions; newer versions reinterpret `warmup_ratio` and transformers >= 5.15 removed it.
+    warmup_steps = ceil(steps_per_epoch * num_epochs * warm_up_perc)
 
     local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
@@ -170,17 +172,16 @@ def train_biencoder(
             num_train_epochs=num_epochs,
             per_device_train_batch_size=train_batch_size,
             learning_rate=optimizer_params.get("lr", 2e-5),
-            warmup_ratio=warm_up_perc,
+            warmup_steps=warmup_steps,
             logging_steps=logging_steps,
             eval_strategy="no",
             save_strategy="no",
             report_to="wandb" if wandb_names is not None else "none",
             local_rank=local_rank if distributed_mode else -1,
             ddp_backend="nccl" if distributed_mode else None,
+            # SupCon needs several examples per label in a batch
+            batch_sampler="group_by_label" if loss_type == "supcon" else "batch_sampler",
         )
-
-        if loss_type == "supcon":
-            training_args.batch_sampler = BatchSamplers.GROUP_BY_LABEL
 
         trainer = SentenceTransformerTrainer(
             model=model,
@@ -217,7 +218,7 @@ def train_biencoder(
     if test_data is not None:
         logger.info("Evaluating on the test set (0.5 of val data)")
         ##Load the best model
-        print("Loading best model from:", model_save_path)
+        logger.info(f"Loading best model from: {model_save_path}")
         best_model=LinkTransformer(model_save_path)
         test_evaluator(best_model, epoch=0, steps=0, output_path=model_save_path)
 

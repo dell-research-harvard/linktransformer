@@ -21,7 +21,7 @@ if __name__ == "__main__":
     ##Drop missing descriptions
     df=df.dropna(subset=["description47","description48"])
     ##Make descriptions lowercase
-    df=df.applymap(lambda x: x.lower() if isinstance(x,str) else x)
+    df=df.map(lambda x: x.lower() if isinstance(x,str) else x)
     ##Drop dropna rows
     df=df.dropna()
     

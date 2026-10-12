@@ -11,7 +11,7 @@ import stat
 from linktransformer import __MODEL_HUB_ORGANIZATION__
 import tempfile
 
-from linktransformer.model_card_templates import ClassificationModelCardTemplate
+from linktransformer.model_card_templates import render_classifier_card
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +41,18 @@ class LinkTransformerClassifier:
         self._model_card_text = model_card_text
     
 
-        ###Find the config file and get the base model name
+        ###Find the base model name: train_clf_model records it in LT_training_config.json; configs saved by
+        ###older transformers versions record it as _name_or_path
+        self.base_model_name_or_path = None
+        lt_config_path = os.path.join(model_name_or_path, 'LT_training_config.json')
         config_path = os.path.join(model_name_or_path, 'config.json')
-        if os.path.exists(config_path):
+        if os.path.exists(lt_config_path):
+            with open(lt_config_path, 'r') as fIn:
+                self.base_model_name_or_path = json.load(fIn).get('base_model_path')
+        elif os.path.exists(config_path):
             with open(config_path, 'r') as fIn:
-                config = json.load(fIn)
-                self.base_model_name_or_path = config['model_type']
-        else:
+                self.base_model_name_or_path = json.load(fIn).get('_name_or_path') or None
+        elif not os.path.isdir(model_name_or_path):
             self.base_model_name_or_path = model_name_or_path
 
 
@@ -80,65 +85,22 @@ class LinkTransformerClassifier:
         self._create_model_card(save_directory, model_name=model_name,label_map=self.label_map,train_datasets=train_datasets)
         
     def _create_model_card(self, path: str, model_name: Optional[str] = None,label_map=None,train_datasets: Optional[List[str]] = None):
-            """
-            Create an automatic model and stores it in path
-            """
-            if self._model_card_text is not None and len(self._model_card_text) > 0:
-                model_card = self._model_card_text
-            else:
-                tags = ClassificationModelCardTemplate.__TAGS__.copy()
-                model_card = ClassificationModelCardTemplate.__MODEL_CARD__
-
-                # Print full model
-                model_card = model_card.replace("{FULL_MODEL_STR}", str(self))
-
-                # Add tags
-                model_card = model_card.replace("{TAGS}", "\n".join(["- "+t for t in tags]))
-
-                datasets_str = ""
-                if train_datasets is not None:
-                    datasets_str = "datasets:\n"+"\n".join(["- " + d for d in train_datasets])
-                model_card = model_card.replace("{DATASETS}", datasets_str)
-
-
-                ###Add base model name
-                model_card=model_card.replace("{BASE_MODEL}",self.base_model_name_or_path)
-
-                ##Add label map
-                if label_map is not None:
-                    label_map_str = ""
-                    for key, value in label_map.items():
-                        label_map_str += f"- {key}: {value}\n"
-                    model_card = model_card.replace("{LABEL_MAP}", label_map_str)
-                
-
-                ##ADd optional model description
-                if self.opt_model_description is not None:
-                    model_card=model_card.replace("{MODEL_DESCRIPTION}",self.opt_model_description)
-                else:
-                    model_card=model_card.replace("{MODEL_DESCRIPTION}","")
-                    
-                ##ADd optional model language
-                if self.opt_model_lang is not None:
-                    if isinstance(self.opt_model_lang,list):
-                        model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in self.opt_model_lang]))
-                    else:
-                        model_card = model_card.replace("{LANGUAGE}", "\n".join(["- "+t for t in [self.opt_model_lang]]))
-                else:
-                    model_card = model_card.replace("language: \n{LANGUAGE}", "")
-                    model_card = model_card.replace("It is pretrained for the language: {LANGUAGE}.", "")
-
-
-
-                # Replace remaining vars with default values
-                for name, value in ClassificationModelCardTemplate.__DEFAULT_VARS__.items():
-                    model_card = model_card.replace(name, str(value))
-
-            if model_name is not None:
-                model_card = model_card.replace("{MODEL_NAME}", model_name.strip())
-
-            with open(os.path.join(path, "README.md"), "w", encoding='utf8') as fOut:
-                fOut.write(model_card.strip())
+        """
+        Write the model card (README.md) to path. A card passed in as model_card_text is used as is.
+        """
+        if self._model_card_text:
+            model_card = self._model_card_text
+        else:
+            model_card = render_classifier_card(
+                model_name=(model_name or path).strip(),
+                base_model=self.base_model_name_or_path,
+                languages=self.opt_model_lang,
+                description=self.opt_model_description,
+                label_map=label_map,
+                train_datasets=train_datasets,
+            )
+        with open(os.path.join(path, "README.md"), "w", encoding='utf8') as fOut:
+            fOut.write(model_card)
 
 
     def save_to_hub(self,
@@ -167,7 +129,7 @@ class LinkTransformerClassifier:
         """
         token = get_token() or os.getenv("HF_TOKEN")
         if token is None:
-            raise ValueError("You must login to the Hugging Face hub. Run `huggingface-cli login` or set `HF_TOKEN`.")
+            raise ValueError("You must login to the Hugging Face hub. Run `hf auth login` or set `HF_TOKEN`.")
 
         if '/' in repo_name:
             splits = repo_name.split('/', maxsplit=1)
@@ -217,7 +179,7 @@ class LinkTransformerClassifier:
                 try:
                     os.chmod(path, stat.S_IWRITE)
                     os.unlink(path)
-                except:
+                except OSError:
                     pass
 
             try:

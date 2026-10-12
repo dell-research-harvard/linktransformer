@@ -3,19 +3,25 @@
 
 import numpy as np
 import json
+import logging
 import pandas as pd
 import inspect
 import os
 import torch
 from torch import nn
 import sklearn
-from datasets import load_dataset, DatasetDict
+try:
+    from datasets import load_dataset, DatasetDict
+except ImportError as exc:
+    raise ImportError("Training requires the `train` extra. Install it with: pip install 'linktransformer[train]'") from exc
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
 import sklearn.model_selection
 from typing import Tuple, List, Union
 
 from linktransformer.utils import _require, serialize_columns
 from linktransformer.configs import CLF_CONFIG_PATH
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -61,9 +67,9 @@ def train_test_dev_split(pd_data: pd.DataFrame, save_dir: str, test_perc: float 
     eval_data.to_csv(f'{save_dir}/eval.csv', encoding='utf-8', index=False)
     test.to_csv(f'{save_dir}/test.csv', encoding='utf-8', index=False)
 
-    print(len(train), "training examples")
-    print(len(eval_data), "evaluation examples")
-    print(len(test), "test examples")
+    logger.info(f"{len(train)} training examples")
+    logger.info(f"{len(eval_data)} evaluation examples")
+    logger.info(f"{len(test)} test examples")
 
     return train, eval_data, test
 
@@ -165,6 +171,12 @@ def train_model(
         training_args["eval_strategy"] = training_args.pop("evaluation_strategy")
     if "eval_strategy" in training_args and "eval_strategy" not in ta_params and "evaluation_strategy" in ta_params:
         training_args["evaluation_strategy"] = training_args.pop("eval_strategy")
+    # transformers >= 5.15 removed warmup_ratio; warmup_steps below 1 is read as a ratio there
+    if "warmup_ratio" in training_args and "warmup_ratio" not in ta_params:
+        training_args.setdefault("warmup_steps", training_args.pop("warmup_ratio"))
+    ignored = sorted(k for k in training_args if k not in ta_params)
+    if ignored:
+        logger.warning(f"Ignoring training arguments not supported by this transformers version: {ignored}")
     training_args = {k: v for k, v in training_args.items() if k in ta_params}
 
     training_args = TrainingArguments(**training_args)
@@ -200,7 +212,7 @@ def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=
 
     test_df = pd.read_csv(f"{original_test_dir}/test.csv")
 
-    print(len(test_df), ' test examples')
+    logger.info(f"{len(test_df)} test examples")
 
     test_df["preds"] = preds
 
@@ -231,12 +243,12 @@ def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=
             print(fns["text"][i])
             print("*****")
 
-    print("***Test results***")
+    logger.info("***Test results***")
     average = "binary" if num_labels == 2 else averaging_type
     scores = _classification_scores(preds, predictions.label_ids, average=average)
     results_dict = {f"test/{name}": value for name, value in scores.items()}
 
-    print(results_dict)
+    logger.info(results_dict)
     return results_dict
 
 
@@ -246,9 +258,9 @@ def save_training_splits(save_dir,train_data,val_data,test_data):
     val_data.to_csv(f'{save_dir}/eval.csv', encoding='utf-8', index=False)
     test_data.to_csv(f'{save_dir}/test.csv', encoding='utf-8', index=False)
 
-    print(len(train_data), "training examples")
-    print(len(val_data), "dev examples")
-    print(len(test_data), "test examples")
+    logger.info(f"{len(train_data)} training examples")
+    logger.info(f"{len(val_data)} dev examples")
+    logger.info(f"{len(test_data)} test examples")
 
 def preprocess_data(data,model,on,label_col_name):
     ##Check if on column are in data
@@ -278,7 +290,7 @@ def preprocess_data(data,model,on,label_col_name):
         label_map={label:i for i,label in enumerate(unique_labels)}
         data[label_col_name]=data[label_col_name].map(label_map)
         ##Print mapping
-        print(f"Label mapping: {label_map}")
+        logger.info(f"Label mapping: {label_map}")
     ###If float, make int
     elif pd.api.types.is_float_dtype(data[label_col_name]):
         data[label_col_name]=data[label_col_name].astype(int)
@@ -291,7 +303,10 @@ def preprocess_data(data,model,on,label_col_name):
 
     ##Check if on columns are strings - make strings if not
     for col_name in on:
-        if data[col_name].dtype!=object:
+        if not (
+            pd.api.types.is_object_dtype(data[col_name].dtype)
+            or pd.api.types.is_string_dtype(data[col_name].dtype)
+        ):
             data[col_name]=data[col_name].astype(str)
 
 
@@ -304,8 +319,8 @@ def preprocess_data(data,model,on,label_col_name):
     ##Rename label column to label
     data=data.rename(columns={label_col_name:"label"})
     num_labels,prop_labels = get_num_props_labels(data)
-    print(f"Number of labels: {num_labels}")
-    print(f"Proportions of labels: {prop_labels}")
+    logger.info(f"Number of labels: {num_labels}")
+    logger.info(f"Proportions of labels: {prop_labels}")
 
 
 
@@ -397,7 +412,7 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
     ##Override if training_args is not empty
     if len(training_args)>0:
         training_args.update(specified_training_args)
-    print("Updating training args with: ", specified_training_args)
+    logger.info(f"Updating training args with: {specified_training_args}")
     
     ##Override some args
     if lr is not None:
@@ -432,19 +447,17 @@ def train_clf_model(data=None,model="distilroberta-base",on=[],label_col_name="l
         weight_list=weight_list, 
         )
     
-    print("Note the path to the best model: ", best_model_path)
-
-    ##Saving tokenizer to the same directory as the model
-
-    if not os.path.exists(f"{best_model_path}/tokenizer"):
-        tokenizer = AutoTokenizer.from_pretrained(model)
-        tokenizer.save_pretrained(best_model_path)
-
+    logger.info(f"Note the path to the best model: {best_model_path}")
 
     ###Save label map 
     if best_model_path is  None:
-        print("No model was saved because the trained model is not better than the pretraind one. Try tuning the hyperparameters or training for longer")
+        logger.warning("No model was saved because the trained model is not better than the pretraind one. Try tuning the hyperparameters or training for longer")
     else:    
+        ##Save the tokenizer and the base model name next to the model (used by classify_rows and the model card)
+        AutoTokenizer.from_pretrained(model).save_pretrained(best_model_path)
+        with open(os.path.join(best_model_path, "LT_training_config.json"), "w") as f:
+            json.dump({"base_model_path": model}, f, indent=2)
+
         ##Evaluate model (test)
         test_results=evaluate_test(best_model_path,datasets["test"],data_dir,num_labels=num_labels,print_mistakes=print_test_mistakes)
 
