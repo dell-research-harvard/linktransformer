@@ -18,6 +18,7 @@ except ModuleNotFoundError:
 
 
 import linktransformer.utils as utils_mod
+import linktransformer.infer as infer_mod
 
 
 def test_lt_gemini_key_takes_priority_over_openai_key(monkeypatch):

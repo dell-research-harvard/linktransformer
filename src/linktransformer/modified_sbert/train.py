@@ -1,6 +1,5 @@
 import math
 import os
-import sys
 from math import ceil
 from typing import Dict
 from unittest.mock import patch
@@ -20,21 +19,6 @@ from transformers.utils import logging as lg
 import wandb    
 
 from linktransformer.modelling.LinkTransformer import LinkTransformer
-
-currentdir = os.path.dirname(os.path.realpath(__file__))
-parentdir = os.path.dirname(currentdir)
-#grandparentdir = os.path.dirname(parentdir)
-sys.path.append(parentdir)
-#sys.path.append(grandparentdir)
-
-
-
-
-lg.set_verbosity_error()
-logging.basicConfig(format='%(asctime)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    level=logging.INFO,
-                    handlers=[LoggingHandler()])
 logger = logging.getLogger(__name__)
 
 
@@ -81,6 +65,17 @@ def train_biencoder(
         loss_type="supcon", #can be either "supcon" or "onlinecontrastive",
 
 ):
+
+    # Configure logging only when training is invoked.
+    # Avoid mutating global logging configuration at import time.
+    lg.set_verbosity_error()
+    if not any(isinstance(h, LoggingHandler) for h in logging.getLogger().handlers):
+        logging.basicConfig(
+            format='%(asctime)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            level=logging.INFO,
+            handlers=[LoggingHandler()],
+        )
 
     # Logging
     if wandb_names: 
@@ -178,6 +173,7 @@ def train_biencoder(
             logging_steps=logging_steps,
             eval_strategy="no",
             save_strategy="no",
+            dataloader_pin_memory=False,
             report_to="wandb" if wandb_names is not None else "none",
             local_rank=local_rank if distributed_mode else -1,
             ddp_backend="nccl" if distributed_mode else None,

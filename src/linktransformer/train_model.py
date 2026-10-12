@@ -112,7 +112,7 @@ def train_model(
     clus_id_col_name: Union[str,List[str]] = None,
     clus_text_col_names: List[str] = None,
     config_path: str = LINKAGE_CONFIG_PATH,
-    training_args: dict = {"num_epochs":10},
+    training_args: dict = None,
     log_wandb: bool = False,
 
 ) -> str:
@@ -139,6 +139,9 @@ def train_model(
         config = json.load(config_file)
 
     ####Override config using keys that are specified
+    if training_args is None:
+        training_args = {"num_epochs": 10}
+
     if training_args is not None:
         for key in training_args:
             config[key]=training_args[key]

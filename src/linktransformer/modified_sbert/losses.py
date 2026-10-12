@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.nn as nn
 from sentence_transformers import LoggingHandler, losses, SentenceTransformer
@@ -165,7 +164,7 @@ class SupConLoss_wandb(nn.Module):
         if self.wandb_names is not None:
             wandb.log({"Loss": loss}) 
 
-        if math.isnan(loss):
+        if torch.isnan(loss.detach()).any():
             raise ValueError("Loss")
 
         return loss

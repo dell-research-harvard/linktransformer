@@ -3,7 +3,11 @@
 import json
 import os
 import re
+import time
 import warnings
+import openai
+import threading
+import concurrent.futures
 
 import numpy as np
 import pandas as pd
@@ -12,12 +16,77 @@ from typing import Union, List, Optional, Tuple,Dict, Any
 from pandas import DataFrame
 
 from linktransformer.cluster_fns import cluster
-# from linktransformer.utils import serialize_columns, infer_embeddings, load_model, load_clf, cosine_similarity_corresponding_pairs, tokenize_data_for_inference, predict_rows_with_openai
-from linktransformer.utils import *
-from linktransformer.utils import _is_gemini_embedding_model
+from linktransformer.modelling.LinkTransformer import LinkTransformer
+from linktransformer.utils import (
+    _is_gemini_embedding_model,
+    gemini_transform,
+    infer_embeddings,
+    load_clf,
+    load_model,
+    openai_transform,
+    predict_rows_with_llm,
+    serialize_columns,
+    tokenize_data_for_inference,
+    transform_column,
+    cosine_similarity_corresponding_pairs,
+)
 from sklearn.metrics.pairwise import cosine_similarity
 from itertools import combinations
 from transformers import TrainingArguments, Trainer
+from tqdm import tqdm
+from linktransformer.api_runtime import (
+    append_jsonl,
+    log_failure,
+    parse_retry_policy,
+    read_jsonl,
+    call_with_retry,
+)
+
+
+def _shared_columns_in_left_order(df1: DataFrame, df2: DataFrame) -> List[str]:
+    return [col for col in df1.columns if col in df2.columns]
+
+
+def _build_blocking_unmatched_frame(
+    block_df: DataFrame,
+    *,
+    side: str,
+    df1_cols: List[str],
+    df2_cols: List[str],
+    suffixes: Tuple[str, str],
+) -> DataFrame:
+    if side not in {"left", "right"}:
+        raise ValueError("side must be either 'left' or 'right'")
+
+    left_renamed_cols = [f"{col}{suffixes[0]}" if col in df2_cols else col for col in df1_cols]
+    right_renamed_cols = [f"{col}{suffixes[1]}" if col in df1_cols else col for col in df2_cols]
+
+    if side == "left":
+        left_map = {orig: renamed for orig, renamed in zip(df1_cols, left_renamed_cols)}
+        out = block_df.rename(columns=left_map).copy()
+        for col in right_renamed_cols:
+            out[col] = np.nan
+        out["match_status"] = "left_only_block"
+    else:
+        right_map = {orig: renamed for orig, renamed in zip(df2_cols, right_renamed_cols)}
+        out = block_df.rename(columns=right_map).copy()
+        for col in left_renamed_cols:
+            out[col] = np.nan
+        out["match_status"] = "right_only_block"
+
+    out["score"] = np.nan
+
+    ordered_cols = left_renamed_cols + right_renamed_cols + ["score", "match_status"]
+    out = out.reindex(columns=ordered_cols)
+    return out
+
+
+def _path_with_tag(path: Optional[str], tag: str) -> Optional[str]:
+    if path is None:
+        return None
+    if path.endswith(".jsonl"):
+        return path[:-6] + f"_{tag}.jsonl"
+    return path + f"_{tag}.jsonl"
 
 
 
@@ -33,6 +102,10 @@ def merge(
     batch_size: int = 128,
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = False,
+    failure_log_path: Optional[str] = None,
+    retry_policy: Optional[Dict[str, Any]] = None,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings.
@@ -54,7 +127,7 @@ def merge(
     """
     ## Set common columns as on if not specified
     if on is None:
-        on = list(set(df1.columns).intersection(set(df2.columns)))
+        on = _shared_columns_in_left_order(df1, df2)
 
     ## If left_on or right_on is not specified, set it to on
     if left_on is None:
@@ -102,7 +175,7 @@ def merge(
 
     ## Load the model if string
     if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
             model = load_model(model)
 
 
@@ -127,9 +200,29 @@ def merge(
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings1 = infer_embeddings(
+        strings_left,
+        model,
+        batch_size=batch_size,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        checkpoint_path=_path_with_tag(checkpoint_path, "merge_left_embeddings"),
+        resume=resume,
+        failure_log_path=failure_log_path,
+        retry_policy=retry_policy,
+    )
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
+    embeddings2 = infer_embeddings(
+        strings_right,
+        model,
+        batch_size=batch_size,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        checkpoint_path=_path_with_tag(checkpoint_path, "merge_right_embeddings"),
+        resume=resume,
+        failure_log_path=failure_log_path,
+        retry_policy=retry_policy,
+    )
 
     ### Expand dim if embeddings are 1d (numpy)
     if len(embeddings1.shape) == 1:
@@ -243,10 +336,12 @@ def merge_blocking(
 
         ## Load the model if string
         if isinstance(model, str):
-            if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+            if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
                 model = load_model(model)      
 
-        for block_1 in common_keys:
+        for block_1 in df1_block_list:
+            if block_1 not in common_keys:
+                continue
             print(f"Merging block {block_1}")
             df1_block = df1_blocks.get_group(block_1)
             df2_block = df2_blocks.get_group(block_1)
@@ -254,17 +349,34 @@ def merge_blocking(
             df_block_matched = merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
                                            left_on=left_on, right_on=right_on, suffixes=suffixes,
                                            batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key)
+            df_block_matched["match_status"] = "matched_block"
             ## Add to merged dfs
             merged_dfs.append(df_block_matched)
 
         ## Add df corresponding to skipped keys
         for block_1 in skipped_keys_1:
             df1_block = df1_blocks.get_group(block_1)
-            merged_dfs.append(df1_block)
+            merged_dfs.append(
+                _build_blocking_unmatched_frame(
+                    df1_block,
+                    side="left",
+                    df1_cols=df1.columns.tolist(),
+                    df2_cols=df2.columns.tolist(),
+                    suffixes=suffixes,
+                )
+            )
 
         for block_2 in skipped_keys_2:
             df2_block = df2_blocks.get_group(block_2)
-            merged_dfs.append(df2_block)
+            merged_dfs.append(
+                _build_blocking_unmatched_frame(
+                    df2_block,
+                    side="right",
+                    df1_cols=df1.columns.tolist(),
+                    df2_cols=df2.columns.tolist(),
+                    suffixes=suffixes,
+                )
+            )
 
         ## Concatenate the merged dfs
         df_lm_matched = pd.concat(merged_dfs, axis=0).reset_index(drop=True)
@@ -301,7 +413,7 @@ def aggregate_rows(
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
             model = load_model(model)
 
     ## Just use the merge function with merge type 1:m
@@ -335,7 +447,7 @@ def evaluate_pairs(df: DataFrame,
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
             model = load_model(model)
 
     ###We will serialize the columns if they are lists
@@ -417,7 +529,7 @@ def cluster_rows(
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
             model = load_model(model)
 
     ## First, get the embeddings
@@ -467,7 +579,7 @@ def dedup_rows(
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
             model = load_model(model)
     
 
@@ -510,7 +622,7 @@ def all_pair_combos_evaluate(df: DataFrame,
 
     ##Load model if string
     if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
             model = load_model(model)
 
     ###Get the embeddings for the left_on column
@@ -574,6 +686,10 @@ def merge_knn(
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
     drop_sim_threshold: float = None,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = False,
+    failure_log_path: Optional[str] = None,
+    retry_policy: Optional[Dict[str, Any]] = None,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings. This function would support k nearest neighbors matching for each row in df1.
@@ -596,7 +712,7 @@ def merge_knn(
 
     ## Set common columns as on if not specified
     if on is None:
-        on = list(set(df1.columns).intersection(set(df2.columns)))
+        on = _shared_columns_in_left_order(df1, df2)
 
     ## If left_on or right_on is not specified, set it to on
     if left_on is None:
@@ -641,14 +757,36 @@ def merge_knn(
     
     ## Load the model
     if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
             model = load_model(model)
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True)
+    embeddings1 = infer_embeddings(
+        strings_left,
+        model,
+        batch_size=batch_size,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        return_numpy=True,
+        checkpoint_path=_path_with_tag(checkpoint_path, "merge_knn_left_embeddings"),
+        resume=resume,
+        failure_log_path=failure_log_path,
+        retry_policy=retry_policy,
+    )
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, return_numpy= True)
+    embeddings2 = infer_embeddings(
+        strings_right,
+        model,
+        batch_size=batch_size,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        return_numpy=True,
+        checkpoint_path=_path_with_tag(checkpoint_path, "merge_knn_right_embeddings"),
+        resume=resume,
+        failure_log_path=failure_log_path,
+        retry_policy=retry_policy,
+    )
 
 
     ### Expand dim if embeddings are 1d (numpy)
@@ -723,6 +861,10 @@ def merge_range(
     batch_size: int = 128,
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = False,
+    failure_log_path: Optional[str] = None,
+    retry_policy: Optional[Dict[str, Any]] = None,
 ) -> DataFrame:
     """
     Range-based left merge using FAISS ``range_search``.
@@ -748,7 +890,7 @@ def merge_range(
         raise ValueError("sim_threshold must be between -1.0 and 1.0 for cosine similarity.")
 
     if on is None:
-        on = list(set(df1.columns).intersection(set(df2.columns)))
+        on = _shared_columns_in_left_order(df1, df2)
 
     if left_on is None:
         left_on = on
@@ -787,7 +929,7 @@ def merge_range(
         strings_left = df1[left_on].tolist()
 
     if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
             model = load_model(model)
 
     embeddings1 = infer_embeddings(
@@ -797,6 +939,10 @@ def merge_range(
         openai_key=openai_key,
         gemini_key=gemini_key,
         return_numpy=True,
+        checkpoint_path=_path_with_tag(checkpoint_path, "merge_range_left_embeddings"),
+        resume=resume,
+        failure_log_path=failure_log_path,
+        retry_policy=retry_policy,
     )
     embeddings2 = infer_embeddings(
         strings_right,
@@ -805,6 +951,10 @@ def merge_range(
         openai_key=openai_key,
         gemini_key=gemini_key,
         return_numpy=True,
+        checkpoint_path=_path_with_tag(checkpoint_path, "merge_range_right_embeddings"),
+        resume=resume,
+        failure_log_path=failure_log_path,
+        retry_policy=retry_policy,
     )
 
     if len(embeddings1.shape) == 1:
@@ -987,6 +1137,583 @@ def _infer_retrieval_mode(model: Union[str, LinkTransformer]) -> str:
     return "loaded-linktransformer"
 
 
+def _normalize_columns_arg(cols: Optional[Union[str, List[str]]], *, arg_name: str) -> Optional[List[str]]:
+    if cols is None:
+        return None
+    if isinstance(cols, str):
+        return [cols]
+    if isinstance(cols, list) and all(isinstance(c, str) for c in cols):
+        return cols
+    raise TypeError(f"{arg_name} must be a string, list[str], or None")
+
+
+def _resolve_judge_columns(
+    *,
+    df1: DataFrame,
+    df2: DataFrame,
+    on: Optional[Union[str, List[str]]],
+    left_on: Optional[Union[str, List[str]]],
+    right_on: Optional[Union[str, List[str]]],
+    judge_on: Optional[Union[str, List[str]]],
+    judge_left_on: Optional[Union[str, List[str]]],
+    judge_right_on: Optional[Union[str, List[str]]],
+) -> Tuple[List[str], List[str]]:
+    """Resolve which columns are serialized into the LLM judging payload.
+
+    If judge_* args are not provided, this preserves the existing behavior:
+    - prefer left_on/right_on if set
+    - else use on
+    - else fall back to shared columns
+    """
+
+    # First, honor explicit judge_* args.
+    judge_left_cols = _normalize_columns_arg(judge_left_on, arg_name="judge_left_on")
+    judge_right_cols = _normalize_columns_arg(judge_right_on, arg_name="judge_right_on")
+    judge_on_cols = _normalize_columns_arg(judge_on, arg_name="judge_on")
+
+    if judge_on_cols is not None:
+        if judge_left_cols is None:
+            judge_left_cols = judge_on_cols
+        if judge_right_cols is None:
+            judge_right_cols = judge_on_cols
+
+    # If only one side was provided explicitly, assume symmetric names.
+    if judge_left_cols is not None and judge_right_cols is None:
+        judge_right_cols = judge_left_cols
+    if judge_right_cols is not None and judge_left_cols is None:
+        judge_left_cols = judge_right_cols
+
+    if judge_left_cols is not None and judge_right_cols is not None:
+        return judge_left_cols, judge_right_cols
+
+    # Backward-compatible fallback behavior.
+    if isinstance(left_on, str):
+        left_cols = [left_on]
+    elif isinstance(left_on, list):
+        left_cols = left_on
+    elif isinstance(on, str):
+        left_cols = [on]
+    elif isinstance(on, list):
+        left_cols = on
+    else:
+        left_cols = [c for c in df1.columns if c in df2.columns]
+
+    if isinstance(right_on, str):
+        right_cols = [right_on]
+    elif isinstance(right_on, list):
+        right_cols = right_on
+    elif isinstance(on, str):
+        right_cols = [on]
+    elif isinstance(on, list):
+        right_cols = on
+    else:
+        right_cols = left_cols
+
+    return left_cols, right_cols
+
+
+def _is_missing_judgement_value(value: Any) -> bool:
+    if pd.isna(value):
+        return True
+    if isinstance(value, str) and value.strip() == "":
+        return True
+    return False
+
+
+def _row_has_complete_judgement(row: pd.Series) -> bool:
+    required_cols = ["llm_is_match", "llm_confidence", "llm_raw_response"]
+    for col in required_cols:
+        if col not in row.index:
+            return False
+        if _is_missing_judgement_value(row[col]):
+            return False
+    return True
+
+
+def judge_merge_k_out(
+    candidates_df: DataFrame,
+    on: Optional[Union[str, List[str]]] = None,
+    left_on: Optional[Union[str, List[str]]] = None,
+    right_on: Optional[Union[str, List[str]]] = None,
+    suffixes: Tuple[str, str] = ("_x", "_y"),
+    openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
+    judge_llm_model: Optional[str] = None,
+    llm_provider: str = "auto",
+    llm_prompt: Optional[str] = None,
+    llm_params: Optional[Dict[str, Any]] = None,
+    max_retries: int = 5,
+    ratelimit_sleep_time: int = 15,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = False,
+    failure_log_path: Optional[str] = None,
+    retry_policy: Optional[Dict[str, Any]] = None,
+    judge_on: Optional[Union[str, List[str]]] = None,
+    judge_left_on: Optional[Union[str, List[str]]] = None,
+    judge_right_on: Optional[Union[str, List[str]]] = None,
+    judge_skip_lower_thresh: Optional[float] = None,
+    judge_skip_upper_thresh: Optional[float] = None,
+    confidence_threshold: Optional[float] = None,
+    progress_bar: bool = True,
+    judge_workers: int = 1,
+    failure_function_name: str = "judge_merge_k_out",
+) -> DataFrame:
+    """Judge an existing merge_k/merge_knn candidate output dataframe with an LLM.
+
+    This utility supports resume via JSONL checkpoint, skipping already-judged rows,
+    score-based short-circuiting, and multi-worker API-call concurrency.
+
+    Adds/updates debugging columns:
+    - `llm_input_payload`: serialized JSON payload sent to the judge LLM
+    - `llm_is_match`, `llm_confidence`, `llm_raw_response`
+    """
+    llm_params = llm_params or {}
+    candidates = candidates_df.copy()
+
+    print(
+        "[judge_merge_k_out] Loaded candidate set "
+        f"with {len(candidates)} rows."
+    )
+
+    if judge_workers < 1:
+        raise ValueError("judge_workers must be >= 1")
+
+    if llm_provider not in {"auto", "openai", "gemini"}:
+        raise ValueError("llm_provider must be one of {'auto', 'openai', 'gemini'}")
+
+    if judge_llm_model is None or (isinstance(judge_llm_model, str) and judge_llm_model.strip() == ""):
+        raise ValueError("judge_merge_k_out requires `judge_llm_model`.")
+
+    resolved_judge_model = judge_llm_model
+    resolved_provider = llm_provider
+    if resolved_provider == "auto":
+        resolved_provider = "gemini" if "gemini" in str(resolved_judge_model).lower() else "openai"
+
+    print(
+        "[judge_merge_k_out] Judge configuration -> "
+        f"provider={resolved_provider}, model={resolved_judge_model}, "
+        f"workers={judge_workers}."
+    )
+
+    openai_api_key = openai_key or os.getenv("OPENAI_API_KEY")
+    gemini_api_key = gemini_key or os.getenv("GEMINI_API_KEY")
+    if resolved_provider == "openai" and openai_api_key is None:
+        raise ValueError("judge_merge_k_out with llm_provider='openai' requires `openai_key` or OPENAI_API_KEY.")
+    if resolved_provider == "gemini" and gemini_api_key is None:
+        raise ValueError("judge_merge_k_out with llm_provider='gemini' requires `gemini_key` or GEMINI_API_KEY.")
+
+    if llm_prompt is None:
+        llm_prompt = (
+            "You are a fuzzy entity/text-matching judge. This could be an entity or just text descriptions that need matching. Compare LEFT and RIGHT records and decide if they refer to "
+            "the same real-world entity. <SEP> signifies a concat of two variables in the record. Return ONLY compact JSON with keys: "
+            "is_match (0 or 1) and confidence (float between 0 and 1)."
+        )
+
+    left_cols, right_cols = _resolve_judge_columns(
+        df1=pd.DataFrame(columns=[]),
+        df2=pd.DataFrame(columns=[]),
+        on=on,
+        left_on=left_on,
+        right_on=right_on,
+        judge_on=judge_on,
+        judge_left_on=judge_left_on,
+        judge_right_on=judge_right_on,
+    )
+
+    if len(left_cols) == 0 and len(right_cols) == 0:
+        inferred_cols: List[str] = []
+        for col in candidates.columns:
+            if col.endswith(suffixes[0]):
+                base = col[: -len(suffixes[0])]
+                if f"{base}{suffixes[1]}" in candidates.columns:
+                    inferred_cols.append(base)
+        left_cols = inferred_cols
+        right_cols = inferred_cols
+
+    if len(left_cols) == 0 and len(right_cols) == 0:
+        raise ValueError(
+            "Could not infer judge columns from candidates_df. "
+            "Provide `judge_on` or `judge_left_on`/`judge_right_on`."
+        )
+
+    for col in ["llm_input_payload", "llm_is_match", "llm_confidence", "llm_raw_response"]:
+        if col not in candidates.columns:
+            candidates[col] = np.nan
+
+    llm_inputs = candidates["llm_input_payload"].tolist()
+    llm_matches = candidates["llm_is_match"].tolist()
+    llm_confidences = candidates["llm_confidence"].tolist()
+    llm_raw = candidates["llm_raw_response"].tolist()
+
+    policy = parse_retry_policy(
+        retry_policy,
+        default_max_retries=max_retries,
+        default_base_sleep=float(ratelimit_sleep_time),
+    )
+
+    resumed_rows: Dict[int, Dict[str, Any]] = {}
+    if checkpoint_path is not None and resume:
+        print(f"[judge_merge_k_out] Reading checkpoint: {checkpoint_path}")
+        for rec in read_jsonl(checkpoint_path):
+            if rec.get("kind") == "merge_k_judge_row" and "index" in rec:
+                resumed_rows[int(rec["index"])] = rec
+        print(
+            "[judge_merge_k_out] Loaded "
+            f"{len(resumed_rows)} prior judged rows from checkpoint."
+        )
+    elif checkpoint_path is not None:
+        print(
+            "[judge_merge_k_out] Checkpoint path provided but resume=False; "
+            "new progress will be appended."
+        )
+
+    def _append_checkpoint(
+        index: int,
+        input_payload: str,
+        match_flag: int,
+        match_conf: float,
+        response_text: str,
+    ) -> None:
+        append_jsonl(
+            checkpoint_path,
+            {
+                "kind": "merge_k_judge_row",
+                "index": index,
+                "llm_input_payload": input_payload,
+                "llm_is_match": match_flag,
+                "llm_confidence": match_conf,
+                "llm_raw_response": response_text,
+            },
+        )
+
+    def _set_row_result(
+        index: int,
+        match_flag: int,
+        match_conf: float,
+        response_text: str,
+        *,
+        input_payload: Optional[str] = None,
+        write_checkpoint: bool = True,
+    ) -> None:
+        if input_payload is not None:
+            llm_inputs[index] = input_payload
+        llm_matches[index] = match_flag
+        llm_confidences[index] = match_conf
+        llm_raw[index] = response_text
+        if write_checkpoint:
+            checkpoint_input = llm_inputs[index]
+            if _is_missing_judgement_value(checkpoint_input):
+                checkpoint_input = ""
+            _append_checkpoint(index, str(checkpoint_input), match_flag, match_conf, response_text)
+
+    def _raise_judge_error(judge_error: Exception, stage: str, item_key: Optional[int] = None) -> None:
+        if item_key is not None:
+            log_failure(
+                failure_log_path,
+                function_name=failure_function_name,
+                provider=resolved_provider,
+                model=resolved_judge_model,
+                item_key=item_key,
+                attempt=policy.max_retries,
+                error=judge_error,
+            )
+        raise RuntimeError(
+            "judge_merge_k_out failed during "
+            f"{stage} (provider={resolved_provider}, model={resolved_judge_model}). "
+            f"Underlying error: {repr(judge_error)}. "
+            "Use merge_knn if you do not want LLM-based judgement."
+        ) from judge_error
+
+    thread_local = threading.local()
+
+    def _get_openai_client() -> Any:
+        client = getattr(thread_local, "openai_client", None)
+        if client is None:
+            client = openai.OpenAI(
+                api_key=openai_api_key,
+                timeout=llm_params.get("request_timeout", 15),
+            )
+            thread_local.openai_client = client
+        return client
+
+    def _get_gemini_model() -> Any:
+        model_client = getattr(thread_local, "gemini_model_client", None)
+        if model_client is None:
+            try:
+                import google.generativeai as genai
+            except ImportError as exc:
+                raise ImportError(
+                    "Gemini LLM classification requires `google-generativeai`. Install it to use llm_provider='gemini'."
+                ) from exc
+            genai.configure(api_key=gemini_api_key)
+            model_client = genai.GenerativeModel(model_name=resolved_judge_model)
+            thread_local.gemini_model_client = model_client
+        return model_client
+
+    def _judge_once(user_content: str) -> str:
+        def _judge_call() -> str:
+            if resolved_provider == "openai":
+                client = _get_openai_client()
+                request_kwargs: Dict[str, Any] = {
+                    "model": resolved_judge_model,
+                    "messages": [
+                        {"role": "system", "content": llm_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    "temperature": llm_params.get("temperature", 0),
+                    "max_tokens": llm_params.get("max_tokens", 50),
+                    "top_p": llm_params.get("top_p", 1),
+                    "frequency_penalty": llm_params.get("frequency_penalty", 0),
+                    "presence_penalty": llm_params.get("presence_penalty", 0),
+                }
+
+                dropped_params: List[str] = []
+                while True:
+                    try:
+                        response = client.chat.completions.create(**request_kwargs)
+                        break
+                    except Exception as exc:
+                        error_text = str(exc)
+                        unsupported_param: Optional[str] = None
+
+                        match = re.search(
+                            r"unsupported parameter(?:\s*[:=])?\s*['\"]?([a-zA-Z_][a-zA-Z0-9_]*)['\"]?",
+                            error_text,
+                            flags=re.IGNORECASE,
+                        )
+                        if match:
+                            unsupported_param = match.group(1)
+                        else:
+                            match = re.search(
+                                r"parameter\s+['\"]?([a-zA-Z_][a-zA-Z0-9_]*)['\"]?.*not supported",
+                                error_text,
+                                flags=re.IGNORECASE,
+                            )
+                            if match:
+                                unsupported_param = match.group(1)
+                            else:
+                                match = re.search(
+                                    r"['\"]param['\"]\s*:\s*['\"]([a-zA-Z_][a-zA-Z0-9_]*)['\"]",
+                                    error_text,
+                                    flags=re.IGNORECASE,
+                                )
+                                if match:
+                                    unsupported_param = match.group(1)
+                                else:
+                                    match = re.search(
+                                        r"unsupported value\s*:\s*['\"]?([a-zA-Z_][a-zA-Z0-9_]*)['\"]?",
+                                        error_text,
+                                        flags=re.IGNORECASE,
+                                    )
+                                    if match:
+                                        unsupported_param = match.group(1)
+
+                        if unsupported_param and unsupported_param in request_kwargs:
+                            request_kwargs.pop(unsupported_param, None)
+                            dropped_params.append(unsupported_param)
+                            continue
+
+                        raise
+
+                if dropped_params:
+                    warnings.warn(
+                        "OpenAI judge call dropped unsupported parameters for model "
+                        f"{resolved_judge_model}: {sorted(set(dropped_params))}",
+                        UserWarning,
+                    )
+                return response.choices[0].message.content or ""
+            model_client = _get_gemini_model()
+            prompt_text = (
+                f"{llm_prompt}\n\n"
+                f"Compare the following pair payload and return JSON only.\n"
+                f"{user_content}"
+            )
+
+            generation_config: Dict[str, Any] = {}
+            if "temperature" in llm_params:
+                generation_config["temperature"] = llm_params.get("temperature")
+            if "top_p" in llm_params:
+                generation_config["top_p"] = llm_params.get("top_p")
+            if "top_k" in llm_params:
+                generation_config["top_k"] = llm_params.get("top_k")
+            if "max_output_tokens" in llm_params:
+                generation_config["max_output_tokens"] = llm_params.get("max_output_tokens")
+            elif "max_tokens" in llm_params:
+                generation_config["max_output_tokens"] = llm_params.get("max_tokens")
+
+            dropped_params: List[str] = []
+            while True:
+                try:
+                    if generation_config:
+                        response = model_client.generate_content(
+                            prompt_text,
+                            generation_config=generation_config,
+                        )
+                    else:
+                        response = model_client.generate_content(prompt_text)
+                    break
+                except Exception as exc:
+                    error_text = str(exc)
+                    unsupported_param: Optional[str] = None
+
+                    match = re.search(
+                        r"unsupported parameter(?:\s*[:=])?\s*['\"]?([a-zA-Z_][a-zA-Z0-9_]*)['\"]?",
+                        error_text,
+                        flags=re.IGNORECASE,
+                    )
+                    if match:
+                        unsupported_param = match.group(1)
+                    else:
+                        match = re.search(
+                            r"parameter\s+['\"]?([a-zA-Z_][a-zA-Z0-9_]*)['\"]?.*not supported",
+                            error_text,
+                            flags=re.IGNORECASE,
+                        )
+                        if match:
+                            unsupported_param = match.group(1)
+
+                    if unsupported_param and unsupported_param in generation_config:
+                        generation_config.pop(unsupported_param, None)
+                        dropped_params.append(unsupported_param)
+                        continue
+
+                    raise
+
+            if dropped_params:
+                warnings.warn(
+                    "Gemini judge call dropped unsupported parameters for model "
+                    f"{resolved_judge_model}: {sorted(set(dropped_params))}",
+                    UserWarning,
+                )
+            return getattr(response, "text", None) or ""
+
+        return call_with_retry(_judge_call, policy)
+
+    pending_items: List[Tuple[int, str]] = []
+    existing_judged_count = 0
+    resumed_applied_count = 0
+    skipped_by_score_count = 0
+
+    progress = tqdm(total=len(candidates), disable=not progress_bar, desc="judging matches")
+
+    for idx, (_, row) in enumerate(candidates.iterrows()):
+        if _row_has_complete_judgement(row):
+            existing_judged_count += 1
+            progress.update(1)
+            continue
+
+        if idx in resumed_rows:
+            rec = resumed_rows[idx]
+            _set_row_result(
+                idx,
+                int(rec.get("llm_is_match", 0)),
+                float(rec.get("llm_confidence", 0.0)),
+                str(rec.get("llm_raw_response", "")),
+                input_payload=str(rec.get("llm_input_payload", "")),
+                write_checkpoint=False,
+            )
+            resumed_applied_count += 1
+            progress.update(1)
+            continue
+
+        skip_by_score = False
+        if "score" in candidates.columns and pd.notna(row["score"]):
+            row_score = float(row["score"])
+            if judge_skip_lower_thresh is not None and row_score <= judge_skip_lower_thresh:
+                skip_by_score = True
+            if judge_skip_upper_thresh is not None and row_score >= judge_skip_upper_thresh:
+                skip_by_score = True
+
+        if skip_by_score:
+            _set_row_result(idx, 99, 99.0, "99", write_checkpoint=True)
+            skipped_by_score_count += 1
+            progress.update(1)
+            continue
+
+        requested_retries = max_retries
+        if retry_policy is not None and "max_retries" in retry_policy:
+            requested_retries = int(retry_policy["max_retries"])
+        if requested_retries <= 0:
+            match_flag, match_conf = _coerce_llm_match_and_confidence("")
+            _set_row_result(idx, match_flag, match_conf, "", write_checkpoint=True)
+            progress.update(1)
+            continue
+
+        left_payload: Dict[str, Any] = {}
+        right_payload: Dict[str, Any] = {}
+
+        for col in left_cols:
+            col_name = f"{col}{suffixes[0]}" if f"{col}{suffixes[0]}" in candidates.columns else col
+            left_payload[col] = None if col_name not in candidates.columns else row[col_name]
+
+        for col in right_cols:
+            col_name = f"{col}{suffixes[1]}" if f"{col}{suffixes[1]}" in candidates.columns else col
+            right_payload[col] = None if col_name not in candidates.columns else row[col_name]
+
+        user_content = json.dumps({"left": left_payload, "right": right_payload}, default=str)
+        llm_inputs[idx] = user_content
+        pending_items.append((idx, user_content))
+
+    if pending_items:
+        print(
+            "[judge_merge_k_out] Starting LLM judging at candidate index "
+            f"{pending_items[0][0]} (pending rows: {len(pending_items)})."
+        )
+    else:
+        print("[judge_merge_k_out] No pending rows require LLM judging.")
+
+    def _run_pending(item: Tuple[int, str]) -> Tuple[int, str]:
+        idx, user_content = item
+        response_text = _judge_once(user_content)
+        return idx, response_text
+
+    try:
+        if judge_workers == 1:
+            for item in pending_items:
+                idx = item[0]
+                try:
+                    _, response_text = _run_pending(item)
+                except Exception as judge_runtime_error:
+                    _raise_judge_error(judge_runtime_error, stage="judge inference", item_key=idx)
+                match_flag, match_conf = _coerce_llm_match_and_confidence(response_text)
+                _set_row_result(idx, match_flag, match_conf, response_text, write_checkpoint=True)
+                progress.update(1)
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=judge_workers) as executor:
+                futures = {executor.submit(_run_pending, item): item[0] for item in pending_items}
+                for fut in concurrent.futures.as_completed(futures):
+                    idx = futures[fut]
+                    try:
+                        _, response_text = fut.result()
+                    except Exception as judge_runtime_error:
+                        _raise_judge_error(judge_runtime_error, stage="judge inference", item_key=idx)
+                    match_flag, match_conf = _coerce_llm_match_and_confidence(response_text)
+                    _set_row_result(idx, match_flag, match_conf, response_text, write_checkpoint=True)
+                    progress.update(1)
+    except Exception as judge_runtime_error:
+        if not isinstance(judge_runtime_error, RuntimeError):
+            _raise_judge_error(judge_runtime_error, stage="judge inference")
+        raise
+    finally:
+        progress.close()
+
+    print(
+        "[judge_merge_k_out] Summary -> "
+        f"pre_judged={existing_judged_count}, resumed={resumed_applied_count}, "
+        f"score_skipped={skipped_by_score_count}, llm_judged={len(pending_items)}."
+    )
+
+    candidates["llm_is_match"] = llm_matches
+    candidates["llm_confidence"] = llm_confidences
+    candidates["llm_raw_response"] = llm_raw
+    candidates["llm_input_payload"] = llm_inputs
+
+    if confidence_threshold is not None:
+        candidates = candidates[candidates["llm_confidence"] >= confidence_threshold]
+
+    return candidates
+
+
 def merge_k_judge(
     df1: DataFrame,
     df2: DataFrame,
@@ -1009,6 +1736,17 @@ def merge_k_judge(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = False,
+    failure_log_path: Optional[str] = None,
+    retry_policy: Optional[Dict[str, Any]] = None,
+    judge_on: Optional[Union[str, List[str]]] = None,
+    judge_left_on: Optional[Union[str, List[str]]] = None,
+    judge_right_on: Optional[Union[str, List[str]]] = None,
+    judge_skip_lower_thresh: Optional[float] = None,
+    judge_skip_upper_thresh: Optional[float] = None,
+    progress_bar: bool = True,
+    judge_workers: int = 1,
 ) -> DataFrame:
     """
     Retrieve candidate matches with `merge_knn`, then verify each pair with an LLM.
@@ -1017,32 +1755,19 @@ def merge_k_judge(
     - `llm_confidence` (float in [0, 1])
     - `llm_raw_response` (raw model output)
 
+        Judging columns:
+        - By default, the judge payload uses `left_on`/`right_on` (or `on`, or shared columns).
+        - Override this with `judge_on` for symmetric judging columns, or
+            `judge_left_on` / `judge_right_on` for asymmetric column names.
+
     :param confidence_threshold: optional post-filter threshold on llm_confidence.
+    :param judge_skip_lower_thresh: if set, rows with `score` less than or equal to this threshold
+        skip LLM judging and are assigned sentinel `99` in llm columns.
+    :param judge_skip_upper_thresh: if set, rows with `score` greater than or equal to this threshold
+        skip LLM judging and are assigned sentinel `99` in llm columns.
+    :param progress_bar: whether to show a progress bar while judging candidate rows.
     """
     llm_params = llm_params or {}
-
-    if llm_provider not in {"auto", "openai", "gemini"}:
-        raise ValueError("llm_provider must be one of {'auto', 'openai', 'gemini'}")
-
-    if judge_llm_model is None or (isinstance(judge_llm_model, str) and judge_llm_model.strip() == ""):
-        raise ValueError(
-            "merge_k_judge requires `judge_llm_model`. "
-            "Use `merge_knn` if you do not want LLM-based judgement."
-        )
-
-    resolved_judge_model = judge_llm_model
-
-    resolved_provider = llm_provider
-    if resolved_provider == "auto":
-        resolved_provider = "gemini" if "gemini" in str(resolved_judge_model).lower() else "openai"
-
-    openai_api_key = openai_key or os.getenv("OPENAI_API_KEY")
-    gemini_api_key = gemini_key or os.getenv("GEMINI_API_KEY")
-
-    if resolved_provider == "openai" and openai_api_key is None:
-        raise ValueError("merge_k_judge with llm_provider='openai' requires `openai_key` or OPENAI_API_KEY.")
-    if resolved_provider == "gemini" and gemini_api_key is None:
-        raise ValueError("merge_k_judge with llm_provider='gemini' requires `gemini_key` or GEMINI_API_KEY.")
 
     retrieval_model, retrieval_openai_key, retrieval_gemini_key = _resolve_knn_retrieval_config(
         model=model,
@@ -1058,6 +1783,11 @@ def merge_k_judge(
         retrieval_source = "knn_api_model"
     else:
         retrieval_source = "model"
+
+    resolved_judge_model = judge_llm_model
+    resolved_provider = llm_provider
+    if resolved_provider == "auto":
+        resolved_provider = "gemini" if "gemini" in str(resolved_judge_model).lower() else "openai"
 
     judge_source = "judge_llm_model"
     resolution_msg = (
@@ -1084,125 +1814,39 @@ def merge_k_judge(
         drop_sim_threshold=drop_sim_threshold,
     ).copy()
 
-    def _raise_judge_error(judge_error: Exception, stage: str) -> None:
-        raise RuntimeError(
-            "merge_k_judge failed during "
-            f"{stage} (provider={resolved_provider}, model={resolved_judge_model}). "
-            f"Underlying error: {repr(judge_error)}. "
-            "Use merge_knn if you do not want LLM-based judgement."
-        ) from judge_error
+    print(
+        "[merge_k_judge] Retrieved candidate set from merge_knn: "
+        f"rows={len(candidates)}, k={k}."
+    )
 
-    if llm_prompt is None:
-        llm_prompt = (
-            "You are a fuzzy entity/text-matching judge. This could be an entity or just text descriptions that need matching. Compare LEFT and RIGHT records and decide if they refer to "
-            "the same real-world entity. <SEP> signifies a concat of two variables in the record. Return ONLY compact JSON with keys: "
-            "is_match (0 or 1) and confidence (float between 0 and 1)."
-        )
-
-    if isinstance(left_on, str):
-        left_cols = [left_on]
-    elif isinstance(left_on, list):
-        left_cols = left_on
-    elif isinstance(on, str):
-        left_cols = [on]
-    elif isinstance(on, list):
-        left_cols = on
-    else:
-        left_cols = [c for c in df1.columns if c in df2.columns]
-
-    if isinstance(right_on, str):
-        right_cols = [right_on]
-    elif isinstance(right_on, list):
-        right_cols = right_on
-    elif isinstance(on, str):
-        right_cols = [on]
-    elif isinstance(on, list):
-        right_cols = on
-    else:
-        right_cols = left_cols
-
-    openai_client = None
-    gemini_model_client = None
-    try:
-        if resolved_provider == "openai":
-            openai_client = openai.OpenAI(
-                api_key=openai_api_key,
-                timeout=llm_params["request_timeout"] if "request_timeout" in llm_params else 15,
-            )
-        else:
-            try:
-                import google.generativeai as genai
-            except ImportError as exc:
-                raise ImportError(
-                    "Gemini LLM classification requires `google-generativeai`. Install it to use llm_provider='gemini'."
-                ) from exc
-            genai.configure(api_key=gemini_api_key)
-            gemini_model_client = genai.GenerativeModel(model_name=resolved_judge_model)
-    except Exception as judge_init_error:
-        _raise_judge_error(judge_init_error, stage="judge client initialization")
-
-    llm_matches: List[int] = []
-    llm_confidences: List[float] = []
-    llm_raw: List[str] = []
-
-    for _, row in candidates.iterrows():
-        left_payload = {}
-        right_payload = {}
-
-        for col in left_cols:
-            col_name = f"{col}{suffixes[0]}" if f"{col}{suffixes[0]}" in candidates.columns else col
-            left_payload[col] = None if col_name not in candidates.columns else row[col_name]
-
-        for col in right_cols:
-            col_name = f"{col}{suffixes[1]}" if f"{col}{suffixes[1]}" in candidates.columns else col
-            right_payload[col] = None if col_name not in candidates.columns else row[col_name]
-
-        user_content = json.dumps({"left": left_payload, "right": right_payload}, default=str)
-        response_text = ""
-        for retry in range(max_retries):
-            try:
-                if resolved_provider == "openai":
-                    response = openai_client.chat.completions.create(
-                        model=resolved_judge_model,
-                        messages=[
-                            {"role": "system", "content": llm_prompt},
-                            {"role": "user", "content": user_content},
-                        ],
-                        temperature=llm_params["temperature"] if "temperature" in llm_params else 0,
-                        max_tokens=llm_params["max_tokens"] if "max_tokens" in llm_params else 50,
-                        top_p=llm_params["top_p"] if "top_p" in llm_params else 1,
-                        frequency_penalty=llm_params["frequency_penalty"] if "frequency_penalty" in llm_params else 0,
-                        presence_penalty=llm_params["presence_penalty"] if "presence_penalty" in llm_params else 0,
-                    )
-                    response_text = response.choices[0].message.content or ""
-                else:
-                    prompt_text = (
-                        f"{llm_prompt}\n\n"
-                        f"Compare the following pair payload and return JSON only.\n"
-                        f"{user_content}"
-                    )
-                    response = gemini_model_client.generate_content(prompt_text)
-                    response_text = getattr(response, "text", None) or ""
-                break
-            except Exception as judge_runtime_error:
-                if retry == max_retries - 1:
-                    _raise_judge_error(judge_runtime_error, stage="judge inference")
-                else:
-                    time.sleep(ratelimit_sleep_time * (2 ** retry))
-
-        match_flag, match_conf = _coerce_llm_match_and_confidence(response_text)
-        llm_matches.append(match_flag)
-        llm_confidences.append(match_conf)
-        llm_raw.append(response_text)
-
-    candidates["llm_is_match"] = llm_matches
-    candidates["llm_confidence"] = llm_confidences
-    candidates["llm_raw_response"] = llm_raw
-
-    if confidence_threshold is not None:
-        candidates = candidates[candidates["llm_confidence"] >= confidence_threshold]
-
-    return candidates
+    return judge_merge_k_out(
+        candidates_df=candidates,
+        on=on,
+        left_on=left_on,
+        right_on=right_on,
+        suffixes=suffixes,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+        judge_llm_model=judge_llm_model,
+        llm_provider=llm_provider,
+        llm_prompt=llm_prompt,
+        llm_params=llm_params,
+        max_retries=max_retries,
+        ratelimit_sleep_time=ratelimit_sleep_time,
+        checkpoint_path=checkpoint_path,
+        resume=resume,
+        failure_log_path=failure_log_path,
+        retry_policy=retry_policy,
+        judge_on=judge_on,
+        judge_left_on=judge_left_on,
+        judge_right_on=judge_right_on,
+        judge_skip_lower_thresh=judge_skip_lower_thresh,
+        judge_skip_upper_thresh=judge_skip_upper_thresh,
+        confidence_threshold=confidence_threshold,
+        progress_bar=progress_bar,
+        judge_workers=judge_workers,
+        failure_function_name="merge_k_judge",
+    )
 
 
 def merge_knn_with_llm(
@@ -1227,6 +1871,13 @@ def merge_knn_with_llm(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    judge_on: Optional[Union[str, List[str]]] = None,
+    judge_left_on: Optional[Union[str, List[str]]] = None,
+    judge_right_on: Optional[Union[str, List[str]]] = None,
+    judge_skip_lower_thresh: Optional[float] = None,
+    judge_skip_upper_thresh: Optional[float] = None,
+    progress_bar: bool = True,
+    judge_workers: int = 1,
 ) -> DataFrame:
     """Backward-compatible alias for `merge_k_judge`."""
     return merge_k_judge(
@@ -1236,6 +1887,11 @@ def merge_knn_with_llm(
         model=model,
         left_on=left_on,
         right_on=right_on,
+        judge_on=judge_on,
+        judge_left_on=judge_left_on,
+        judge_right_on=judge_right_on,
+        judge_skip_lower_thresh=judge_skip_lower_thresh,
+        judge_skip_upper_thresh=judge_skip_upper_thresh,
         k=k,
         suffixes=suffixes,
         batch_size=batch_size,
@@ -1251,6 +1907,8 @@ def merge_knn_with_llm(
         confidence_threshold=confidence_threshold,
         max_retries=max_retries,
         ratelimit_sleep_time=ratelimit_sleep_time,
+        progress_bar=progress_bar,
+        judge_workers=judge_workers,
     )
 
 
@@ -1276,6 +1934,13 @@ def merge_knn_openai(
     confidence_threshold: Optional[float] = None,
     max_retries: int = 5,
     ratelimit_sleep_time: int = 15,
+    judge_on: Optional[Union[str, List[str]]] = None,
+    judge_left_on: Optional[Union[str, List[str]]] = None,
+    judge_right_on: Optional[Union[str, List[str]]] = None,
+    judge_skip_lower_thresh: Optional[float] = None,
+    judge_skip_upper_thresh: Optional[float] = None,
+    progress_bar: bool = True,
+    judge_workers: int = 1,
 ) -> DataFrame:
     """Backward-compatible alias for `merge_k_judge`."""
     return merge_k_judge(
@@ -1285,6 +1950,11 @@ def merge_knn_openai(
         model=model,
         left_on=left_on,
         right_on=right_on,
+        judge_on=judge_on,
+        judge_left_on=judge_left_on,
+        judge_right_on=judge_right_on,
+        judge_skip_lower_thresh=judge_skip_lower_thresh,
+        judge_skip_upper_thresh=judge_skip_upper_thresh,
         k=k,
         suffixes=suffixes,
         batch_size=batch_size,
@@ -1300,6 +1970,8 @@ def merge_knn_openai(
         confidence_threshold=confidence_threshold,
         max_retries=max_retries,
         ratelimit_sleep_time=ratelimit_sleep_time,
+        progress_bar=progress_bar,
+        judge_workers=judge_workers,
     )
 
 
@@ -1311,10 +1983,19 @@ def classify_rows(
     label_map: Optional[dict] = None,
     batch_size: int = 128,
     openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
+    llm_provider: str = "auto",
     openai_topic: Optional[str] = None,
     openai_prompt: Optional[str] = None,
-    openai_params: Optional[dict] = {},
-    progress_bar: bool = True
+    openai_params: Optional[dict] = None,
+    progress_bar: bool = True,
+    api_throttle_seconds: float = 0.0,
+    checkpoint_window_size: Optional[int] = None,
+    api_workers: int = 1,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = False,
+    failure_log_path: Optional[str] = None,
+    retry_policy: Optional[Dict[str, Any]] = None,
 ):
     """
     Classify texts in all rows of one or more columns whether they are relevant to a certain topic. The function uses
@@ -1337,9 +2018,10 @@ def classify_rows(
     """
 
     df = df.copy()
+    openai_params = {} if openai_params is None else openai_params
 
     # load label dict from model path if exists
-    if os.path.exists(os.path.join(model, "label_map.json")):
+    if isinstance(model, str) and os.path.exists(os.path.join(model, "label_map.json")):
         with open(os.path.join(model, "label_map.json"), encoding="utf-8") as f:
             label_map = json.load(f)
 
@@ -1348,11 +2030,11 @@ def classify_rows(
         raise ValueError(f"label_dict has {label_map} entries, but num_labels is {num_labels}. ")
 
     # check if the parameters for any inference method is properly specified
-    if openai_key is None and model is None:
+    if openai_key is None and gemini_key is None and model is None:
         raise ValueError("Must either specify a model or use an OpenAI key")
 
     # infer using HF or local models
-    if openai_key is None:
+    if openai_key is None and gemini_key is None:
         clf = load_clf(model, num_labels=num_labels)
 
         # join texts in columns if needed
@@ -1365,7 +2047,12 @@ def classify_rows(
         tokenized_data = tokenize_data_for_inference(strings_col, "inf_data", model)
         disable_tqdm = not progress_bar
         # initialize trainer
-        inference_args = TrainingArguments(output_dir="save", per_device_eval_batch_size=batch_size,disable_tqdm=disable_tqdm)
+        inference_args = TrainingArguments(
+            output_dir="save",
+            per_device_eval_batch_size=batch_size,
+            disable_tqdm=disable_tqdm,
+            dataloader_pin_memory=False,
+        )
         trainer = Trainer(model=clf, args=inference_args)
 
         # predict and save results
@@ -1409,8 +2096,25 @@ def classify_rows(
             strings_col = df[on].tolist()
 
         # get predictions from openai
-        preds = predict_rows_with_openai(
-            strings_col, model, openai_key, openai_topic, openai_prompt, openai_params, label_map
+        preds = predict_rows_with_llm(
+            strings_col,
+            model,
+            openai_key=openai_key,
+            gemini_key=gemini_key,
+            llm_provider=llm_provider,
+            openai_topic=openai_topic,
+            openai_prompt=openai_prompt,
+            openai_params=openai_params,
+            label_dict=label_map,
+            checkpoint_path=checkpoint_path,
+            resume=resume,
+            failure_log_path=failure_log_path,
+            retry_policy=retry_policy,
+            batch_size=batch_size,
+            throttle_seconds=api_throttle_seconds,
+            checkpoint_window_size=checkpoint_window_size,
+            workers=api_workers,
+            progress_bar=progress_bar,
         )
 
         assert len(preds) == df.shape[0], "DEBUG: Length mismatch"
@@ -1428,12 +2132,21 @@ def transform_rows(
     on: Optional[Union[str, List[str]]] = None,
     *,
     openai_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
+    llm_provider: str = "auto",
     model: str = "gpt-4o",
     openai_prompt: Optional[str] = None,
     openai_params: Optional[Dict[str, Any]] = None,
     batch_size: int = 50,
+    api_throttle_seconds: float = 0.0,
+    checkpoint_window_size: Optional[int] = None,
+    api_workers: int = 1,
     output_column: Optional[str] = None,
-    progress_bar: bool = True
+    progress_bar: bool = True,
+    checkpoint_path: Optional[str] = None,
+    resume: bool = False,
+    failure_log_path: Optional[str] = None,
+    retry_policy: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
     """
     High-level wrapper: transform every cell in one or more columns via any batch transform fn.
@@ -1460,8 +2173,18 @@ def transform_rows(
 
     if on is None:
         raise ValueError("Must specify `on=` to select which column(s) to transform.")
-    if openai_key is None:
-        raise ValueError("Must provide `openai_key` to use OpenAI.")
+    if openai_key is None and gemini_key is None:
+        raise ValueError("Must provide `openai_key` or `gemini_key` to use API transforms.")
+
+    if llm_provider not in {"auto", "openai", "gemini"}:
+        raise ValueError("llm_provider must be one of {'auto', 'openai', 'gemini'}")
+
+    resolved_provider = llm_provider
+    if resolved_provider == "auto":
+        if (isinstance(model, str) and "gemini" in model.lower()) or gemini_key is not None:
+            resolved_provider = "gemini"
+        else:
+            resolved_provider = "openai"
 
     # default prompt
     if openai_prompt is None:
@@ -1469,7 +2192,7 @@ def transform_rows(
             "Fix spelling mistakes in each of the following strings. "
         )
     
-    print(f"Transforming column(s) {on} with OpenAI model {model} using prompt: {openai_prompt}")
+    print(f"Transforming column(s) {on} with {resolved_provider} model {model} using prompt: {openai_prompt}")
 
     # serialize multi-column if needed
     if isinstance(on, list):
@@ -1481,36 +2204,76 @@ def transform_rows(
         column_to_use = on
         key_name = on
     
-    ##drop if on is na in any row
-    df = df.dropna(subset=[column_to_use])
+    null_mask = df[column_to_use].isna()
+    df_to_transform = df.loc[~null_mask].copy()
 
     # final output column name
     out_col = output_column or f"transformed_{key_name}"
 
-    # prepare the OpenAI client and fn_kwargs
-    client = openai.OpenAI(
-        api_key=openai_key,
-        timeout=openai_params.get("request_timeout", 10)
-    )
-    fn_kwargs = {
-        "client": client,
-        "model": model,
-        "prompt": openai_prompt,
-        "max_retries": openai_params.get("max_retries", 5),
-        "ratelimit_sleep_time": openai_params.get("ratelimit_sleep_time", 15),
-        "openai_params": openai_params
-    }
+    # prepare provider client and fn_kwargs
+    if resolved_provider == "openai":
+        client = openai.OpenAI(
+            api_key=openai_key,
+            timeout=openai_params.get("request_timeout", 10)
+        )
+        transform_fn = openai_transform
+        fn_kwargs = {
+            "client": client,
+            "model": model,
+            "prompt": openai_prompt,
+            "max_retries": openai_params.get("max_retries", 5),
+            "ratelimit_sleep_time": openai_params.get("ratelimit_sleep_time", 15),
+            "openai_params": openai_params,
+            "failure_log_path": failure_log_path,
+            "retry_policy": retry_policy,
+        }
+    else:
+        try:
+            import google.generativeai as genai
+        except ImportError as exc:
+            raise ImportError(
+                "Gemini transforms require `google-generativeai`. Install it with: pip install google-generativeai"
+            ) from exc
+
+        resolved_gemini_key = gemini_key or os.getenv("GEMINI_API_KEY")
+        if resolved_gemini_key is None:
+            raise ValueError("Gemini transforms require `gemini_key` or GEMINI_API_KEY.")
+
+        genai.configure(api_key=resolved_gemini_key)
+        gemini_model = genai.GenerativeModel(model_name=model)
+        transform_fn = gemini_transform
+        fn_kwargs = {
+            "gemini_model": gemini_model,
+            "model": model,
+            "prompt": openai_prompt,
+            "max_retries": openai_params.get("max_retries", 5),
+            "ratelimit_sleep_time": openai_params.get("ratelimit_sleep_time", 15),
+            "openai_params": openai_params,
+            "failure_log_path": failure_log_path,
+            "retry_policy": retry_policy,
+        }
 
     # use the generic transform_column util
-    result = transform_column(
-        df=df,
+    result_non_null = transform_column(
+        df=df_to_transform,
         column=column_to_use,
-        transform_fn=openai_transform,
+        transform_fn=transform_fn,
         fn_kwargs=fn_kwargs,
         chunk_size=batch_size,
         output_column=out_col,
-        progress_bar=progress_bar
+        progress_bar=progress_bar,
+        checkpoint_path=checkpoint_path,
+        resume=resume,
+        failure_log_path=failure_log_path,
+        retry_policy=retry_policy,
+        throttle_seconds=api_throttle_seconds,
+        checkpoint_window_size=checkpoint_window_size,
+        workers=api_workers,
     )
+
+    result = df.copy()
+    result[out_col] = pd.Series([None] * len(result), index=result.index, dtype="object")
+    result.loc[result_non_null.index, out_col] = result_non_null[out_col]
 
     # clean up temp if used
     if isinstance(on, list):

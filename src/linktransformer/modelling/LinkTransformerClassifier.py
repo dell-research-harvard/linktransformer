@@ -8,7 +8,7 @@ import os
 import json
 import shutil
 import stat
-from linktransformer import __MODEL_HUB_ORGANIZATION__
+from linktransformer.constants import __MODEL_HUB_ORGANIZATION__
 import tempfile
 
 from linktransformer.model_card_templates import ClassificationModelCardTemplate
