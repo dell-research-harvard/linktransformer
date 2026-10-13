@@ -105,10 +105,18 @@ def _resolve_llm_provider(
     if llm_provider != "auto":
         return llm_provider
 
-    if _is_gemini_chat_model(model) or gemini_key or os.getenv("GEMINI_API_KEY"):
+    # The model name decides first, then keys passed explicitly, then environment variables, so that
+    # e.g. model="gpt-4o-mini" with openai_key=... is not sent to Gemini just because GEMINI_API_KEY is set.
+    if _is_gemini_chat_model(model):
         return "gemini"
-    if openai_key or os.getenv("OPENAI_API_KEY"):
+    if openai_key:
         return "openai"
+    if gemini_key:
+        return "gemini"
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    if os.getenv("GEMINI_API_KEY"):
+        return "gemini"
     raise ValueError(
         "Could not resolve llm provider automatically. Provide openai_key/OPENAI_API_KEY or gemini_key/GEMINI_API_KEY, "
         "or pass llm_provider explicitly."

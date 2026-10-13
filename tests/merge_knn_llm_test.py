@@ -109,7 +109,7 @@ def test_lt_merge_k_judge_sbert_retrieval_openai_llm_live():
 
 @pytest.mark.skipif("GEMINI_API_KEY" not in os.environ, reason="Gemini API key not found in environment")
 def test_lt_merge_k_judge_gemini_live():
-    pytest.importorskip("google.generativeai")
+    pytest.importorskip("google.genai")
 
     df1 = pd.DataFrame(
         {
@@ -132,7 +132,7 @@ def test_lt_merge_k_judge_gemini_live():
         gemini_key=os.getenv("GEMINI_API_KEY"),
         k=1,
         llm_provider="gemini",
-        judge_llm_model="gemini-2.0-flash",
+        judge_llm_model="gemini-3.5-flash-lite",
         confidence_threshold=0.0,
     )
 
@@ -158,7 +158,7 @@ def test_lt_merge_k_judge_gemini_live():
 
 @pytest.mark.skipif("GEMINI_API_KEY" not in os.environ, reason="Gemini API key not found in environment")
 def test_lt_merge_k_judge_sbert_retrieval_gemini_judge_live():
-    pytest.importorskip("google.generativeai")
+    pytest.importorskip("google.genai")
 
     df1 = pd.DataFrame(
         {
@@ -182,7 +182,7 @@ def test_lt_merge_k_judge_sbert_retrieval_gemini_judge_live():
         gemini_key=os.getenv("GEMINI_API_KEY"),
         k=1,
         llm_provider="gemini",
-        judge_llm_model="gemini-2.0-flash",
+        judge_llm_model="gemini-3.5-flash-lite",
         confidence_threshold=0.0,
     )
 
@@ -211,7 +211,7 @@ def test_lt_merge_k_judge_sbert_retrieval_gemini_judge_live():
     reason="Both OpenAI and Gemini API keys are required",
 )
 def test_lt_merge_k_judge_openai_embedding_gemini_judge_live():
-    pytest.importorskip("google.generativeai")
+    pytest.importorskip("google.genai")
 
     df1 = pd.DataFrame(
         {
@@ -236,7 +236,7 @@ def test_lt_merge_k_judge_openai_embedding_gemini_judge_live():
         gemini_key=os.getenv("GEMINI_API_KEY"),
         k=1,
         llm_provider="gemini",
-        judge_llm_model="gemini-2.0-flash",
+        judge_llm_model="gemini-3.5-flash-lite",
         confidence_threshold=0.0,
     )
 

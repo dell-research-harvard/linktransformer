@@ -449,7 +449,7 @@ def test_lt_transform_rows_gemini_routes_to_gemini_transform(monkeypatch):
         on="text",
         gemini_key="g-key",
         llm_provider="gemini",
-        model="gemini-2.0-flash",
+        model="gemini-3.5-flash-lite",
         openai_prompt="Normalize",
         batch_size=4,
         api_throttle_seconds=0.2,
@@ -458,7 +458,7 @@ def test_lt_transform_rows_gemini_routes_to_gemini_transform(monkeypatch):
 
     assert out["transformed_text"].tolist() == ["gemini::ok"]
     assert captured["api_key"] == "g-key"
-    assert captured["model_name"] == "gemini-2.0-flash"
+    assert captured["model_name"] == "gemini-3.5-flash-lite"
     assert captured["transform_fn"] is infer_mod.gemini_transform
     assert captured["throttle_seconds"] == 0.2
 
@@ -607,7 +607,7 @@ def test_lt_transform_rows_multi_col_openai():
 
 @pytest.mark.skipif("GEMINI_API_KEY" not in os.environ, reason="Gemini API key not found in environment")
 def test_lt_merge_gemini_live():
-    pytest.importorskip("google.generativeai")
+    pytest.importorskip("google.genai")
 
     df1 = pd.DataFrame(
         {

@@ -366,14 +366,14 @@ def test_lt_predict_rows_with_llm_openai_batch_and_throttle(monkeypatch):
 def test_lt_gemini_transform_parses_json_array():
     class _FakeModels:
         def generate_content(self, model, contents, config=None):
-            assert model == "gemini-2.0-flash" and "Inputs" in contents
+            assert model == "gemini-3.5-flash-lite" and "Inputs" in contents
             return types.SimpleNamespace(text='["x1", "x2"]')
 
     out = utils_mod.gemini_transform(
         texts=["a", "b"],
         params={
             "gemini_client": types.SimpleNamespace(models=_FakeModels()),
-            "model": "gemini-2.0-flash",
+            "model": "gemini-3.5-flash-lite",
             "prompt": "Rewrite",
             "openai_params": {},
             "max_retries": 1,
@@ -620,3 +620,17 @@ def test_lt_transform_column_uses_thread_workers(monkeypatch):
 
     assert out["tx"].tolist() == ["tx::a", "tx::b", "tx::c", "tx::d"]
     assert captured["max_workers"] == 4
+
+@pytest.mark.parametrize("model, openai_key, gemini_key, env, expected", [
+    ("gpt-4o-mini", "o-key", None, {"GEMINI_API_KEY": "g"}, "openai"),   # explicit OpenAI key beats a Gemini env key
+    ("gemini-3.5-flash-lite", "o-key", None, {}, "gemini"),              # the model name decides first
+    ("some-model", None, "g-key", {"OPENAI_API_KEY": "o"}, "gemini"),    # explicit key beats environment
+    ("some-model", None, None, {"OPENAI_API_KEY": "o", "GEMINI_API_KEY": "g"}, "openai"),
+    ("some-model", None, None, {"GEMINI_API_KEY": "g"}, "gemini"),
+])
+def test_lt_resolve_llm_provider_precedence(monkeypatch, model, openai_key, gemini_key, env, expected):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    assert utils_mod._resolve_llm_provider(model, "auto", openai_key, gemini_key) == expected

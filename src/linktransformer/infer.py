@@ -24,6 +24,7 @@ from linktransformer.utils import (
     _is_openai_embedding_model,
     _load_tokenizer,
     _openai_chat_completion_resilient,
+    _resolve_llm_provider,
     gemini_transform,
     infer_embeddings,
     load_clf,
@@ -2122,15 +2123,7 @@ def transform_rows(
     if openai_key is None and gemini_key is None:
         raise ValueError("Must provide `openai_key` or `gemini_key` to use API transforms.")
 
-    if llm_provider not in {"auto", "openai", "gemini"}:
-        raise ValueError("llm_provider must be one of {'auto', 'openai', 'gemini'}")
-
-    resolved_provider = llm_provider
-    if resolved_provider == "auto":
-        if (isinstance(model, str) and "gemini" in model.lower()) or gemini_key is not None:
-            resolved_provider = "gemini"
-        else:
-            resolved_provider = "openai"
+    resolved_provider = _resolve_llm_provider(model, llm_provider, openai_key, gemini_key)
 
     # default prompt
     if openai_prompt is None:

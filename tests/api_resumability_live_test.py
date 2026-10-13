@@ -246,8 +246,10 @@ def test_lt_classify_rows_checkpoint_resume_live(tmp_path):
 
     assert "clf_preds_text" in out_first.columns
     assert out_first["clf_preds_text"].tolist() == out_second["clf_preds_text"].tolist()
-    assert len(rows_first) == len(df)
-    assert len(rows_second) == len(rows_first)
+    # predictions are checkpointed in batches (llm_classification_batch); every row must be covered
+    covered = sorted(i for rec in rows_first for i in rec.get("indices", [rec.get("index")]))
+    assert covered == list(range(len(df)))
+    assert len(rows_second) == len(rows_first)  # resuming made no new API calls
 
 
 def test_lt_transform_rows_checkpoint_resume_live(tmp_path):
