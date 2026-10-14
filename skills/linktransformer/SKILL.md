@@ -5,14 +5,53 @@ description: Record linkage, fuzzy merges, entity resolution, deduplication and 
 
 # LinkTransformer
 
-LinkTransformer embeds the key column(s) of each row with a semantic-similarity (sentence embedding) model and links rows by the cosine similarity of their embeddings. Everything is a function on pandas DataFrames: call the Python API directly. This skill describes version 0.1.19 with `lt.match_report` and `dry_run=`. If `python -c "import linktransformer as lt; print(lt.__version__, hasattr(lt, 'match_report'))"` prints an older version or `False`, upgrade the package.
+LinkTransformer embeds the key column(s) of each row with a semantic-similarity (sentence embedding) model and links rows by the cosine similarity of their embeddings. Everything is a function on pandas DataFrames: call the Python API directly.
+
+## Install and check
+
+This skill describes version 0.1.19, a testing release. Check what is installed before installing anything:
 
 ```bash
-pip install linktransformer              # extras: [train] fine-tuning, [gemini] Gemini models, [all]
+python -c "import linktransformer as lt; print(lt.__version__, hasattr(lt, 'match_report'))"   # expect: 0.1.19 True
+```
+
+If that fails or prints an older version, **ask the user before installing or upgrading packages**, and install into their project's virtual or conda environment, never a system or base Python:
+
+```bash
+pip install -U linktransformer              # Python 3.11+: linking, clustering, classification, OpenAI models
+pip install -U "linktransformer[train]"     # adds train_model / train_clf_model (datasets, accelerate)
+pip install -U "linktransformer[gemini]"    # adds Gemini embeddings and judge; [wandb] adds W&B logging, [all] everything
+```
+
+- **Apple Silicon:** use a native arm64 Python. An Intel Python running under Rosetta (such as an x86 Miniconda) cannot install current PyTorch.
+- **GPU:** on Linux, pip's PyTorch includes CUDA. If the check below reports no GPU on a machine that has one, the installed torch does not match the driver; ask before reinstalling it from https://pytorch.org/get-started/locally/.
+- No FAISS or conda is needed. Japanese mLUKE models need transformers 4 (see [Choose a model](#choose-a-model)).
+
+Before running anything, keep the output short:
+
+```bash
 export LINKTRANSFORMER_SILENCE_CITATION=1  # otherwise every import prints a BibTeX citation
 export LINKTRANSFORMER_PROGRESS=0          # turn off every progress bar, so bars don't fill your context or logs
 export TRANSFORMERS_VERBOSITY=error        # hide transformers' model-load reports, which are not progress bars
 ```
+
+Then check the environment with a tiny merge:
+
+```python
+import os
+import pandas as pd
+import torch
+import linktransformer as lt
+
+print("linktransformer", lt.__version__, "| CUDA GPU:", torch.cuda.is_available())
+# report only whether keys are set, never their values
+print("OPENAI_API_KEY set:", bool(os.getenv("OPENAI_API_KEY")), "| GEMINI_API_KEY set:", bool(os.getenv("GEMINI_API_KEY")))
+left = pd.DataFrame({"name": ["Tech Corporation", "Acme Inc"]})
+right = pd.DataFrame({"name": ["Tech Corp", "ACME Incorporated", "Globex"]})
+print(lt.merge(left, right, on="name", model="all-MiniLM-L6-v2")[["name_x", "name_y", "score"]])
+```
+
+Expect Tech Corporation → Tech Corp and Acme Inc → ACME Incorporated, both scoring above 0.9. The first run downloads the model (about 90 MB) from the Hugging Face Hub. On a cluster whose compute nodes have no internet, run it once on a login node so the model is cached, and point `HF_HOME` at a project folder if the home quota is small.
 
 ## Pick the function
 
@@ -64,6 +103,19 @@ LinkTransformer links rows by **semantic similarity**: it embeds each row's text
 2. **Other sentence-transformers models** for semantic similarity, searching for the task's language or domain and sorted by downloads: https://huggingface.co/api/models?pipeline_tag=sentence-similarity&library=sentence-transformers&sort=downloads&limit=20&search=german. Prefer widely used models whose card says they are trained for semantic similarity in the right language, or a multilingual one when the two sides are in different languages.
 
 Then compare two or three candidates on the same labeled sample with `evaluate_pairs` before committing to one: the best model for one dataset is often not the best for another.
+
+Check any model you have not used before, such as one from a Hub search: it should score a related pair far above an unrelated one.
+
+```python
+import numpy as np
+
+model = lt.load_model("sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+emb = lt.infer_embeddings(["Tech Corporation", "Tech Corp", "Banana Republic"], model)
+emb = emb / np.linalg.norm(emb, axis=1, keepdims=True)
+print((emb @ emb.T)[0].round(2))   # this model: [1. 0.98 0.08]
+```
+
+If loading warns "No sentence-transformers model found ... Creating a new one with mean pooling", the model is a plain encoder rather than a similarity model, and its scores barely separate related from unrelated text.
 
 Without a search, these are known starting points:
 
