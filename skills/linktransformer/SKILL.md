@@ -1,11 +1,11 @@
 ---
 name: linktransformer
-description: Record linkage, fuzzy merges, entity resolution, deduplication and clustering of messy names or records (firms, people, products, places, OCR text) in pandas DataFrames with the linktransformer Python package (`import linktransformer as lt`). Use when joining tables that lack a clean shared key, matching names across spellings or languages, retrieving top-k candidate matches, verifying matches with an LLM judge, deduplicating or clustering rows, mapping fine categories to coarse ones, classifying or cleaning rows with an LLM, or fine-tuning a linkage model. Covers choosing the function and model, validating a similarity threshold, LLM cost guardrails and long-running jobs.
+description: Record linkage, fuzzy merges, entity resolution, deduplication and clustering of messy names or records (firms, people, products, places, OCR text) by semantic similarity in pandas DataFrames with the linktransformer Python package (`import linktransformer as lt`). Use when joining tables that lack a clean shared key, matching names across spellings or languages, retrieving top-k candidate matches, verifying matches with an LLM judge, deduplicating or clustering rows, mapping fine categories to coarse ones, classifying or cleaning rows with an LLM, or fine-tuning a linkage model. Covers choosing the function and model, validating a similarity threshold, LLM cost guardrails and long-running jobs.
 ---
 
 # LinkTransformer
 
-LinkTransformer embeds the key column(s) of each row with a transformer model and links rows by cosine similarity. Everything is a function on pandas DataFrames: call the Python API directly. This skill describes version 0.1.19 with `lt.match_report` and `dry_run=`. If `python -c "import linktransformer as lt; print(lt.__version__, hasattr(lt, 'match_report'))"` prints an older version or `False`, upgrade the package.
+LinkTransformer embeds the key column(s) of each row with a semantic-similarity (sentence embedding) model and links rows by the cosine similarity of their embeddings. Everything is a function on pandas DataFrames: call the Python API directly. This skill describes version 0.1.19 with `lt.match_report` and `dry_run=`. If `python -c "import linktransformer as lt; print(lt.__version__, hasattr(lt, 'match_report'))"` prints an older version or `False`, upgrade the package.
 
 ```bash
 pip install linktransformer              # extras: [train] fine-tuning, [gemini] Gemini models, [all]
@@ -56,8 +56,9 @@ Output: the left columns, then the right columns, then `score` (cosine similarit
 
 ## Choose a model
 
-- **Default:** `model="all-MiniLM-L6-v2"` (sentence-transformers). It is small and fast, a reasonable baseline for English names.
-- **LinkTransformer models on the Hugging Face Hub** (`dell-research-harvard/...`), trained for linkage:
+LinkTransformer links rows by **semantic similarity**: it embeds each row's text and compares the embeddings by cosine similarity. So `model=` must be a model trained to produce sentence embeddings for semantic similarity. Any model that `sentence-transformers` can load works, not only LinkTransformer's own. Choose in this order:
+
+1. **A LinkTransformer model for your domain and language.** They are listed at https://linktransformer.github.io/ and tagged `linktransformer` on the Hugging Face Hub (https://huggingface.co/models?other=linktransformer, which also lists models other people trained with the package):
 
 | Domain | Models |
 |---|---|
@@ -67,11 +68,27 @@ Output: the left columns, then the right columns, then `score` (cosine similarit
 | Product descriptions (UN product classifications) | `lt-un-data-fine-fine-{en,es,fr,multi}` (product to product), `lt-un-data-fine-coarse-{...}` (product to coarse category), `lt-un-data-fine-industry-{...}` (product to ISIC industry) |
 | Spanish product descriptions in Mexican trade data | `lt-mexicantrade4748` |
 
-  Prefix each name with `dell-research-harvard/`. The Japanese models are built on mLUKE and need `pip install "transformers>=4.56,<5" "sentence-transformers>=5,<6"`; LinkTransformer raises an error under transformers 5.
-- **Any other** sentence-transformers or Hugging Face model id, or a local folder, also works, including a model you trained with `lt.train_model`.
-- **API embeddings:** OpenAI model names contain `text-embedding` (e.g. `"text-embedding-3-small"`); Gemini names contain `gemini` (e.g. `"gemini-embedding-001"`, needs the `[gemini]` extra). Keys come from the `OPENAI_API_KEY` / `GEMINI_API_KEY` environment variables. Never write a key into code, logs or notebooks. If a key is missing, ask the user to export it. Don't pass `openai_key=` / `gemini_key=` together with a *local* model name: `merge` and its siblings then send that name to the API and fail.
+   Prefix each name with `dell-research-harvard/`.
+2. **Otherwise, a sentence-similarity model from the Hugging Face Hub.** Search https://huggingface.co/models?pipeline_tag=sentence-similarity&library=sentence-transformers&sort=downloads and add your language or domain to the search (`&search=german`, `&search=legal`). Prefer widely used models whose card says they are trained for semantic similarity in your language, or a multilingual one when the two sides are in different languages. Pass the Hub id as `model=`. The LinkTransformer site suggests these starting points, which are also good bases for `lt.train_model`:
 
-Which to start with: pick the LinkTransformer model for your domain and language if one exists, otherwise the default model. Compare candidates on the same labeled sample with `evaluate_pairs` before committing to one.
+| Language | Model |
+|---|---|
+| English | `sentence-transformers/multi-qa-mpnet-base-dot-v1` |
+| Multilingual | `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` |
+| French | `dangvantuan/sentence-camembert-large` |
+| Spanish | `hiiamsid/sentence_similarity_spanish_es` |
+| German | `Sahajtomar/German-semantic` |
+| Chinese | `DMetaSoul/sbert-chinese-qmc-domain-v1` |
+| Japanese | `oshizo/sbert-jsnli-luke-japanese-base-lite` |
+
+3. **API embeddings:** OpenAI model names contain `text-embedding` (e.g. `"text-embedding-3-small"`); Gemini names contain `gemini` (e.g. `"gemini-embedding-001"`, needs the `[gemini]` extra). Keys come from the `OPENAI_API_KEY` / `GEMINI_API_KEY` environment variables. Never write a key into code, logs or notebooks. If a key is missing, ask the user to export it. Don't pass `openai_key=` / `gemini_key=` together with a *local* model name: `merge` and its siblings then send that name to the API and fail.
+
+- **Default:** `model="all-MiniLM-L6-v2"` (sentence-transformers) is small and fast, a reasonable baseline for English names.
+- **A local folder** works too, including a model you trained with `lt.train_model`.
+- **Not a similarity model:** a plain Hugging Face encoder such as `bert-base-uncased` still loads (with mean pooling), but it was not trained for similarity and its scores rank pairs poorly. Use one only as a base for `lt.train_model`.
+- **Japanese models built on mLUKE** (the Japanese LinkTransformer models and `oshizo/sbert-jsnli-luke-japanese-base-lite`) need `pip install "transformers>=4.56,<5" "sentence-transformers>=5,<6"`; LinkTransformer raises an error under transformers 5.
+
+Whichever you pick, compare two or three candidates on the same labeled sample with `evaluate_pairs` before committing to one: the best model for one dataset is often not the best for another.
 
 ## Validate before trusting a threshold
 
