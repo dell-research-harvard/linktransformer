@@ -41,6 +41,67 @@ def test_lt_search_on_gpu_matches_cpu(monkeypatch):
     assert np.array_equal(gpu_range[0], cpu_range[0]) and np.array_equal(gpu_range[2], cpu_range[2])
 
 
+def _gpu_search_data():
+    rng = np.random.default_rng(1)
+    corpus = _normalized(rng, 40000)
+    corpus[20000:20500] = corpus[:500] + 1e-4 * rng.standard_normal((500, corpus.shape[1])).astype(np.float32)  # near duplicates
+    corpus /= np.linalg.norm(corpus, axis=1, keepdims=True)
+    queries = np.concatenate([corpus[:300], _normalized(rng, 2700)])
+    return queries, corpus
+
+
+@pytest.mark.parametrize("setup", ["default", "small tiles", "untiled", "fp16 output", "forced fallback"])
+def test_lt_fp16_search_on_gpu_matches_fp32(setup, monkeypatch):
+    if setup == "small tiles":
+        monkeypatch.setattr(search, "_CUDA_CORPUS_TILE", 1024)
+        monkeypatch.setattr(search, "_CUDA_MAX_SCORES", 1 << 20)
+    if setup == "fp16 output":  # torch versions without torch.mm(out_dtype=...)
+        monkeypatch.setattr(search, "_fp16_output_is_fp32", lambda device_type: False)
+    if setup == "forced fallback":
+        monkeypatch.setattr(search, "_FP16_EXTRA_CANDIDATES", 0)
+    tiled = setup != "untiled"
+    queries, corpus = _gpu_search_data()
+    sims = queries.astype(np.float64) @ corpus.astype(np.float64).T
+
+    for k in (1, 10):
+        scores, indices = search.knn_search(queries, corpus, k, precision="fp16", tiled=tiled)
+        expected = -np.sort(-sims, axis=1)[:, :k]
+        assert np.allclose(np.take_along_axis(sims, indices, axis=1), expected, atol=1e-5)
+        assert np.allclose(scores, expected, atol=1e-5)
+        fp32_scores, fp32_indices = search.knn_search(queries, corpus, k, tiled=tiled)
+        assert np.allclose(fp32_scores, expected, atol=1e-5)
+
+    for precision in ("fp16", "fp32"):
+        lims, scores, indices = search.range_search(queries, corpus, 0.3, precision=precision, tiled=tiled)
+        rows = np.repeat(np.arange(len(queries)), np.diff(lims))
+        assert np.allclose(scores, sims[rows, indices], atol=1e-5)
+        assert all(np.all(np.diff(indices[lims[i]:lims[i + 1]]) > 0) for i in range(len(queries)))
+        # Same matches as float64, except pairs that fp32 rounding can put on either side of the threshold.
+        found = np.zeros(sims.shape, dtype=bool)
+        found[rows, indices] = True
+        differ = found != (sims >= 0.3)
+        assert np.all(np.abs(sims[differ] - 0.3) < 1e-5)
+
+
+def test_lt_fp16_search_rarely_falls_back(caplog):
+    import logging
+
+    queries, corpus = _gpu_search_data()
+    with caplog.at_level(logging.DEBUG, logger="linktransformer.search"):
+        search.knn_search(queries[300:], corpus, 10, precision="fp16")
+    assert "searched again in fp32" not in caplog.text
+
+
+def test_lt_merge_knn_fp16_on_gpu_matches_fp32():
+    df1 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_2.csv"))
+    df2 = pd.read_csv(os.path.join(DATA_DIR_PATH, "toy_comp_1.csv"))
+    model = LinkTransformer(MODEL)
+    fp32 = lt.merge_knn(df1, df2, on="CompanyName", model=model, k=3)
+    fp16 = lt.merge_knn(df1, df2, on="CompanyName", model=model, k=3, search_precision="fp16")
+    assert fp16["CompanyName_y"].tolist() == fp32["CompanyName_y"].tolist()
+    assert np.allclose(fp16["score"], fp32["score"], atol=1e-5)
+
+
 def _clustered(rng, n, dim=64, centers=200, spread=0.2):
     x = rng.standard_normal((centers, dim))[rng.integers(0, centers, n)] + spread * rng.standard_normal((n, dim))
     return (x / np.linalg.norm(x, axis=1, keepdims=True)).astype(np.float32)

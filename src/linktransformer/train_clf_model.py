@@ -7,6 +7,7 @@ import logging
 import pandas as pd
 import inspect
 import os
+import tempfile
 import torch
 from torch import nn
 import sklearn
@@ -211,13 +212,14 @@ def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=
 
     model = AutoModelForSequenceClassification.from_pretrained(trained_model, num_labels=num_labels)
 
-    # Instantiate Trainer (without args it uses TrainingArguments(output_dir="tmp_trainer"))
-    if progress_enabled():
-        trainer = Trainer(model=model)
-    else:
-        trainer = Trainer(model=model, args=TrainingArguments(output_dir="tmp_trainer", disable_tqdm=True))
-
-    predictions = trainer.predict(predict_dataset)
+    # Prediction only: no logging integrations (transformers 4.x defaults to report_to="all", which
+    # starts wandb whenever it is installed; test results are logged to wandb by the caller instead).
+    # LINKTRANSFORMER_PROGRESS=0 hides the prediction progress bar; None keeps the transformers default.
+    with tempfile.TemporaryDirectory() as output_dir:
+        trainer = Trainer(model=model, args=TrainingArguments(output_dir=output_dir, report_to="none",
+                                                              dataloader_pin_memory=False,
+                                                              disable_tqdm=None if progress_enabled() else True))
+        predictions = trainer.predict(predict_dataset)
 
     preds = np.argmax(predictions.predictions, axis=-1)
 

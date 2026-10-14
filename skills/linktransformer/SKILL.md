@@ -150,7 +150,7 @@ for t in np.arange(0.5, 1.0, 0.05):
 - Save intermediate outputs: the candidate table before judging, the judged table after. Then a crash costs only the unfinished stage.
 - API functions take `checkpoint_path=` (a JSONL file), `resume=True`, `failure_log_path=` and `retry_policy={"max_retries": 5, "base_sleep_seconds": 15, "jitter_seconds": 2}`. Rerunning the same script with `resume=True` skips finished work. `judge_merge_k_out` also skips rows whose `llm_is_match`, `llm_confidence` and `llm_raw_response` are already filled. Checkpoints are keyed by row position, so resume against the same saved candidate file, never a recomputed one.
 - `judge_workers=` (judge) and `api_workers=` (classify/transform) run API calls in parallel. Start at 4 and raise it if there are no rate-limit errors.
-- Embedding and search run on CUDA automatically when a GPU is visible.
+- Embedding and search run on CUDA automatically when a GPU is visible. For large merges on a GPU, `search_precision="fp16"` (merge, merge_knn, merge_range, merge_blocking, aggregate_rows, merge_k_judge) is about 3x faster and returns the same matches.
 
 A complete script template is in [references/llm-workflows.md](references/llm-workflows.md#long-job-template). It saves candidates, gates the paid stage on a `dry_run` call count, resumes from a checkpoint, and ends with a `match_report`. A Slurm variant is there too.
 

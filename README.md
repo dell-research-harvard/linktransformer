@@ -166,6 +166,20 @@ out = lt.merge_knn(new_rows, reference_df, on="CompanyName", model="dell-researc
 
 Both sides and all functions share one cache. Local models are identified by a fingerprint of their weights, so retraining a model never returns stale embeddings; OpenAI and Gemini models are identified by name.
 
+## Search speed
+
+Nearest-neighbour search (`merge`, `merge_knn`, `merge_k_judge`, `merge_blocking`, `aggregate_rows`) and range search (`merge_range`) are exact, and run on a CUDA GPU when one is available. Two options control them:
+
+- `search_precision="fp16"` (default `"fp32"`): on a GPU, scores are first computed in half precision to shortlist candidates, which are then rescored in fp32. A check on the rounding error guarantees the same matches as `"fp32"`; any query that fails the check is searched again in fp32. This is about 3x faster on GPUs with tensor cores (V100, T4, A100, H100 and newer). On CPU, search always runs in fp32.
+- `search_tiling=False` (default `True`): by default, queries and the right-hand dataframe are split into tiles so each matrix product is efficient and memory use stays bounded. Turning tiling off multiplies chunks of queries against the whole right-hand dataframe at once.
+
+```python
+matches = lt.merge_knn(left_df, right_df, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2",
+                       k=10, search_precision="fp16")
+```
+
+For most jobs, computing the embeddings takes far longer than the search itself.
+
 ## Long-running API jobs
 
 API-based workflows (OpenAI/Gemini embeddings, `merge_k_judge`, `judge_merge_k_out`, `classify_rows`, `transform_rows`) accept `checkpoint_path` (a JSONL progress file), `resume=True` to continue an interrupted run, `failure_log_path` to record failed calls, and `retry_policy={"max_retries": 5, "base_sleep_seconds": 15, "jitter_seconds": 2}`. `judge_workers` / `api_workers` run API calls in parallel.

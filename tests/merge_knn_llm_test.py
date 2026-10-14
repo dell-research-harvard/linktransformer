@@ -810,6 +810,91 @@ def test_lt_judge_merge_k_out_confidence_threshold_drops_low_score_skips(monkeyp
     assert out["llm_is_match"].tolist() == [99, 1]
 
 
+@pytest.mark.parametrize(
+    "response_text, expected",
+    [
+        # Gemini sometimes wraps its JSON in a Markdown code fence.
+        ('```json\n{"is_match": 0, "confidence": 0.95}\n```', (0, 0.95)),
+        ('```json {"is_match": 0, "confidence": 0.9} ```', (0, 0.9)),
+        ('```\n{"is_match": 1, "confidence": 0.8}\n```', (1, 0.8)),
+        ('Here is my answer: {"is_match": 0, "confidence": 0.7}', (0, 0.7)),
+        # Truncated JSON (closing brace or fence cut off by the token limit).
+        ('```json\n{"is_match": 0, "confidence": 0.85', (0, 0.85)),
+        ('{"is_match": true, "confidence": 0.6', (1, 0.6)),
+        ('{"is_match": "no"', (0, 0.0)),
+    ],
+)
+def test_lt_coerce_llm_match_and_confidence_fenced_and_truncated_json(response_text, expected):
+    assert infer_mod._coerce_llm_match_and_confidence(response_text) == expected
+
+
+@pytest.mark.parametrize(
+    "response_text, expected_match",
+    [
+        ("No, these are different companies.", 0),
+        ("Not a match.", 0),
+        ("false", 0),
+        ("These are a match.", 1),
+        ("I cannot tell.", 0),
+    ],
+)
+def test_lt_coerce_llm_match_and_confidence_free_text_answers(response_text, expected_match):
+    is_match, _ = infer_mod._coerce_llm_match_and_confidence(response_text)
+
+    assert is_match == expected_match
+
+
+def test_lt_judge_merge_k_out_gemini_fenced_rejections_are_not_matches(monkeypatch):
+    candidates = pd.DataFrame(
+        {
+            "CompanyName_x": ["Nagaraja m b", "Tech Corporation"],
+            "CompanyName_y": ["Nagarjuna Cement", "Tech Corp"],
+            "score": [0.71, 0.93],
+        }
+    )
+    responses = {
+        "Nagaraja m b": '```json\n{"is_match": 0, "confidence": 0.97}\n```',
+        "Tech Corporation": '```json\n{"is_match": 1, "confidence": 0.9}\n```',
+    }
+
+    configs = []
+
+    class _FencedModels:
+        def generate_content(self, model, contents, config):
+            configs.append(config)
+            left_name = next(name for name in responses if name in contents)
+            return types.SimpleNamespace(text=responses[left_name])
+
+    class _FencedGeminiClient:
+        def __init__(self, api_key, http_options=None):
+            self.models = _FencedModels()
+
+    fake_genai = types.ModuleType("google.genai")
+    fake_genai.Client = _FencedGeminiClient
+    fake_genai.types = types.SimpleNamespace(
+        GenerateContentConfig=lambda **kwargs: kwargs,
+        HttpOptions=lambda **kwargs: kwargs,
+    )
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+
+    out = infer_mod.judge_merge_k_out(
+        candidates_df=candidates,
+        on="CompanyName",
+        gemini_key="dummy",
+        llm_provider="gemini",
+        judge_llm_model="gemini-2.5-flash",
+        max_retries=1,
+        progress_bar=False,
+    )
+
+    assert out.loc[0, "llm_is_match"] == 0
+    assert out.loc[0, "llm_confidence"] == 0.97
+    assert out.loc[1, "llm_is_match"] == 1
+    assert out.loc[1, "llm_confidence"] == 0.9
+    assert len(configs) == 2
+    assert all(config["response_mime_type"] == "application/json" for config in configs)
+
+
 def test_lt_resolve_knn_retrieval_config_mutual_exclusion_error():
     with pytest.raises(ValueError, match="Specify only one"):
         infer_mod._resolve_knn_retrieval_config(
