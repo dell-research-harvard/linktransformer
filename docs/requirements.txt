@@ -1,3 +1,7 @@
+# CPU-only torch: the docs only import the package, and the default Linux torch wheel
+# pulls in several GB of CUDA libraries.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.6
 sphinx==7.1.2
 sphinx-autodoc-typehints==1.24.0
 sphinxcontrib-applehelp==1.0.4

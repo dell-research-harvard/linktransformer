@@ -7,6 +7,13 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'linktransformer'
+try:
+    from importlib.metadata import version as _installed_version
+
+    release = _installed_version('linktransformer')
+except Exception:  # building from a checkout without the package installed
+    release = ''
+version = release
 copyright = '2023, Abhishek Arora and Melissa Dell'
 author = 'Abhishek Arora and Melissa Dell'
 
@@ -24,4 +31,4 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'alabaster'
-html_static_path = ['_static']
+html_static_path = []

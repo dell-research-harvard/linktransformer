@@ -629,6 +629,7 @@ def cluster_rows(
     :param model (str): Language model to use.
     :param on (Union[str, List[str]]): Column(s) to cluster on.
     :param cluster_type (str): "SLINK" (default), "agglomerative" or "HDBScan".
+
         - "SLINK": single linkage. Rows whose cosine similarity is at least `sim_threshold` are linked, and a
           cluster is a group of rows connected by links, so a chain of close pairs can join dissimilar rows.
           Runs on GPU when available and scales to millions of rows.
@@ -636,11 +637,14 @@ def cluster_rows(
           above `sim_threshold`, so clusters stay tighter than with SLINK. Memory grows with the square of the
           number of rows (about 80 GB for 100,000 rows); use SLINK or `blocking_vars` for large data.
         - "HDBScan": density-based clusters, without a threshold.
+
     :param cluster_params (Dict[str, Any], optional): Method options:
+
         - SLINK: "min_cluster_size" (default 2). Above 2 the method is DBSCAN with min_samples=min_cluster_size.
         - agglomerative: "linkage", "average" (default), "complete" (every pair in a cluster is above the
           threshold) or "single" (same as SLINK).
         - HDBScan: "min_cluster_size" (default 5) and "min_samples" (default 1).
+
         For compatibility, "threshold" sets the cutoff as a cosine distance (1 - similarity) and "metric" picks
         the distance; with them agglomerative defaults to ward linkage on euclidean distance, as before.
     :param openai_key (str): OpenAI API key.
@@ -1938,15 +1942,18 @@ def merge_k_judge(
 ) -> Union[DataFrame, Dict[str, Any]]:
     """
     Retrieve candidate matches with `merge_knn`, then verify each pair with an LLM.
+
     Adds:
+
     - `llm_is_match` (0/1)
     - `llm_confidence` (float in [0, 1])
     - `llm_raw_response` (raw model output)
 
-        Judging columns:
-        - By default, the judge payload uses `left_on`/`right_on` (or `on`, or shared columns).
-        - Override this with `judge_on` for symmetric judging columns, or
-            `judge_left_on` / `judge_right_on` for asymmetric column names.
+    Judging columns:
+
+    - By default, the judge payload uses `left_on`/`right_on` (or `on`, or shared columns).
+    - Override this with `judge_on` for symmetric judging columns, or
+      `judge_left_on` / `judge_right_on` for asymmetric column names.
 
     :param confidence_threshold: optional post-filter on llm_confidence; see judge_merge_k_out.
     :param judge_skip_lower_thresh: if set, rows with `score` less than or equal to this threshold
@@ -2436,13 +2443,10 @@ def transform_rows(
     :param on:            (str or list[str]) column(s) to transform
     :param openai_key:    (str) your OpenAI API key
     :param openai_model:  (str) which model to call
-    :param openai_prompt: (str) system prompt; if None defaults to:
-                           "Fix spelling mistakes in each of the following strings.
-                            Return a JSON array of the corrected strings."
-    :param openai_params: (dict) extra ChatCompletion params, plus:
-                           - request_timeout
-                           - max_retries
-                           - ratelimit_sleep_time
+    :param openai_prompt: (str) system prompt; if None defaults to "Fix spelling mistakes in each of the
+                           following strings. Return a JSON array of the corrected strings."
+    :param openai_params: (dict) extra ChatCompletion params, plus request_timeout, max_retries and
+                           ratelimit_sleep_time.
     :param batch_size:    (int) number of rows in each chunk
     :param output_column: (str) name for the new column; default "transformed_{on}"
     :param progress_bar:  (bool) LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.

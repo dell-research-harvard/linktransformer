@@ -1,0 +1,512 @@
+
+# Utils - needs edits to help tackle cases where there is no heading, byline, etc. 
+
+import numpy as np
+import json
+import logging
+import pandas as pd
+import inspect
+import os
+import tempfile
+import torch
+from torch import nn
+import sklearn
+try:
+    from datasets import load_dataset, DatasetDict
+except ImportError as exc:
+    raise ImportError("Training requires the `train` extra. Install it with: pip install 'linktransformer[train]'") from exc
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
+import sklearn.model_selection
+from typing import List, Optional, Tuple, Union
+
+from linktransformer.progress import hf_progress_bars_off_if_disabled, progress_enabled
+from linktransformer.utils import _require, serialize_columns
+from linktransformer.configs import CLF_CONFIG_PATH
+
+logger = logging.getLogger(__name__)
+
+
+
+def get_num_props_labels(pd_data: pd.DataFrame, label_col: str = "label", num_labels: Optional[int] = None) -> Tuple[int, List[float]]:
+    """
+    Get the number of labels and their proportions from a DataFrame whose labels are the ids 0 .. num_labels - 1.
+
+    :param pd.DataFrame pd_data: The DataFrame containing the label data.
+    :param str label_col: The name of the column containing the labels. Defaults to "label".
+    :param int num_labels: Number of label ids. Defaults to the number of unique labels in pd_data.
+
+    :return: Tuple containing:
+             - int: Number of labels.
+             - List[float]: Proportion of each label id, in id order (0 for ids absent from pd_data).
+    """
+    label_proportions = pd_data[label_col].value_counts(normalize=True)
+    if num_labels is None:
+        num_labels = len(label_proportions)
+    return num_labels, label_proportions.reindex(range(num_labels), fill_value=0.0).tolist()
+
+def train_test_dev_split(pd_data: pd.DataFrame, save_dir: str, test_perc: float = 0.15, eval_perc: float = 0.15) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Split a DataFrame into train, evaluation, and test sets and save them to CSV files.
+
+    :param pd.DataFrame pd_data: The DataFrame to be split.
+    :param str save_dir: Directory where the split CSVs should be saved.
+    :param float test_perc: Proportion of data for the test set. Defaults to 0.15.
+    :param float eval_perc: Proportion of data for the evaluation set. Defaults to 0.15.
+
+    :return: Tuple containing:
+             - pd.DataFrame: Train DataFrame.
+             - pd.DataFrame: Evaluation DataFrame.
+             - pd.DataFrame: Test DataFrame.
+    """
+    
+    test_size = int(test_perc * len(pd_data))
+    eval_size = int(eval_perc * len(pd_data))
+
+    train_eval, test = sklearn.model_selection.train_test_split(pd_data, test_size=test_size, random_state=22)
+    train, eval_data = sklearn.model_selection.train_test_split(train_eval, test_size=eval_size, random_state=17)
+
+    # Save to CSV
+    os.makedirs(save_dir, exist_ok=True)
+    train.to_csv(f'{save_dir}/train.csv', encoding='utf-8', index=False)
+    eval_data.to_csv(f'{save_dir}/eval.csv', encoding='utf-8', index=False)
+    test.to_csv(f'{save_dir}/test.csv', encoding='utf-8', index=False)
+
+    logger.info(f"{len(train)} training examples")
+    logger.info(f"{len(eval_data)} evaluation examples")
+    logger.info(f"{len(test)} test examples")
+
+    return train, eval_data, test
+
+
+
+def tokenize_data_for_finetuning(directory: str, hf_model: str, text_column: str = "text") -> 'DatasetDict':
+    """
+    Tokenize data for finetuning a HuggingFace model.
+
+    :param str directory: Path to the directory containing the CSV file.
+    :param str hf_model: Pretrained model identifier or path.
+    :param str text_column: Name of the column containing text to be tokenized. Defaults to "text".
+
+    :return: Tokenized dataset as a DatasetDict.
+    """
+    
+    # Load data
+    dataset = load_dataset('csv', data_files={'data': directory})
+
+    # Instantiate tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(hf_model)
+
+    # Tokenize datasets
+    def tokenize_function(dataset):
+        return tokenizer(dataset[text_column], padding="max_length", truncation=True)
+
+    tokenized_dataset = dataset.map(tokenize_function, batched=True)
+
+    return tokenized_dataset["data"]
+
+def _classification_scores(predictions, references, average: str = "binary") -> dict:
+    """Accuracy, precision, recall and F1, computed with the same sklearn calls the HF `evaluate` metrics wrap."""
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+
+    return {
+        "accuracy": accuracy_score(references, predictions),
+        "precision": precision_score(references, predictions, average=average),
+        "recall": recall_score(references, predictions, average=average),
+        "f1": f1_score(references, predictions, average=average),
+    }
+
+
+def compute_metrics(eval_pred: Tuple[np.ndarray, np.ndarray],averaging_type="weighted") -> dict:
+    """
+    Compute evaluation metrics for predictions. Note that averaging type is always weighted for now. 
+
+    :param Tuple[np.ndarray, np.ndarray] eval_pred: A tuple containing two arrays. The first array is logits and the second one is labels.
+
+    :return: A dictionary with accuracy, precision, recall, and f1 score.
+    """
+    logits, labels = eval_pred
+
+    num_classes=labels.max()+1
+
+    if isinstance(logits, tuple):
+        logits = logits[0]
+
+    predictions = np.argmax(logits, axis=-1)
+
+    average = "binary" if num_classes == 2 else averaging_type
+    return _classification_scores(predictions, labels, average=average)
+
+def train_model(
+        train_dataset,
+        eval_dataset,
+        hf_model=None,
+        save_dir=None,
+        num_labels=2,
+        training_args=None,
+        wandb_log=False,
+        wandb_name="topic",
+        weight_list=None, 
+        
+):
+    class BalancedTrainer(Trainer):
+        def compute_loss(self, model, inputs, return_outputs=False,**kwargs):
+            labels = inputs.get("labels")
+            # forward pass
+            outputs = model(**inputs)
+            logits = outputs.get("logits")
+            # compute custom loss (suppose one has 2 labels with different weights)
+            loss_fct = nn.CrossEntropyLoss(weight=torch.tensor(weight_list))
+            ###Send to device
+            loss_fct=loss_fct.to(self.args.device)
+            loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
+            return (loss, outputs) if return_outputs else loss
+    if wandb_log:
+        _require("wandb").init(project=wandb_name)
+
+    training_args = {} if training_args is None else dict(training_args)
+    
+    ##Update training args - report_to should be none if wandb_log is false
+    training_args["report_to"]="wandb" if wandb_log else "none"
+    ##output_dir = save_dir if save_dir is not None else f"." 
+    training_args["output_dir"]=save_dir
+    training_args.setdefault("dataloader_pin_memory", False)
+    if not progress_enabled():  # LINKTRANSFORMER_PROGRESS=0 overrides disable_tqdm from the config
+        training_args["disable_tqdm"] = True
+
+    model = AutoModelForSequenceClassification.from_pretrained(hf_model, num_labels=num_labels)
+
+    ta_params = set(inspect.signature(TrainingArguments.__init__).parameters)
+    if "evaluation_strategy" in training_args and "evaluation_strategy" not in ta_params and "eval_strategy" in ta_params:
+        training_args["eval_strategy"] = training_args.pop("evaluation_strategy")
+    if "eval_strategy" in training_args and "eval_strategy" not in ta_params and "evaluation_strategy" in ta_params:
+        training_args["evaluation_strategy"] = training_args.pop("eval_strategy")
+    # transformers >= 5.15 removed warmup_ratio; warmup_steps below 1 is read as a ratio there
+    if "warmup_ratio" in training_args and "warmup_ratio" not in ta_params:
+        training_args.setdefault("warmup_steps", training_args.pop("warmup_ratio"))
+    ignored = sorted(k for k in training_args if k not in ta_params)
+    if ignored:
+        logger.warning(f"Ignoring training arguments not supported by this transformers version: {ignored}")
+    training_args = {k: v for k, v in training_args.items() if k in ta_params}
+
+    training_args = TrainingArguments(**training_args)
+    TrainerClass=Trainer if weight_list is None else BalancedTrainer
+    # Instantiate Trainer
+    trainer = TrainerClass(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        compute_metrics=compute_metrics,
+    )
+
+    trainer.train()
+
+    best_model_path = trainer.state.best_model_checkpoint
+    best_metric = trainer.state.best_metric
+
+    
+    return best_model_path, best_metric
+
+
+def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=2,print_mistakes=False,averaging_type="weighted"):
+
+    model = AutoModelForSequenceClassification.from_pretrained(trained_model, num_labels=num_labels)
+
+    # Prediction only: no logging integrations (transformers 4.x defaults to report_to="all", which
+    # starts wandb whenever it is installed; test results are logged to wandb by the caller instead).
+    # LINKTRANSFORMER_PROGRESS=0 hides the prediction progress bar; None keeps the transformers default.
+    with tempfile.TemporaryDirectory() as output_dir:
+        trainer = Trainer(model=model, args=TrainingArguments(output_dir=output_dir, report_to="none",
+                                                              dataloader_pin_memory=False,
+                                                              disable_tqdm=None if progress_enabled() else True))
+        predictions = trainer.predict(predict_dataset)
+
+    preds = np.argmax(predictions.predictions, axis=-1)
+
+    test_df = pd.read_csv(f"{original_test_dir}/test.csv")
+
+    logger.info(f"{len(test_df)} test examples")
+
+    test_df["preds"] = preds
+
+    if print_mistakes:
+        # fps = test_df[(test_df["label"] == 0) & (test_df["preds"] == 1)]
+        # fns = test_df[(test_df["label"] == 1) & (test_df["preds"] == 0)]
+        ##WE want to generalise this to any number of labels
+        fps = pd.DataFrame()
+        fns = pd.DataFrame()
+        for i in range(num_labels):
+            ##Use pd.concat instead of append
+            fps = pd.concat([fps,test_df[(test_df["label"] == i) & (test_df["preds"] != i)]])
+            fns = pd.concat([fns,test_df[(test_df["label"] != i) & (test_df["preds"] == i)]])
+
+        print("Total mispredictions:", len(fps) + len(fns))
+        print("False positives:", len(fps))
+        print("False negatives:", len(fns))
+
+        print("\n\n")
+        print("***************** FALSE POSITIVES *****************")
+        for i in list(fps.index.values):
+            print(fps["text"][i])
+            print("*****")
+
+        print("\n\n")
+        print("***************** FALSE NEGATIVES *****************")
+        for i in list(fns.index.values):
+            print(fns["text"][i])
+            print("*****")
+
+    logger.info("***Test results***")
+    average = "binary" if num_labels == 2 else averaging_type
+    scores = _classification_scores(preds, predictions.label_ids, average=average)
+    results_dict = {f"test/{name}": value for name, value in scores.items()}
+
+    logger.info(results_dict)
+    return results_dict
+
+
+def save_training_splits(save_dir,train_data,val_data,test_data):
+    os.makedirs(save_dir, exist_ok=True)
+    train_data.to_csv(f'{save_dir}/train.csv', encoding='utf-8', index=False)
+    val_data.to_csv(f'{save_dir}/eval.csv', encoding='utf-8', index=False)
+    test_data.to_csv(f'{save_dir}/test.csv', encoding='utf-8', index=False)
+
+    logger.info(f"{len(train_data)} training examples")
+    logger.info(f"{len(val_data)} dev examples")
+    logger.info(f"{len(test_data)} test examples")
+
+def _label_map_for(labels: pd.Series) -> dict:
+    """Integer ids for a label column: text labels numbered in order of first appearance, numeric labels kept as they are."""
+    labels = labels.dropna()
+    if pd.api.types.is_object_dtype(labels) or pd.api.types.is_string_dtype(labels):
+        return {label: i for i, label in enumerate(labels.unique())}
+    if pd.api.types.is_float_dtype(labels) or pd.api.types.is_integer_dtype(labels):
+        return {i: i for i in range(int(labels.max()) + 1)} if len(labels) else {}
+    raise ValueError(f"Label column {labels.name} is not an int, float or string.")
+
+
+def _shared_label_map(frames: List[pd.DataFrame], label_col_name: str) -> Optional[dict]:
+    """One label map for all splits, so each class gets the same id in train, eval and test."""
+    labels = [frame[label_col_name] for frame in frames if label_col_name in frame.columns]
+    return _label_map_for(pd.concat(labels, ignore_index=True)) if labels else None
+
+
+def preprocess_data(data,model,on,label_col_name,label_map=None):
+    ##Check if on column are in data
+    ##If not, error
+    if isinstance(on,str):
+        on=[on]
+
+    for col_name in on:
+        if col_name not in data.columns:
+            raise ValueError(f"Column {col_name} not in data.")
+        
+    ###Check if label column is in data
+    if label_col_name not in data.columns:
+        raise ValueError(f"Column {label_col_name} not in data.")
+    
+        
+    ###Drop if all on columns are null
+    data=data.dropna(subset=on,how="all")
+
+    ###Drop if label column is null
+    data=data.dropna(subset=[label_col_name],how="any").copy()
+
+    ##Map labels to int ids. Pass the same label_map for every split, or text labels get different ids per split
+    if label_map is None:
+        label_map = _label_map_for(data[label_col_name])
+    ###If string, map to the ids in label_map
+    if pd.api.types.is_object_dtype(data[label_col_name]) or pd.api.types.is_string_dtype(data[label_col_name]):
+        unknown = set(data[label_col_name].unique()) - set(label_map)
+        if unknown:
+            raise ValueError(f"Labels {sorted(map(str, unknown))} are not in the label map {label_map}.")
+        data[label_col_name]=data[label_col_name].map(label_map)
+        ##Print mapping
+        logger.info(f"Label mapping: {label_map}")
+    ###If float, make int
+    elif pd.api.types.is_float_dtype(data[label_col_name]):
+        data[label_col_name]=data[label_col_name].astype(int)
+    ###If int, do nothing
+    elif not pd.api.types.is_integer_dtype(data[label_col_name]):
+        raise ValueError(f"Label column {label_col_name} is not an int, float or string.")
+
+    ##Check if on columns are strings - make strings if not
+    for col_name in on:
+        if not (
+            pd.api.types.is_object_dtype(data[col_name].dtype)
+            or pd.api.types.is_string_dtype(data[col_name].dtype)
+        ):
+            data[col_name]=data[col_name].astype(str)
+
+
+    ##Serialize columns using the model's tokenizer
+    if len(on)> 1:
+        data["text"]=serialize_columns(data,on,model=model)
+    else:
+        data["text"]=data[on[0]]
+    
+    ##Rename label column to label
+    data=data.rename(columns={label_col_name:"label"})
+    num_labels,prop_labels = get_num_props_labels(data, num_labels=len(label_map))
+    logger.info(f"Number of labels: {num_labels}")
+    logger.info(f"Proportions of labels: {prop_labels}")
+
+
+
+
+    return data, num_labels, prop_labels, label_map
+
+
+
+
+def load_default_training_args(config_path):
+    with open(config_path, "r") as f:
+        return json.load(f)
+
+
+
+@hf_progress_bars_off_if_disabled()
+def train_clf_model(data=None,model="distilroberta-base",on=None,label_col_name="label",train_data=None,val_data=None,test_data=None,data_dir=".",
+                    training_args=None,config=CLF_CONFIG_PATH,
+                    eval_steps=None,save_steps=None,batch_size=None,lr=None,
+                    epochs=None,model_save_dir=".", weighted_loss=False,weight_list=None,
+                    wandb_log=False,wandb_name="topic",
+                    print_test_mistakes=False):
+    """
+    Trains a text classification model using Hugging Face's Transformers library.
+    
+    :param data: (str/DataFrame, optional) Path to the CSV file or a DataFrame object containing the training data.
+    :param model: (str, default="distilroberta-base") The name of the Hugging Face model to be used.
+    :param on: (list, default=[]) List of column names that are used as input features.
+    :param label_col_name: (str, default="label") The column name in the data that contains the labels.
+    :param train_data: (str/DataFrame, optional) Training dataset if `data` is not provided.
+    :param val_data: (str/DataFrame, optional) Validation dataset if `data` is not provided.
+    :param test_data: (str/DataFrame, optional) Test dataset if `data` is not provided.
+    :param data_dir: (str, default=".") Directory where training data splits are saved.
+    :param training_args: (dict, default={}) Training arguments for the Hugging Face Trainer.
+    :param config: (str, default=CLF_CONFIG_PATH) Path to the default config file.
+    :param eval_steps: (int, optional) Evaluation interval in terms of steps.
+    :param save_steps: (int, optional) Model saving interval in terms of steps.
+    :param batch_size: (int, optional) Batch size for training and evaluation.
+    :param lr: (float, optional) Learning rate.
+    :param epochs: (int, optional) Number of training epochs.
+    :param model_save_dir: (str, default=".") Directory where the trained model will be saved.
+    :param weighted_loss: (bool, default=False) If true, uses weighted loss based on class frequencies.
+    :param weight_list: (list, optional) Weights for each class in the loss function.
+    :param wandb_log: (bool, default=False) If true, logs metrics to Weights & Biases.
+    :param wandb_name: (str, default="topic") Name of the Weights & Biases project.
+    :param print_test_mistakes: (bool, default=False) If true, prints the misclassified samples in the test dataset.
+    
+    :return: 
+        - best_model_path (str): Path to the directory of the best saved model.
+        - best_metric (float): The best metric value achieved during training.
+        - label_map (dict): Mapping of labels to their respective integer values.
+        
+    Note:
+        Either the `data` parameter or all of `train_data`, `val_data`, and `test_data` should be provided. If only
+        `data` is provided, it will be split into train, validation, and test sets.
+    """
+    
+    on = [] if on is None else on
+
+    if train_data is None and val_data is None and test_data is None:
+        ##Read csv or dataframe object
+        data = pd.read_csv(data) if isinstance(data,str) else data
+        train_data,val_data,test_data = train_test_dev_split(data, data_dir, test_perc=0.15, eval_perc=0.15)
+        label_map = _shared_label_map([train_data, val_data, test_data], label_col_name)
+        train_data,num_labels, prop_labels, label_map=preprocess_data(train_data,model,on,label_col_name,label_map)
+        val_data,_,_,_=preprocess_data(val_data,model,on,label_col_name,label_map)
+        test_data,_,_,_=preprocess_data(test_data,model,on,label_col_name,label_map)
+        save_training_splits(data_dir,train_data,val_data,test_data)
+
+    else:
+        data=None
+        train_data = pd.read_csv(train_data) if isinstance(train_data,str) else train_data
+        val_data = pd.read_csv(val_data) if isinstance(val_data,str) else val_data
+        test_data = pd.read_csv(test_data) if isinstance(test_data,str) else test_data
+        label_map = _shared_label_map([train_data, val_data, test_data], label_col_name)
+        train_data,num_labels, prop_labels, label_map=preprocess_data(train_data,model,on,label_col_name,label_map)
+        val_data,_,_,_=preprocess_data(val_data,model,on,label_col_name,label_map)
+        test_data,_,_,_=preprocess_data(test_data,model,on,label_col_name,label_map)
+        save_training_splits(data_dir,train_data,val_data,test_data)
+        
+    ##Tokenize data
+    datasets = {}
+    for dataset in ["train", "eval", "test"]:
+        datasets[dataset] = tokenize_data_for_finetuning(
+            directory=os.path.join(data_dir,f'{dataset}.csv'),
+            hf_model=model
+        )
+
+    specified_training_args = {} if training_args is None else dict(training_args)
+
+    ##Load config as training args
+    training_args = load_default_training_args(config)
+    
+    ##Override if training_args is not empty
+    if len(training_args)>0:
+        training_args.update(specified_training_args)
+    logger.info(f"Updating training args with: {specified_training_args}")
+    
+    ##Override some args
+    if lr is not None:
+        training_args["learning_rate"] = lr
+    if batch_size is not None:
+        training_args["per_device_train_batch_size"] = batch_size
+        training_args["per_device_eval_batch_size"] = batch_size
+    if epochs is not None:
+        training_args["num_train_epochs"] = epochs
+    if eval_steps is not None:
+        training_args["eval_strategy"] = "steps"
+        training_args["eval_steps"] = eval_steps
+    if save_steps is not None:
+        training_args["save_steps"] = save_steps
+
+    
+    
+
+    ##Get weight list from data if needed
+    weight_list=weight_list if weight_list is not None else [1-prop for prop in prop_labels] if weighted_loss else None
+
+    ##Train model
+    best_model_path, best_metric = train_model(
+        datasets["train"],
+        datasets["eval"],
+        model,
+        model_save_dir,
+        num_labels=num_labels,
+        training_args=training_args,
+        wandb_log=wandb_log,
+        wandb_name=wandb_name,
+        weight_list=weight_list, 
+        )
+    
+    logger.info(f"Note the path to the best model: {best_model_path}")
+
+    ###Save label map 
+    if best_model_path is  None:
+        logger.warning("No model was saved because the trained model is not better than the pretraind one. Try tuning the hyperparameters or training for longer")
+    else:    
+        ##Save the tokenizer and the base model name next to the model (used by classify_rows and the model card)
+        AutoTokenizer.from_pretrained(model).save_pretrained(best_model_path)
+        with open(os.path.join(best_model_path, "LT_training_config.json"), "w") as f:
+            json.dump({"base_model_path": model}, f, indent=2)
+
+        ##Evaluate model (test)
+        test_results=evaluate_test(best_model_path,datasets["test"],data_dir,num_labels=num_labels,print_mistakes=print_test_mistakes)
+
+        ###Save test results
+        pd.DataFrame(test_results,index=[0]).to_csv(f"{best_model_path}/test_results.csv")
+
+        ##Log test results to wandb
+        if wandb_log:
+            _require("wandb").log(test_results)
+        with open(f"{best_model_path}/label_map.json","w") as f:
+            json.dump(label_map,f)
+    
+
+    
+    return best_model_path, best_metric, label_map
+
+
+

@@ -1,0 +1,25 @@
+{
+  "model_save_dir": "models",
+  "model_save_name" : "linkage",
+  "opt_model_description":null,
+  "opt_model_lang":null,
+  "train_batch_size": 64,
+  "num_epochs": 10,
+  "warm_up_perc": 1,
+  "learning_rate": 2e-5,
+  "loss_type": "supcon", 
+  "val_perc": 0.2,
+  "wandb_names": {
+    "project": "linktransformer",
+    "id": "your-id",
+    "run": "run-name",
+    "entity": "your-id"
+  }, 
+  "add_pooling_layer": false,
+  "large_val": true,
+  "eval_steps_perc": 0.5,
+  "test_at_end": true,
+  "save_val_test_pickles": true,
+  "val_query_prop": 0.5,
+  "loss_params":{}
+}
