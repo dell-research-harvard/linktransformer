@@ -30,6 +30,9 @@ def cluster(cluster_type, cluster_params, corpus_embeddings, corpus_ids=None):
 
     # Fill in defaults on a copy so the caller's dict is never modified
     cluster_params = dict(cluster_params or {})
+    if cluster_type == "agglomerative" and cluster_params.get("metric", "euclidean") != "euclidean":
+        # ward, the default linkage, only works with euclidean distances
+        cluster_params.setdefault("clustering linkage", "average")
     for key, default_value in default_params_for_type.items():
         cluster_params.setdefault(key, default_value)
 

@@ -542,7 +542,7 @@ def cluster_rows(
     
     - "agglomerative": 
         - "threshold": 0.5
-        - "clustering linkage": "ward"
+        - "clustering linkage": "ward" ("average" when the metric is not euclidean, since ward needs euclidean)
         - "metric": "euclidean"
 
     - "HDBScan": 
@@ -603,6 +603,7 @@ def dedup_rows(
 ) -> DataFrame:
     """
     Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
+    Rows that SLINK or HDBScan leave unclustered (cluster -1) have no near-duplicates, so all of them are kept.
     Refer to the docs for the cluster_rows function for more details.
 
     :param df (DataFrame): Dataframe to deduplicate.
@@ -632,7 +633,9 @@ def dedup_rows(
 
     df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key, gemini_key, embedding_cache=embedding_cache,
                       progress_bar=progress_bar)
-    df = df.drop_duplicates(subset="cluster", keep="first")
+    # SLINK and HDBScan label every row they leave unclustered -1: each of those is a group of its own, so keep them all
+    unclustered = df["cluster"] == -1
+    df = df[unclustered | ~df.duplicated(subset="cluster", keep="first")]
     df = df.drop(columns=["cluster"])
     logger.info(f"Number of rows after deduplication: {len(df)}")
 
@@ -1070,17 +1073,33 @@ def merge_range(
     return df_lm_matched
 
 
+def _parse_json_reply(text: str) -> Any:
+    """The JSON value in an LLM reply: the whole reply, a ```json fenced block, or the first {...} object in it.
+    None if none of them parses."""
+    candidates = [text, *re.findall(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)]
+    braced = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if braced:
+        candidates.append(braced.group(0))
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except ValueError:
+            continue
+    return None
+
+
 def _coerce_llm_match_and_confidence(response_text: str) -> Tuple[int, float]:
     """
     Parse an LLM response into a binary match flag and confidence in [0, 1].
-    Expected format is JSON with keys like `is_match` and `confidence`, but the
+    Expected format is JSON with keys like `is_match` and `confidence`, possibly inside a ```json fence, but the
     parser is intentionally permissive for robustness.
     """
     is_match = 0
     confidence = 0.0
+    response_text = response_text or ""
 
-    try:
-        payload = json.loads(response_text)
+    payload = _parse_json_reply(response_text)
+    if payload is not None:
         if isinstance(payload, dict):
             raw_match = payload.get("is_match", payload.get("match", payload.get("label", 0)))
             if isinstance(raw_match, bool):
@@ -1101,12 +1120,17 @@ def _coerce_llm_match_and_confidence(response_text: str) -> Tuple[int, float]:
                 confidence = float(payload[1])
             except Exception:
                 pass
-    except Exception:
+    else:
+        # free text, or JSON cut off by max_tokens
         lower_txt = response_text.lower()
-        if any(tok in lower_txt for tok in ["yes", "true", "match"]):
+        match_field = re.search(r"is_match\W*(\w+)", lower_txt)
+        if match_field:
+            is_match = int(match_field.group(1) in {"1", "true", "yes"})
+        elif re.search(r"\b(yes|true|match)\b", lower_txt) and not re.search(r"\b(no|not|false)\b", lower_txt):
             is_match = 1
 
-        score_matches = re.findall(r"([01](?:\.\d+)?)", response_text)
+        confidence_field = re.search(r"confidence\W*([01](?:\.\d+)?)", lower_txt)
+        score_matches = [confidence_field.group(1)] if confidence_field else re.findall(r"([01](?:\.\d+)?)", response_text)
         if score_matches:
             try:
                 confidence = float(score_matches[-1])
@@ -1312,6 +1336,9 @@ def judge_merge_k_out(
     - `llm_input_payload`: serialized JSON payload sent to the judge LLM
     - `llm_is_match`, `llm_confidence`, `llm_raw_response`
 
+    :param confidence_threshold: optional post-filter: keep rows the LLM judged with `llm_confidence` at or above
+        this value (matches and non-matches), and rows skipped for a high score (`judge_skip_upper_thresh`).
+        Rows skipped for a low score (`judge_skip_lower_thresh`) are dropped.
     :param dry_run: if True, call no LLM and write no checkpoint; return a dict instead of a dataframe with
         `llm_calls` (one per candidate row still to judge, after skipping rows already judged in `candidates_df`,
         rows found in the checkpoint when `resume=True`, and rows outside the judge_skip_* score range) and
@@ -1719,7 +1746,13 @@ def judge_merge_k_out(
     candidates["llm_input_payload"] = llm_inputs
 
     if confidence_threshold is not None:
-        candidates = candidates[candidates["llm_confidence"] >= confidence_threshold]
+        # Rows skipped by score carry the sentinel 99, not an LLM confidence: keep those skipped for a high score
+        # (presumed matches) and drop those skipped for a low score (presumed non-matches).
+        keep = pd.to_numeric(candidates["llm_confidence"], errors="coerce") >= confidence_threshold
+        if judge_skip_lower_thresh is not None and "score" in candidates.columns:
+            skipped = pd.to_numeric(candidates["llm_is_match"], errors="coerce") == 99
+            keep &= ~(skipped & (pd.to_numeric(candidates["score"], errors="coerce") <= judge_skip_lower_thresh))
+        candidates = candidates[keep]
 
     return candidates
 
@@ -1792,7 +1825,7 @@ def merge_k_judge(
         - Override this with `judge_on` for symmetric judging columns, or
             `judge_left_on` / `judge_right_on` for asymmetric column names.
 
-    :param confidence_threshold: optional post-filter threshold on llm_confidence.
+    :param confidence_threshold: optional post-filter on llm_confidence; see judge_merge_k_out.
     :param judge_skip_lower_thresh: if set, rows with `score` less than or equal to this threshold
         skip LLM judging and are assigned sentinel `99` in llm columns.
     :param judge_skip_upper_thresh: if set, rows with `score` greater than or equal to this threshold

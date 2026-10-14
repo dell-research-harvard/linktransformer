@@ -61,6 +61,28 @@ def test_lt_train_onlinecontrastive(linked_pairs, tmp_path):
     _check_saved_model(path)
 
 
+def test_lt_clf_preprocess_shares_label_ids_across_splits_and_uses_tokenizer_sep():
+    from transformers import AutoTokenizer
+    from linktransformer.train_clf_model import _shared_label_map, get_num_props_labels, preprocess_data
+
+    # text labels first appear in a different order in each split
+    train = pd.DataFrame({"head": ["a", "b", "c"], "body": ["x", "y", "z"], "label": ["Riot", "Protest", "Neither"]})
+    val = pd.DataFrame({"head": ["d", "e"], "body": ["u", "v"], "label": ["Neither", "Riot"]})
+    label_map = _shared_label_map([train, val], "label")
+    train_out, num_labels, _, _ = preprocess_data(train, TINY_CLASSIFIER, ["head", "body"], "label", label_map)
+    val_out, _, _, _ = preprocess_data(val, TINY_CLASSIFIER, ["head", "body"], "label", label_map)
+
+    assert num_labels == 3
+    assert train_out["label"].tolist() == [label_map["Riot"], label_map["Protest"], label_map["Neither"]]
+    assert val_out["label"].tolist() == [label_map["Neither"], label_map["Riot"]]
+    # several columns are joined with the tokenizer's separator, as classify_rows does at inference
+    sep = AutoTokenizer.from_pretrained(TINY_CLASSIFIER).sep_token
+    assert train_out["text"].tolist()[0] == f"a{sep}x"
+
+    # class proportions are listed in label-id order, including ids missing from the split
+    assert get_num_props_labels(pd.DataFrame({"label": [2, 2, 2, 0]}), num_labels=3) == (3, [0.25, 0.0, 0.75])
+
+
 def test_lt_train_classifier(tmp_path):
     texts = [f"Protesters marched in city {i}" for i in range(30)] + [f"Quarterly earnings report {i}" for i in range(30)]
     data = pd.DataFrame({"text": texts, "label": [1] * 30 + [0] * 30})

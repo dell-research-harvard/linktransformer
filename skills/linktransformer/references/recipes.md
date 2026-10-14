@@ -121,12 +121,14 @@ big = clustered["cluster"].value_counts().index[0]
 print(clustered.loc[clustered["cluster"] == big, "company_name"].head(10).tolist())
 ```
 
-SLINK (DBSCAN) and HDBScan label unclustered rows `-1`, and `dedup_rows` would merge all of them into one row. Deduplicate from `cluster_rows` instead:
+SLINK (DBSCAN) and HDBScan label rows without near-duplicates `-1` in `cluster_rows`. `dedup_rows` keeps every one of those rows:
 
 ```python
 slink = lt.cluster_rows(firms, model="all-MiniLM-L6-v2", on="company_name", cluster_type="SLINK",
                         cluster_params={"threshold": 0.15, "min cluster size": 2}, embedding_cache="lt_cache")
-deduped = slink[(slink["cluster"] == -1) | ~slink.duplicated("cluster")].drop(columns="cluster")
+deduped = lt.dedup_rows(firms, model="all-MiniLM-L6-v2", on="company_name", cluster_type="SLINK",
+                        cluster_params={"threshold": 0.15, "min cluster size": 2}, embedding_cache="lt_cache")
+print((slink["cluster"] == -1).sum(), "unclustered rows;", len(deduped), "rows kept")
 ```
 
 SLINK is single linkage: one chain of close pairs can join very different names. Keep its threshold small.
@@ -168,25 +170,23 @@ out = lt.merge_knn(firms_a, firms_b, on="CompanyName", model=path, k=1)   # use 
 - The returned path is the best checkpoint. Evaluation results and `LT_training_config.json` are saved next to it.
 - Real runs take minutes to hours, so run them as background jobs (see [llm-workflows.md](llm-workflows.md#long-job-template)) and on a GPU when you can.
 
-Classifiers train the same way with `lt.train_clf_model`, which returns `(best_model_path, best_metric, label_map)`. Given only `data`, it splits it 70/15/15 into train, eval and test. Three things to get right in 0.2.0:
+Classifiers train the same way with `lt.train_clf_model`, which returns `(best_model_path, best_metric, label_map)`. Given only `data`, it splits it 70/15/15 into train, eval and test. Labels can be text or integers, and `on` can list several columns, joined with the tokenizer's separator as `classify_rows` does. Two things to get right:
 
-- **Map text labels to integers yourself, in place.** Text labels are re-coded separately in each split, so the same class can get different ids in train and eval. The label column is renamed to `label` internally, so the frame must not also contain another column called `label`.
-- **Train on a single text column.** With several `on` columns, training joins them with the model *name* as separator (`"headline" + "distilroberta-base" + "text"`), while `classify_rows` joins with the tokenizer's separator. Build one column yourself.
 - **Evaluate before the run ends.** The best model is chosen at evaluation steps (every 30 by default). On small data, set `eval_steps` / `save_steps` below the number of training steps, or no checkpoint is saved.
+- **Don't keep a second column named `label`.** The label column is renamed to `label` internally.
 
 ```python
-train = pd.read_csv(os.path.join(D, "protest_train.csv")).sample(120, random_state=0)
-labels = {"Neither": 0, "Protest": 1, "Riot": 2}
-train["label"] = train["label"].map(labels)
-train["doc"] = train["headline"].fillna("") + ". " + train["text"].fillna("")
+train = pd.read_csv(os.path.join(D, "protest_train.csv")).sample(120, random_state=0)   # label: Neither / Protest / Riot
 
 best_path, best_f1, label_map = lt.train_clf_model(
-    data=train, model="distilroberta-base", on=["doc"], label_col_name="label",
+    data=train, model="distilroberta-base", on=["headline", "text"], label_col_name="label",
     epochs=1, batch_size=8, eval_steps=5, save_steps=5,
     data_dir="lt_clf_data", model_save_dir="lt_clf",
 )
-pred = lt.classify_rows(train.head(8), on="doc", model=best_path, num_labels=len(labels), progress_bar=False)
-print(pred[["label", "clf_preds_doc"]])
+pred = lt.classify_rows(train.head(8), on=["headline", "text"], model=best_path, num_labels=len(label_map),
+                        progress_bar=False)
+print(label_map)
+print(pred[["label", "clf_preds_headline-text"]])
 ```
 
-Predictions come back as the ids written as strings (`"0"`, `"1"`, `"2"`), because the saved `label_map.json` has string keys. Map them back with `{str(v): k for k, v in labels.items()}`.
+Predictions come back as the original text labels, read from the `label_map.json` saved with the model.

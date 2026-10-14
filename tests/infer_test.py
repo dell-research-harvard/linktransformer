@@ -132,6 +132,30 @@ def test_lt_cluster_rows_agglomerative_params():
     assert isinstance(df_cluster, pd.DataFrame)
 
 
+# two tight groups of directions: rows 0-1 and rows 2-3
+_TWO_GROUPS = np.array([[1.0, 0.0], [0.99, 0.1], [0.0, 1.0], [0.1, 0.99]])
+
+
+@pytest.mark.parametrize("cluster_params", [None, {"threshold": 0.5, "metric": "cosine"}])
+def test_lt_cluster_rows_agglomerative_non_euclidean_metric(monkeypatch, cluster_params):
+    # the default params use the cosine metric, which ward linkage rejects: average linkage is used instead
+    monkeypatch.setattr(infer_mod, "infer_embeddings", lambda strings, *args, **kwargs: _TWO_GROUPS[:len(strings)])
+    out = lt.cluster_rows(pd.DataFrame({"name": list("abcd")}), model=object(), on="name",
+                          cluster_type="agglomerative", cluster_params=cluster_params)
+    labels = out["cluster"].tolist()
+    assert labels[0] == labels[1] != labels[2] == labels[3]
+
+
+def test_lt_dedup_rows_keeps_unclustered_rows(monkeypatch):
+    # SLINK and HDBScan label rows without near-duplicates -1; each of those is a group of its own
+    df = pd.DataFrame({"name": ["Apple Inc", "Apple Incorporated", "Microsoft", "Banana Republic", "Toyota",
+                                "Toyota Motor"]})
+    monkeypatch.setattr(infer_mod, "infer_embeddings", lambda strings, *args, **kwargs: np.ones((len(strings), 2)))
+    monkeypatch.setattr(infer_mod, "cluster", lambda *args, **kwargs: np.array([0, 0, -1, -1, 1, 1]))
+    out = lt.dedup_rows(df, model=object(), on="name", cluster_type="SLINK")
+    assert out["name"].tolist() == ["Apple Inc", "Microsoft", "Banana Republic", "Toyota"]
+
+
 ###Test evaluate pairs
 def test_lt_evaluate_pairs():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_pairs.csv"))

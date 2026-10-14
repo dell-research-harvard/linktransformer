@@ -752,6 +752,64 @@ def test_lt_coerce_llm_match_and_confidence_fallback_text():
     assert confidence == 0.75
 
 
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        # some models (often Gemini) wrap the JSON in a code fence; "is_match" must not read as the word "match"
+        ('```json\n{"is_match": 0, "confidence": 0.9}\n```', (0, 0.9)),
+        ('```json\n{"is_match": 1, "confidence": 0.8}\n```', (1, 0.8)),
+        ('```\n{"is_match": 0, "confidence": 0.6}\n```', (0, 0.6)),
+        ('Here is my answer: {"is_match": 0, "confidence": 0.7}', (0, 0.7)),
+        ('{"is_match": 0, "confid', (0, 0.0)),  # cut off by max_tokens
+        ("No, this is not a match. confidence: 0.85", (0, 0.85)),
+        ("", (0, 0.0)),
+    ],
+)
+def test_lt_coerce_llm_match_and_confidence_fenced_and_free_text(reply, expected):
+    assert infer_mod._coerce_llm_match_and_confidence(reply) == expected
+
+
+def test_lt_judge_merge_k_out_confidence_threshold_drops_low_score_skips(monkeypatch):
+    candidates = pd.DataFrame(
+        {
+            "CompanyName_x": ["A", "B", "C", "D"],
+            "CompanyName_y": ["A2", "B2", "C2", "D2"],
+            "score": [0.99, 0.70, 0.60, 0.05],
+        }
+    )
+    replies = {"B": '{"is_match": 1, "confidence": 0.95}', "C": '{"is_match": 0, "confidence": 0.40}'}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            left = json.loads(kwargs["messages"][1]["content"])["left"]["CompanyName"]
+            msg = types.SimpleNamespace(content=replies[left])
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg)])
+
+    class _FakeOpenAIClient:
+        def __init__(self, api_key, timeout):
+            self.chat = types.SimpleNamespace(completions=_FakeCompletions())
+
+    monkeypatch.setattr(infer_mod.openai, "OpenAI", _FakeOpenAIClient)
+
+    out = infer_mod.judge_merge_k_out(
+        candidates_df=candidates,
+        on="CompanyName",
+        openai_key="dummy",
+        llm_provider="openai",
+        judge_llm_model="gpt-4o-mini",
+        judge_skip_lower_thresh=0.1,
+        judge_skip_upper_thresh=0.95,
+        confidence_threshold=0.5,
+        max_retries=1,
+        progress_bar=False,
+    )
+
+    # A: skipped for a high score (kept); B: judged, confident (kept); C: judged, not confident (dropped);
+    # D: skipped for a low score (dropped, although its sentinel confidence 99 is above the threshold)
+    assert out["CompanyName_x"].tolist() == ["A", "B"]
+    assert out["llm_is_match"].tolist() == [99, 1]
+
+
 def test_lt_resolve_knn_retrieval_config_mutual_exclusion_error():
     with pytest.raises(ValueError, match="Specify only one"):
         infer_mod._resolve_knn_retrieval_config(

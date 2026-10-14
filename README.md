@@ -77,8 +77,9 @@ judged = lt.merge_k_judge(
 
 # key output columns:
 # - score (retrieval similarity)
-# - is_match (bool)
-# - confidence (float in [0, 1] when available)
+# - llm_is_match (1 match, 0 no match; 99 if judge_skip_*_thresh skipped the pair)
+# - llm_confidence (float in [0, 1]; 99 for skipped pairs)
+# - llm_raw_response (the judge's reply)
 ```
 
 You can also combine providers (for example OpenAI embeddings retrieval + Gemini judge) by setting `knn_api_model`, `judge_llm_model`, and `llm_provider` explicitly.

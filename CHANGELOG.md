@@ -128,6 +128,17 @@
         - train_clf_model no longer writes a tokenizer into a folder named "None" when no
           checkpoint beats the base model.
         - cluster_rows/dedup_rows no longer mutate a shared default `cluster_params` dict.
+        - dedup_rows with SLINK or HDBScan keeps every row those methods leave unclustered (cluster -1);
+          it used to keep only one of them.
+        - Agglomerative clustering with a non-euclidean metric, including the default cluster_params,
+          uses average linkage instead of raising an error (ward linkage needs euclidean distances).
+        - The LLM judge reads replies wrapped in a ```json fence or surrounded by text. Before, a fenced
+          {"is_match": 0} was read as a match because the key name contains the word "match".
+        - judge_merge_k_out/merge_k_judge `confidence_threshold` drops rows skipped for a low score
+          (judge_skip_lower_thresh); their sentinel confidence of 99 used to pass every threshold.
+        - train_clf_model: text labels get the same ids in the train, eval and test splits (each split
+          was numbered on its own), several `on` columns are joined with the tokenizer's separator
+          (the model name was used), and class weights for weighted_loss follow label ids.
         - load_model raises a clear error instead of an UnboundLocalError when loading fails.
         - Training modules no longer add the package directory to sys.path.
         - Informational output uses the `logging` module instead of print, and training

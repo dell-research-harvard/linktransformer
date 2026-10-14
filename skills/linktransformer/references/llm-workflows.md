@@ -96,29 +96,19 @@ Read the pairs the judge rejected with a high `score`, and those it accepted wit
 
 ## Check the judge output
 
-In 0.2.0 the reply parser mis-reads a reply wrapped in a ```` ```json ```` fence as a match, and some models (often Gemini) add those fences. Re-parse the raw replies and compare:
+The judge reads `is_match` and `confidence` from JSON replies, including replies in a ```` ```json ```` fence or with text around them. A reply that isn't JSON falls back to keywords (yes / no / match), and anything else counts as a non-match with confidence 0. So look for replies that never stated `is_match`:
 
 ```python
-import re
-
-def reparse_is_match(raw):
-    """is_match from a raw judge reply, tolerating code fences; None if the reply has no readable JSON."""
-    found = re.search(r"\{.*\}", str(raw), flags=re.S)
-    try:
-        return int(json.loads(found.group(0))["is_match"])
-    except (AttributeError, ValueError, KeyError, TypeError):
-        return None
-
-judged = pilot.copy()
-llm_ran = judged["llm_is_match"] != 99
-judged.loc[llm_ran, "llm_is_match"] = judged.loc[llm_ran, "llm_raw_response"].map(reparse_is_match)
-print("unreadable replies:", judged.loc[llm_ran, "llm_is_match"].isna().sum())
+llm_ran = pilot["llm_is_match"] != 99   # 99: skipped by score, no LLM call
+odd = pilot[llm_ran & ~pilot["llm_raw_response"].astype(str).str.contains("is_match")]
+print(len(odd), "replies without an is_match field")
+print(odd["llm_raw_response"].head().tolist())
 ```
 
-Then summarize the judged pairs. `match_report` reads `llm_is_match`, so run it on the re-parsed frame:
+If there are many, raise `llm_params={"max_tokens": ...}` (a cut-off reply loses its fields) or make the prompt stricter. Then summarize the judged pairs:
 
 ```python
-report = lt.match_report(judged, pilot_left, right, on="CompanyName")
+report = lt.match_report(pilot, pilot_left, right, on="CompanyName")
 print(json.dumps(report["llm"]))         # rows judged / skipped, match rate, confidence, disagreements with the cutoff
 print(json.dumps(report["threshold"]))   # score cutoff that agrees best (F1) with the LLM's labels
 for s in report["samples"]:
@@ -130,11 +120,11 @@ A high `llm_match_below_threshold` or `llm_non_match_at_or_above_threshold` unde
 Then decide matches yourself, counting pairs skipped for a high score as matches:
 
 ```python
-matches = judged[(judged["llm_is_match"] == 1) | ((judged["llm_is_match"] == 99) & (judged["score"] >= hi))]
+matches = pilot[(pilot["llm_is_match"] == 1) | ((pilot["llm_is_match"] == 99) & (pilot["score"] >= hi))]
 best = matches.sort_values("score", ascending=False).drop_duplicates("id_lt_x")   # at most one match per left row
 ```
 
-`confidence_threshold=` filters on `llm_confidence >= threshold`, which also keeps every skipped row (`99`), including those skipped for a low score. Prefer the explicit filter above.
+`confidence_threshold=` keeps judged rows with `llm_confidence >= threshold`, matches and non-matches alike, plus rows skipped for a high score. It drops rows skipped for a low score. It doesn't select matches, so you still need the filter above.
 
 ## Classify rows with an LLM
 
@@ -241,7 +231,7 @@ print(json.dumps(lt.match_report(judged, left, right, on="CompanyName")["llm"]),
 print("done", flush=True)
 ```
 
-To check on it, run `tail -n 5 link_job.log` and `wc -l lt_out/judge_checkpoint.jsonl` (pairs judged so far). Don't block on the process. After a crash, rerun the same command: the dry run then counts only the pairs still to judge. The judged output still needs the [re-parse check](#check-the-judge-output) before you use it.
+To check on it, run `tail -n 5 link_job.log` and `wc -l lt_out/judge_checkpoint.jsonl` (pairs judged so far). Don't block on the process. After a crash, rerun the same command: the dry run then counts only the pairs still to judge.
 
 On a Slurm cluster, submit the same script from a shell where the API key is already exported. `sbatch` passes the submitting environment to the job by default, so the key never has to be written to disk. Add partition and account flags as the cluster requires:
 

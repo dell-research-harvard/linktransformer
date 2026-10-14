@@ -16,7 +16,7 @@ except ImportError as exc:
     raise ImportError("Training requires the `train` extra. Install it with: pip install 'linktransformer[train]'") from exc
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
 import sklearn.model_selection
-from typing import Tuple, List, Union
+from typing import List, Optional, Tuple, Union
 
 from linktransformer.progress import hf_progress_bars_off_if_disabled, progress_enabled
 from linktransformer.utils import _require, serialize_columns
@@ -26,20 +26,22 @@ logger = logging.getLogger(__name__)
 
 
 
-def get_num_props_labels(pd_data: pd.DataFrame, label_col: str = "label") -> Tuple[int, List[float]]:
+def get_num_props_labels(pd_data: pd.DataFrame, label_col: str = "label", num_labels: Optional[int] = None) -> Tuple[int, List[float]]:
     """
-    Get the number of unique labels and their proportions from a DataFrame.
+    Get the number of labels and their proportions from a DataFrame whose labels are the ids 0 .. num_labels - 1.
 
     :param pd.DataFrame pd_data: The DataFrame containing the label data.
     :param str label_col: The name of the column containing the labels. Defaults to "label".
-    
+    :param int num_labels: Number of label ids. Defaults to the number of unique labels in pd_data.
+
     :return: Tuple containing:
-             - int: Number of unique labels.
-             - List[float]: Proportions of each unique label.
+             - int: Number of labels.
+             - List[float]: Proportion of each label id, in id order (0 for ids absent from pd_data).
     """
-    unique_labels = pd_data[label_col].unique()
-    label_proportions = pd_data[label_col].value_counts(normalize=True).tolist()
-    return len(unique_labels), label_proportions
+    label_proportions = pd_data[label_col].value_counts(normalize=True)
+    if num_labels is None:
+        num_labels = len(label_proportions)
+    return num_labels, label_proportions.reindex(range(num_labels), fill_value=0.0).tolist()
 
 def train_test_dev_split(pd_data: pd.DataFrame, save_dir: str, test_perc: float = 0.15, eval_perc: float = 0.15) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
@@ -271,7 +273,23 @@ def save_training_splits(save_dir,train_data,val_data,test_data):
     logger.info(f"{len(val_data)} dev examples")
     logger.info(f"{len(test_data)} test examples")
 
-def preprocess_data(data,model,on,label_col_name):
+def _label_map_for(labels: pd.Series) -> dict:
+    """Integer ids for a label column: text labels numbered in order of first appearance, numeric labels kept as they are."""
+    labels = labels.dropna()
+    if pd.api.types.is_object_dtype(labels) or pd.api.types.is_string_dtype(labels):
+        return {label: i for i, label in enumerate(labels.unique())}
+    if pd.api.types.is_float_dtype(labels) or pd.api.types.is_integer_dtype(labels):
+        return {i: i for i in range(int(labels.max()) + 1)} if len(labels) else {}
+    raise ValueError(f"Label column {labels.name} is not an int, float or string.")
+
+
+def _shared_label_map(frames: List[pd.DataFrame], label_col_name: str) -> Optional[dict]:
+    """One label map for all splits, so each class gets the same id in train, eval and test."""
+    labels = [frame[label_col_name] for frame in frames if label_col_name in frame.columns]
+    return _label_map_for(pd.concat(labels, ignore_index=True)) if labels else None
+
+
+def preprocess_data(data,model,on,label_col_name,label_map=None):
     ##Check if on column are in data
     ##If not, error
     if isinstance(on,str):
@@ -290,24 +308,24 @@ def preprocess_data(data,model,on,label_col_name):
     data=data.dropna(subset=on,how="all")
 
     ###Drop if label column is null
-    data=data.dropna(subset=[label_col_name],how="any")
+    data=data.dropna(subset=[label_col_name],how="any").copy()
 
-    ##Check if label is an int - make int if not
-    ###If string, get unique values and map to int starting from 0
+    ##Map labels to int ids. Pass the same label_map for every split, or text labels get different ids per split
+    if label_map is None:
+        label_map = _label_map_for(data[label_col_name])
+    ###If string, map to the ids in label_map
     if pd.api.types.is_object_dtype(data[label_col_name]) or pd.api.types.is_string_dtype(data[label_col_name]):
-        unique_labels=data[label_col_name].unique()
-        label_map={label:i for i,label in enumerate(unique_labels)}
+        unknown = set(data[label_col_name].unique()) - set(label_map)
+        if unknown:
+            raise ValueError(f"Labels {sorted(map(str, unknown))} are not in the label map {label_map}.")
         data[label_col_name]=data[label_col_name].map(label_map)
         ##Print mapping
         logger.info(f"Label mapping: {label_map}")
     ###If float, make int
     elif pd.api.types.is_float_dtype(data[label_col_name]):
         data[label_col_name]=data[label_col_name].astype(int)
-        label_map={i:i for i in range(data[label_col_name].max()+1)}
     ###If int, do nothing
-    elif pd.api.types.is_integer_dtype(data[label_col_name]):
-        label_map={i:i for i in range(data[label_col_name].max()+1)}
-    else:
+    elif not pd.api.types.is_integer_dtype(data[label_col_name]):
         raise ValueError(f"Label column {label_col_name} is not an int, float or string.")
 
     ##Check if on columns are strings - make strings if not
@@ -321,13 +339,13 @@ def preprocess_data(data,model,on,label_col_name):
 
     ##Serialize columns using the model's tokenizer
     if len(on)> 1:
-        data["text"]=serialize_columns(data,on,model)
+        data["text"]=serialize_columns(data,on,model=model)
     else:
         data["text"]=data[on[0]]
     
     ##Rename label column to label
     data=data.rename(columns={label_col_name:"label"})
-    num_labels,prop_labels = get_num_props_labels(data)
+    num_labels,prop_labels = get_num_props_labels(data, num_labels=len(label_map))
     logger.info(f"Number of labels: {num_labels}")
     logger.info(f"Proportions of labels: {prop_labels}")
 
@@ -393,9 +411,10 @@ def train_clf_model(data=None,model="distilroberta-base",on=None,label_col_name=
         ##Read csv or dataframe object
         data = pd.read_csv(data) if isinstance(data,str) else data
         train_data,val_data,test_data = train_test_dev_split(data, data_dir, test_perc=0.15, eval_perc=0.15)
-        train_data,num_labels, prop_labels, label_map=preprocess_data(train_data,model,on,label_col_name)
-        val_data,_,_,_=preprocess_data(val_data,model,on,label_col_name)
-        test_data,_,_,_=preprocess_data(test_data,model,on,label_col_name)
+        label_map = _shared_label_map([train_data, val_data, test_data], label_col_name)
+        train_data,num_labels, prop_labels, label_map=preprocess_data(train_data,model,on,label_col_name,label_map)
+        val_data,_,_,_=preprocess_data(val_data,model,on,label_col_name,label_map)
+        test_data,_,_,_=preprocess_data(test_data,model,on,label_col_name,label_map)
         save_training_splits(data_dir,train_data,val_data,test_data)
 
     else:
@@ -403,9 +422,10 @@ def train_clf_model(data=None,model="distilroberta-base",on=None,label_col_name=
         train_data = pd.read_csv(train_data) if isinstance(train_data,str) else train_data
         val_data = pd.read_csv(val_data) if isinstance(val_data,str) else val_data
         test_data = pd.read_csv(test_data) if isinstance(test_data,str) else test_data
-        train_data,num_labels, prop_labels, label_map=preprocess_data(train_data,model,on,label_col_name)
-        val_data,_,_,_=preprocess_data(val_data,model,on,label_col_name)
-        test_data,_,_,_=preprocess_data(test_data,model,on,label_col_name)
+        label_map = _shared_label_map([train_data, val_data, test_data], label_col_name)
+        train_data,num_labels, prop_labels, label_map=preprocess_data(train_data,model,on,label_col_name,label_map)
+        val_data,_,_,_=preprocess_data(val_data,model,on,label_col_name,label_map)
+        test_data,_,_,_=preprocess_data(test_data,model,on,label_col_name,label_map)
         save_training_splits(data_dir,train_data,val_data,test_data)
         
     ##Tokenize data
