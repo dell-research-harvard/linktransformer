@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 _OPTIONAL_MODULES = {
     "datasets": ("datasets", "train"),
     "google.genai": ("google-genai", "gemini"),
-    "hdbscan": ("hdbscan", None),
     "wandb": ("wandb", "wandb"),
 }
 

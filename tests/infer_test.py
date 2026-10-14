@@ -99,14 +99,17 @@ def test_lt_cluster_rows():
     # Add more assertions to check the correctness of the output
 
 def test_lt_cluster_rows_noargs():
+    # there is no default threshold: the error suggests one
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
-    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2")
-    assert isinstance(df_cluster, pd.DataFrame)
+    with pytest.raises(ValueError, match="sim_threshold"):
+        lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2")
 
 def test_lt_cluster_rows_slink():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
-    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "SLINK")
+    df_cluster=lt.cluster_rows(df,on="CompanyName",model="sentence-transformers/all-MiniLM-L6-v2",cluster_type= "SLINK",
+        sim_threshold=0.8)
     assert isinstance(df_cluster, pd.DataFrame)
+    assert (df_cluster["cluster"] >= 0).all() and (df_cluster["cluster_size"] >= 1).all()
 
 def test_lt_cluster_rows_hdbscan():
     df=pd.read_csv(os.path.join(DATA_DIR_PATH,"toy_comp_2.csv"))
@@ -136,23 +139,24 @@ def test_lt_cluster_rows_agglomerative_params():
 _TWO_GROUPS = np.array([[1.0, 0.0], [0.99, 0.1], [0.0, 1.0], [0.1, 0.99]])
 
 
-@pytest.mark.parametrize("cluster_params", [None, {"threshold": 0.5, "metric": "cosine"}])
-def test_lt_cluster_rows_agglomerative_non_euclidean_metric(monkeypatch, cluster_params):
-    # the default params use the cosine metric, which ward linkage rejects: average linkage is used instead
+@pytest.mark.parametrize("kwargs", [dict(sim_threshold=0.5), dict(cluster_params={"threshold": 0.5, "metric": "cosine"})])
+def test_lt_cluster_rows_agglomerative_non_euclidean_metric(monkeypatch, kwargs):
+    # ward, the original default linkage, rejects the cosine metric: average linkage is used instead
     monkeypatch.setattr(infer_mod, "infer_embeddings", lambda strings, *args, **kwargs: _TWO_GROUPS[:len(strings)])
     out = lt.cluster_rows(pd.DataFrame({"name": list("abcd")}), model=object(), on="name",
-                          cluster_type="agglomerative", cluster_params=cluster_params)
+                          cluster_type="agglomerative", **kwargs)
     labels = out["cluster"].tolist()
     assert labels[0] == labels[1] != labels[2] == labels[3]
 
 
 def test_lt_dedup_rows_keeps_unclustered_rows(monkeypatch):
-    # SLINK and HDBScan label rows without near-duplicates -1; each of those is a group of its own
+    # rows without a near-duplicate are clusters of their own, so all of them are kept
     df = pd.DataFrame({"name": ["Apple Inc", "Apple Incorporated", "Microsoft", "Banana Republic", "Toyota",
                                 "Toyota Motor"]})
-    monkeypatch.setattr(infer_mod, "infer_embeddings", lambda strings, *args, **kwargs: np.ones((len(strings), 2)))
-    monkeypatch.setattr(infer_mod, "cluster", lambda *args, **kwargs: np.array([0, 0, -1, -1, 1, 1]))
-    out = lt.dedup_rows(df, model=object(), on="name", cluster_type="SLINK")
+    vectors = {"Apple Inc": [1.0, 0.0, 0.0], "Apple Incorporated": [0.99, 0.1, 0.0], "Microsoft": [0.0, 1.0, 0.0],
+               "Banana Republic": [0.6, -0.6, -0.5], "Toyota": [0.0, 0.0, 1.0], "Toyota Motor": [0.0, 0.1, 0.99]}
+    monkeypatch.setattr(infer_mod, "infer_embeddings", lambda strings, *args, **kwargs: np.array([vectors[s] for s in strings]))
+    out = lt.dedup_rows(df, model=object(), on="name", cluster_type="SLINK", sim_threshold=0.9)
     assert out["name"].tolist() == ["Apple Inc", "Microsoft", "Banana Republic", "Toyota"]
 
 

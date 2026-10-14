@@ -19,7 +19,6 @@ dependencies = [
   "transformers>=4.56",
   "huggingface-hub>=0.34",
   "networkx>=3.2",
-  "hdbscan>=0.8.40",
   "openai>=1.55.3",
   "openpyxl>=3.1",
   "sentencepiece>=0.2",

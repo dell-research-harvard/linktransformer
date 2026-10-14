@@ -48,7 +48,7 @@ jobs:
         run: uv pip install --resolution ${{ matrix.resolution }} -e ".[dev]"
 
       - name: Show resolved versions
-        run: uv pip list | grep -iE "^(torch|transformers|sentence-transformers|huggingface-hub|datasets|accelerate|openai|google-genai|numpy|pandas|scikit-learn|hdbscan) "
+        run: uv pip list | grep -iE "^(torch|transformers|sentence-transformers|huggingface-hub|datasets|accelerate|openai|google-genai|numpy|pandas|scikit-learn) "
 
       - name: Cache Hugging Face models
         uses: actions/cache@v4

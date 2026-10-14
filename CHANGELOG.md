@@ -10,7 +10,7 @@
           accelerate), `[wandb]` for W&B logging, `[gemini]` for Gemini, or `[all]`.
           Missing optional libraries raise an ImportError naming the extra to install.
         - Removed unused or indirect dependencies: faiss-cpu, scipy, httpx, tiktoken, evaluate,
-          google-generativeai. Removed the stale requirements.txt.
+          google-generativeai, hdbscan. Removed the stale requirements.txt.
         - The package version is defined once, in linktransformer/__init__.py.
 
         Behaviour and performance
@@ -105,6 +105,35 @@
           `progress_bar=` (embedding progress was always shown before), and merge_k_judge's
           progress_bar also covers retrieval.
 
+        Clustering and deduplication
+        - New `sim_threshold=` on cluster_rows and dedup_rows: a cosine similarity, as in merge_range
+          (rows at least this similar belong together). The original `cluster_params["threshold"]`
+          was a distance (1 - similarity), so {"threshold": 0.7} meant similarity >= 0.3 and put
+          unrelated rows in one cluster (#10). It still works as a distance.
+        - SLINK and agglomerative clustering need a threshold: calls without one raise an error
+          suggesting a starting value. The old defaults were inconsistent (similarity >= 0.5 with
+          no cluster_params, >= 0.9 once any cluster_params were passed) and rarely right.
+        - Every row gets a cluster id, numbered 0, 1, ... in order of first appearance, and a new
+          `cluster_size` column. Rows SLINK or HDBScan leave unclustered used to share the label -1;
+          each is now a cluster of its own (`cluster_size` 1). Rows with identical text are always
+          in one cluster, and rows whose `on` columns are all missing are each in their own.
+        - SLINK runs on LinkTransformer's exact torch search (GPU when available), keeping only a
+          chunk of matching pairs in memory, so it scales to millions of rows. Results are the same
+          as scikit-learn's DBSCAN, which it replaces. Each distinct text is embedded and clustered
+          once.
+        - With sim_threshold, agglomerative clustering uses average linkage on cosine distance
+          (linkage "complete" and "single" also work; single linkage runs as SLINK). It raises a
+          clear error, suggesting SLINK or blocking_vars, when its quadratic memory would not fit
+          (#26: 53 GiB for 119k rows).
+        - HDBScan uses scikit-learn's HDBSCAN; the `hdbscan` package is no longer a dependency.
+        - New `blocking_vars=` on cluster_rows and dedup_rows clusters only within groups of rows with
+          the same values (e.g. the same country), and `keep="medoid"` on dedup_rows keeps the most
+          central row of each cluster instead of the first.
+        - New `lt.cluster_embeddings(embeddings, sim_threshold=...)` clusters embeddings computed
+          elsewhere. cluster_params accept snake_case keys ("min_cluster_size", "min_samples",
+          "linkage") as well as the original ones, unknown keys raise an error instead of being
+          ignored, and cluster_type is case-insensitive.
+
         Fixes and contributions
         - Japanese mLUKE models (e.g. lt-wikidata-comp-ja, lt-historicjapan-*): transformers 5.0-5.1
           tokenize them incorrectly without an error (0.1.18 pinned transformers 5.1.0) and later
@@ -128,10 +157,10 @@
         - train_clf_model no longer writes a tokenizer into a folder named "None" when no
           checkpoint beats the base model.
         - cluster_rows/dedup_rows no longer mutate a shared default `cluster_params` dict.
-        - dedup_rows with SLINK or HDBScan keeps every row those methods leave unclustered (cluster -1);
-          it used to keep only one of them.
-        - Agglomerative clustering with a non-euclidean metric, including the default cluster_params,
-          uses average linkage instead of raising an error (ward linkage needs euclidean distances).
+        - dedup_rows keeps every row that has no near-duplicate; with SLINK or HDBScan it used to keep
+          only one of them (they shared the label -1).
+        - Agglomerative clustering with a non-euclidean metric uses average linkage instead of raising
+          an error (ward linkage needs euclidean distances).
         - The LLM judge reads replies wrapped in a ```json fence or surrounded by text. Before, a fenced
           {"is_match": 0} was read as a match because the key name contains the word "match".
         - judge_merge_k_out/merge_k_judge `confidence_threshold` drops rows skipped for a low score

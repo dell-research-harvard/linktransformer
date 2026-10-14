@@ -123,18 +123,23 @@ cleaned = lt.transform_rows(
 
 ### 3) Cluster and deduplicate
 
-- `lt.cluster_rows(...)`: cluster semantically similar rows.
-- `lt.dedup_rows(...)`: cluster + keep representative rows.
+- `lt.cluster_rows(...)`: adds a `cluster` id and its `cluster_size` to every row.
+- `lt.dedup_rows(...)`: keeps one row per cluster.
+- `lt.cluster_embeddings(...)`: clusters embeddings you already have.
 
 ```python
-deduped = lt.dedup_rows(
-    left_df,
-    on="CompanyName",
-    model="sentence-transformers/all-MiniLM-L6-v2",
-    cluster_type="agglomerative",
-    cluster_params={"threshold": 0.7},
-)
+clustered = lt.cluster_rows(left_df, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2",
+                            sim_threshold=0.85)
+deduped = lt.dedup_rows(left_df, on="CompanyName", model="sentence-transformers/all-MiniLM-L6-v2",
+                        sim_threshold=0.85, blocking_vars="Country", keep="medoid")
 ```
+
+`sim_threshold` is a cosine similarity, as in `merge_range`: rows at least this similar belong together. There is no default, because the right value depends on the model and the data: tune it on rows whose clusters you know, or by reading a few clusters at several thresholds. Every row gets a cluster id; a row with no similar row is a cluster of its own.
+
+- `cluster_type="SLINK"` (default) links every pair above the threshold and groups linked rows. It runs on GPU when available and scales to millions of rows, but a chain of close pairs can join dissimilar rows.
+- `cluster_type="agglomerative"` (average linkage) merges clusters while their average similarity is above the threshold, giving tighter clusters. Its memory grows with the square of the number of rows.
+- `cluster_type="HDBScan"` finds dense groups without a threshold (`cluster_params={"min_cluster_size": 5}`).
+- `blocking_vars` clusters only rows with the same values in those columns, which also splits large jobs.
 
 ### 4) Evaluate matched pairs
 

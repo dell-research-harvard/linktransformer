@@ -8,7 +8,8 @@ import linktransformer as lt
 # Every public name available as `lt.<name>` in 0.1.18 (these must keep resolving), plus judge_merge_k_out.
 PUBLIC_API = [
     "DATA_DIR_PATH", "LinkTransformer", "LinkTransformerClassifier", "aggregate_rows", "all_pair_combos_evaluate",
-    "apply_in_chunks", "check_and_prep_data", "check_clust_data", "classify_rows", "cluster", "cluster_rows",
+    "apply_in_chunks", "check_and_prep_data", "check_clust_data", "classify_rows", "cluster", "cluster_embeddings",
+    "cluster_rows",
     "clusters_from_edges", "convert_to_text", "cosine_similarity_corresponding_pairs",
     "cosine_similarity_corresponding_pairs_torch", "create_new_train_config", "dedup_rows", "evaluate_pairs",
     "get_completion_from_messages", "infer_embeddings", "infer_embeddings_with_gemini", "judge_merge_k_out", "load_clf",

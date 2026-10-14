@@ -93,45 +93,50 @@ print("accuracy:", (agg["Coarse Category ID_x"] == agg["Coarse Category ID_y"]).
 
 ## Deduplicate and cluster
 
-The thresholds are cosine *distances* (1 − similarity). Agglomerative clustering with average linkage is the easiest to reason about: a cluster's members are on average within `threshold` of each other.
+`sim_threshold` is a cosine similarity: rows at least this similar belong together. Every row gets a `cluster` id and a `cluster_size`; a row with no near-duplicate is a cluster of size 1.
 
 ```python
 firms = pd.read_csv(os.path.join(D, "company_clusters.csv"))   # company_name, cluster_id (ground truth)
-params = {"threshold": 0.3, "clustering linkage": "average", "metric": "cosine"}
 
-clustered = lt.cluster_rows(firms, model="all-MiniLM-L6-v2", on="company_name",
-                            cluster_type="agglomerative", cluster_params=params, embedding_cache="lt_cache")
-deduped = lt.dedup_rows(firms, model="all-MiniLM-L6-v2", on="company_name",
-                        cluster_type="agglomerative", cluster_params=params, embedding_cache="lt_cache")
+clustered = lt.cluster_rows(firms, model="all-MiniLM-L6-v2", on="company_name", sim_threshold=0.85,
+                            embedding_cache="lt_cache")
+deduped = lt.dedup_rows(firms, model="all-MiniLM-L6-v2", on="company_name", sim_threshold=0.85,
+                        keep="medoid", embedding_cache="lt_cache")
 print(len(firms), "rows ->", clustered["cluster"].nunique(), "clusters ->", len(deduped), "kept")
+print((clustered["cluster_size"] == 1).sum(), "rows without a near-duplicate")
 ```
 
-Tune `threshold` against labeled clusters when you have them, and otherwise by reading a few clusters:
+Tune the threshold against labeled clusters when you have them, and otherwise by reading a few of the largest clusters:
 
 ```python
 from sklearn.metrics import adjusted_rand_score
 
-for t in (0.1, 0.2, 0.3, 0.4):
-    p = dict(params, threshold=t)
-    c = lt.cluster_rows(firms, model="all-MiniLM-L6-v2", on="company_name", cluster_type="agglomerative",
-                        cluster_params=p, embedding_cache="lt_cache")
-    print(t, c["cluster"].nunique(), round(adjusted_rand_score(firms["cluster_id"], c["cluster"]), 3))
+for t in (0.75, 0.8, 0.85, 0.9, 0.95):
+    c = lt.cluster_rows(firms, model="all-MiniLM-L6-v2", on="company_name", sim_threshold=t,
+                        embedding_cache="lt_cache")
+    print(t, c["cluster"].nunique(), c["cluster_size"].max(),
+          round(adjusted_rand_score(firms["cluster_id"], c["cluster"]), 3))
 
 big = clustered["cluster"].value_counts().index[0]
 print(clustered.loc[clustered["cluster"] == big, "company_name"].head(10).tolist())
 ```
 
-SLINK (DBSCAN) and HDBScan label rows without near-duplicates `-1` in `cluster_rows`. `dedup_rows` keeps every one of those rows:
+The default `cluster_type="SLINK"` is single linkage: a row joins a cluster when it is close to any member, so chains of close pairs can join dissimilar names, and the largest clusters show it first. It scales to millions of rows. `cluster_type="agglomerative"` uses average linkage, which keeps clusters tighter, but its memory grows with the square of the row count (about 80 GB for 100,000 rows). `cluster_type="HDBScan"` has no threshold: `cluster_params={"min_cluster_size": 5, "min_samples": 1}`.
+
+Restrict clustering to rows that agree on exact columns with `blocking_vars`; this also splits a large job into small ones:
 
 ```python
-slink = lt.cluster_rows(firms, model="all-MiniLM-L6-v2", on="company_name", cluster_type="SLINK",
-                        cluster_params={"threshold": 0.15, "min cluster size": 2}, embedding_cache="lt_cache")
-deduped = lt.dedup_rows(firms, model="all-MiniLM-L6-v2", on="company_name", cluster_type="SLINK",
-                        cluster_params={"threshold": 0.15, "min cluster size": 2}, embedding_cache="lt_cache")
-print((slink["cluster"] == -1).sum(), "unclustered rows;", len(deduped), "rows kept")
+by_country = lt.cluster_rows(firms_a, model="all-MiniLM-L6-v2", on="CompanyName", sim_threshold=0.85,
+                             blocking_vars="Country", embedding_cache="lt_cache")
 ```
 
-SLINK is single linkage: one chain of close pairs can join very different names. Keep its threshold small.
+To cluster embeddings you computed yourself (or reuse them across thresholds), use `lt.cluster_embeddings`:
+
+```python
+emb = lt.infer_embeddings(firms["company_name"].tolist(), "all-MiniLM-L6-v2", embedding_cache="lt_cache")
+for t in (0.8, 0.9):
+    print(t, len(set(lt.cluster_embeddings(emb, sim_threshold=t))), "clusters")
+```
 
 ## Classify rows with a local model
 

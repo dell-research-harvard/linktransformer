@@ -15,7 +15,7 @@ import pandas as pd
 from typing import Union, List, Optional, Tuple,Dict, Any
 from pandas import DataFrame
 
-from linktransformer.cluster_fns import cluster
+from linktransformer.cluster_fns import _cluster_points, _normalize as _normalize_embeddings, own_ids_for_unclustered, resolve_cluster_params
 from linktransformer.modelling.LinkTransformer import LinkTransformer
 from linktransformer.utils import (
     _gemini_client,
@@ -55,9 +55,6 @@ from linktransformer.progress import progress_enabled
 
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_CLUSTER_PARAMS = {'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}
-
 
 def _shared_columns_in_left_order(df1: DataFrame, df2: DataFrame) -> List[str]:
     return [col for col in df1.columns if col in df2.columns]
@@ -517,6 +514,80 @@ def evaluate_pairs(df: DataFrame,
 
     return df
 
+def _cluster_frame(
+    df: DataFrame,
+    model: Union[str, LinkTransformer],
+    on: Union[str, List[str]],
+    cluster_type: str,
+    cluster_params: Optional[Dict[str, Any]],
+    sim_threshold: Optional[float],
+    blocking_vars: Optional[List[str]],
+    openai_key: Optional[str],
+    gemini_key: Optional[str],
+    embedding_cache: Optional[str],
+    progress_bar: bool,
+    batch_size: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Cluster the rows of df. Returns the cluster id of each row (0, 1, ... in order of first appearance), the
+    index of each row's text among the distinct texts (-1 when all `on` columns are missing), and the
+    normalized embeddings of the distinct texts.
+    """
+    options = resolve_cluster_params(cluster_type, sim_threshold, cluster_params)  # fail before embedding
+    on = _normalize_columns_arg(on, arg_name="on")
+    if not on:
+        raise ValueError("Pass on=: the column, or list of columns, whose text is compared.")
+    blocking_vars = _normalize_columns_arg(blocking_vars, arg_name="blocking_vars") or []
+    missing_columns = [col for col in [*on, *blocking_vars] if col not in df.columns]
+    if missing_columns:
+        raise ValueError(f"Columns {missing_columns} are not in the dataframe.")
+
+    if isinstance(model, str):
+        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
+            model = load_model(model)
+
+    n = len(df)
+    # rows whose `on` columns are all missing have no text: each is a cluster of its own
+    has_text = ~df[on].isna().all(axis=1).to_numpy()
+    texts = serialize_columns(df, on, model=model) if len(on) > 1 else df[on[0]].astype(str).tolist()
+    codes = np.full(n, -1, dtype=np.int64)
+    codes[has_text], distinct = pd.factorize(pd.Series(texts, dtype=object)[has_text])
+    if len(distinct):
+        # each distinct text is embedded once
+        embeddings = _normalize_embeddings(infer_embeddings(
+            list(distinct), model, batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key,
+            embedding_cache=embedding_cache, progress_bar=progress_bar))
+    else:
+        embeddings = np.empty((0, 0), dtype=np.float32)
+
+    blocks = df.groupby(blocking_vars, dropna=False, sort=False).ngroup().to_numpy() if blocking_vars else np.zeros(n, dtype=np.int64)
+    labels = np.full(n, -1, dtype=np.int64)
+    offset = 0
+    for rows in pd.Series(np.arange(n)).groupby(blocks).indices.values():
+        rows = rows[has_text[rows]]
+        if not len(rows):
+            continue
+        distinct_in_block, row_to_point, copies = np.unique(codes[rows], return_inverse=True, return_counts=True)
+        if len(distinct_in_block) == 1:  # e.g. a block of one row: nothing to cluster
+            point_labels = np.zeros(1, dtype=np.int64)
+        elif options["cluster_type"] == "SLINK":
+            # cluster each distinct text once, counting its copies
+            point_labels = _cluster_points(embeddings[distinct_in_block], options, weights=copies)
+        else:
+            # cluster every row (copies change these methods' results), then give copies the label of the first one
+            row_labels = _cluster_points(embeddings[codes[rows]], options)
+            first_row = np.full(len(distinct_in_block), len(rows))
+            np.minimum.at(first_row, row_to_point, np.arange(len(rows)))
+            point_labels = row_labels[first_row]
+        # copies of a text that is in no cluster share a cluster of their own
+        unclustered = point_labels < 0
+        point_labels[unclustered] = point_labels.max(initial=-1) + 1 + np.arange(unclustered.sum())
+        labels[rows] = offset + point_labels[row_to_point]
+        offset += int(point_labels.max()) + 1
+    labels[~has_text] = offset + np.arange((~has_text).sum())
+    return own_ids_for_unclustered(labels), codes, embeddings
+
+
 def cluster_rows(
     df: DataFrame,
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",
@@ -527,67 +598,76 @@ def cluster_rows(
     gemini_key: str = None,
     embedding_cache: Optional[str] = None,
     progress_bar: bool = True,
+    sim_threshold: Optional[float] = None,
+    blocking_vars: Optional[Union[str, List[str]]] = None,
+    batch_size: int = 128,
 ) -> DataFrame:
     """
-    Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.
+    Group rows whose text is similar. Adds a `cluster` id and the `cluster_size` of that cluster to each row.
 
-    :param df (DataFrame): Dataframe to deduplicate.
+    Every row gets a cluster id, numbered 0, 1, ... in order of first appearance. A row with no similar row is a
+    cluster of its own (`cluster_size` 1). Rows with identical text are always in the same cluster, and rows
+    whose `on` columns are all missing are each in a cluster of their own.
+
+    :param df (DataFrame): Dataframe to cluster.
     :param model (str): Language model to use.
     :param on (Union[str, List[str]]): Column(s) to cluster on.
-    :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
-    :param cluster_params (Dict[str, Any], optional): Parameters for clustering method. Defaults to DEFAULT_CLUSTER_PARAMS ({'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}).
+    :param cluster_type (str): "SLINK" (default), "agglomerative" or "HDBScan".
+        - "SLINK": single linkage. Rows whose cosine similarity is at least `sim_threshold` are linked, and a
+          cluster is a group of rows connected by links, so a chain of close pairs can join dissimilar rows.
+          Runs on GPU when available and scales to millions of rows.
+        - "agglomerative": average linkage. Clusters are merged while their average pairwise similarity is
+          above `sim_threshold`, so clusters stay tighter than with SLINK. Memory grows with the square of the
+          number of rows (about 80 GB for 100,000 rows); use SLINK or `blocking_vars` for large data.
+        - "HDBScan": density-based clusters, without a threshold.
+    :param cluster_params (Dict[str, Any], optional): Method options:
+        - SLINK: "min_cluster_size" (default 2). Above 2 the method is DBSCAN with min_samples=min_cluster_size.
+        - agglomerative: "linkage", "average" (default), "complete" (every pair in a cluster is above the
+          threshold) or "single" (same as SLINK).
+        - HDBScan: "min_cluster_size" (default 5) and "min_samples" (default 1).
+        For compatibility, "threshold" sets the cutoff as a cosine distance (1 - similarity) and "metric" picks
+        the distance; with them agglomerative defaults to ward linkage on euclidean distance, as before.
     :param openai_key (str): OpenAI API key.
-
-    Supported clustering methods and their parameters:
-    
-    - "agglomerative": 
-        - "threshold": 0.5
-        - "clustering linkage": "ward" ("average" when the metric is not euclidean, since ward needs euclidean)
-        - "metric": "euclidean"
-
-    - "HDBScan": 
-        - "min cluster size": 5
-        - "min samples": 1
-        - "metric": "cosine"
-
-    - "SLINK": 
-        - "min cluster size": 2
-        - "threshold": 0.1
-        - "metric": "cosine"
-
+    :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
-
-    :return: DataFrame: The deduplicated dataframe.
+    :param sim_threshold (float): Cosine similarity at or above which rows belong together, e.g. 0.85. Required
+        for SLINK and agglomerative. There is no good default: tune it on rows whose clusters you know, or by
+        reading a few clusters at several thresholds.
+    :param blocking_vars (Union[str, List[str]], optional): Cluster only within groups of rows that have the same
+        values in these columns (for example the same country). Cluster ids are unique across groups.
+    :param batch_size (int): Batch size for embedding. Defaults to 128.
+    :return: DataFrame: A copy of df with `cluster` and `cluster_size` columns.
     """
-
+    labels, _, _ = _cluster_frame(df, model, on, cluster_type, cluster_params, sim_threshold, blocking_vars,
+                                  openai_key, gemini_key, embedding_cache, progress_bar, batch_size)
     df = df.copy()
-    cluster_params = dict(DEFAULT_CLUSTER_PARAMS if cluster_params is None else cluster_params)
-
-    ##Load model if string
-    if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
-            model = load_model(model)
-
-    ## First, get the embeddings
-    ### If len(on)>1, then we need to serialize the columns
-    if isinstance(on, list):
-        strings = serialize_columns(df, on, model=model)
-    else:
-        strings = df[on].tolist()
-    
-    ## Infer embeddings for df
-    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache, progress_bar=progress_bar)
-    ## Normalize embedding tensors using numpy
-    embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
-    ### Now, cluster the embeddings based on similarity threshold
-    labels = cluster(cluster_type, cluster_params, embeddings, corpus_ids=None)
-    ### Now, keep only 1 row per cluster
     df["cluster"] = labels
+    df["cluster_size"] = np.bincount(labels)[labels] if len(labels) else np.empty(0, dtype=np.int64)
     return df
 
 
+DEDUP_KEEP = ("first", "medoid")
 
+
+def _medoid_rows(labels: np.ndarray, codes: np.ndarray, embeddings: np.ndarray) -> np.ndarray:
+    """Position of the most central row of each cluster: the highest average similarity to its cluster."""
+    has_text = codes >= 0
+    step = 65536
+    # sum of the member embeddings of each cluster
+    centroids = np.zeros((labels.max() + 1, embeddings.shape[1]), dtype=np.float64)
+    for start in range(0, len(labels), step):
+        rows = np.flatnonzero(has_text[start:start + step]) + start
+        np.add.at(centroids, labels[rows], embeddings[codes[rows]])
+    scores = np.zeros(len(labels))
+    for start in range(0, len(labels), step):
+        part = slice(start, start + step)
+        rows = np.flatnonzero(has_text[part]) + start
+        scores[rows] = np.einsum("ij,ij->i", embeddings[codes[rows]], centroids[labels[rows]])
+    # sort by cluster, then by score (highest first), then by position; keep the first row of each cluster
+    order = np.lexsort((np.arange(len(labels)), -scores, labels))
+    first = np.r_[True, labels[order][1:] != labels[order][:-1]]
+    return np.sort(order[first])
 
 
 def dedup_rows(
@@ -600,49 +680,59 @@ def dedup_rows(
     gemini_key: str = None,
     embedding_cache: Optional[str] = None,
     progress_bar: bool = True,
+    sim_threshold: Optional[float] = None,
+    blocking_vars: Optional[Union[str, List[str]]] = None,
+    keep: str = "first",
+    batch_size: int = 128,
 ) -> DataFrame:
     """
-    Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
-    Rows that SLINK or HDBScan leave unclustered (cluster -1) have no near-duplicates, so all of them are kept.
-    Refer to the docs for the cluster_rows function for more details.
+    Remove near-duplicate rows: cluster the rows like `cluster_rows`, then keep one row per cluster.
+    Rows with identical text in the `on` columns (and `blocking_vars`) are dropped first, keeping the first.
+    To see which rows were merged, use `cluster_rows` with the same arguments.
 
     :param df (DataFrame): Dataframe to deduplicate.
     :param model (str): Language model to use.
     :param on (Union[str, List[str]]): Column(s) to deduplicate on.
-    :param cluster_type (str): Clustering method to use. Defaults to "SLINK".
-    :param cluster_params (Dict[str, Any], optional): Parameters for clustering method. Defaults to DEFAULT_CLUSTER_PARAMS ({'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}).
+    :param cluster_type (str): "SLINK" (default), "agglomerative" or "HDBScan"; see `cluster_rows`.
+    :param cluster_params (Dict[str, Any], optional): Method options; see `cluster_rows`.
     :param openai_key (str): OpenAI API key
+    :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
     :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
-    :return: DataFrame: The deduplicated dataframe.
+    :param sim_threshold (float): Cosine similarity at or above which rows count as duplicates, e.g. 0.9.
+        Required for SLINK and agglomerative; see `cluster_rows`.
+    :param blocking_vars (Union[str, List[str]], optional): Only rows with the same values in these columns can
+        be duplicates of each other.
+    :param keep (str): Which row of each cluster to keep: "first" (default), the first in df order, or "medoid",
+        the row most similar on average to the rest of its cluster.
+    :param batch_size (int): Batch size for embedding. Defaults to 128.
+    :return: DataFrame: The kept rows, in their original order and with their original index.
     """
-
-    df = df.copy()
-
-    ##Load model if string
-    if isinstance(model, str):
-        if openai_key is None and gemini_key is None and not _is_gemini_embedding_model(model) and not _is_openai_embedding_model(model):
-            model = load_model(model)
-    
+    if keep not in DEDUP_KEEP:
+        raise ValueError(f"keep must be one of {DEDUP_KEEP}, got {keep!r}")
+    on_columns = _normalize_columns_arg(on, arg_name="on") or []
+    blocking_columns = _normalize_columns_arg(blocking_vars, arg_name="blocking_vars") or []
 
     logger.info(f"Deduplicating dataframe with originally {len(df)} rows")
-    ##Drop exact duplicates
-    logger.info("Checking for and dropping exact duplicates")
-    df = df.drop_duplicates(subset=on, keep="first")
-    logger.info(f"Number of rows after dropping exact duplicates: {len(df)}")
+    if on_columns and set(on_columns + blocking_columns).issubset(df.columns):
+        # rows whose `on` columns are all missing are not duplicates of each other
+        has_text = ~df[on_columns].isna().all(axis=1)
+        df = df[~(df.duplicated(subset=on_columns + blocking_columns, keep="first") & has_text)]
+        logger.info(f"Number of rows after dropping exact duplicates: {len(df)}")
 
-    df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key, gemini_key, embedding_cache=embedding_cache,
-                      progress_bar=progress_bar)
-    # SLINK and HDBScan label every row they leave unclustered -1: each of those is a group of its own, so keep them all
-    unclustered = df["cluster"] == -1
-    df = df[unclustered | ~df.duplicated(subset="cluster", keep="first")]
-    df = df.drop(columns=["cluster"])
+    labels, codes, embeddings = _cluster_frame(df, model, on, cluster_type, cluster_params, sim_threshold,
+                                               blocking_vars, openai_key, gemini_key, embedding_cache, progress_bar,
+                                               batch_size)
+    if not len(labels):
+        return df.copy()
+    if keep == "first":
+        kept = np.flatnonzero(~pd.Series(labels).duplicated().to_numpy())
+    else:
+        kept = _medoid_rows(labels, codes, embeddings)
+    df = df.iloc[kept].copy()
     logger.info(f"Number of rows after deduplication: {len(df)}")
-
     return df
 
-
-    
 
 def all_pair_combos_evaluate(df: DataFrame,
     model: Union[str, LinkTransformer] = "all-MiniLM-L6-v2",

@@ -46,7 +46,7 @@ _LAZY_ATTRS = {
         "load_model", "openai_transform", "predict_rows_with_openai", "serialize_columns",
         "tokenize_data_for_inference", "transform_column",
     ],
-    "linktransformer.cluster_fns": ["cluster", "clusters_from_edges"],
+    "linktransformer.cluster_fns": ["cluster", "cluster_embeddings", "clusters_from_edges"],
     "linktransformer.diagnostics": ["match_report"],
     "linktransformer.preprocess": [
         "check_and_prep_data", "check_clust_data", "convert_to_text", "prep_clus_data", "prep_linkage_data",
@@ -99,7 +99,7 @@ sys.modules[__name__].__class__ = _LinkTransformerPackage
 
 
 if TYPE_CHECKING:  # let static type checkers and IDEs see the real definitions
-    from .cluster_fns import cluster, clusters_from_edges
+    from .cluster_fns import cluster, cluster_embeddings, clusters_from_edges
     from .diagnostics import match_report
     from .infer import (
         aggregate_rows, all_pair_combos_evaluate, classify_rows, cluster_rows, dedup_rows, evaluate_pairs,

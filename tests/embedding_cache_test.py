@@ -99,8 +99,10 @@ FUNCTION_CALLS = {
                                                      right_on="company_name_2", embedding_cache=c),
     "all_pair_combos_evaluate": lambda m, c: lt.all_pair_combos_evaluate(_toy("toy_pairs.csv"), model=m, left_on="company_name_1",
                                                                          right_on="company_name_2", embedding_cache=c),
-    "cluster_rows": lambda m, c: lt.cluster_rows(_toy("company_clusters.csv"), model=m, on="company_name", embedding_cache=c),
-    "dedup_rows": lambda m, c: lt.dedup_rows(_toy("company_clusters.csv"), model=m, on="company_name", embedding_cache=c),
+    "cluster_rows": lambda m, c: lt.cluster_rows(_toy("company_clusters.csv"), model=m, on="company_name", sim_threshold=0.8,
+                                               embedding_cache=c),
+    "dedup_rows": lambda m, c: lt.dedup_rows(_toy("company_clusters.csv"), model=m, on="company_name", sim_threshold=0.8,
+                                           embedding_cache=c),
 }
 
 

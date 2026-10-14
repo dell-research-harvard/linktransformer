@@ -41,6 +41,37 @@ def test_lt_search_on_gpu_matches_cpu(monkeypatch):
     assert np.array_equal(gpu_range[0], cpu_range[0]) and np.array_equal(gpu_range[2], cpu_range[2])
 
 
+def _clustered(rng, n, dim=64, centers=200, spread=0.2):
+    x = rng.standard_normal((centers, dim))[rng.integers(0, centers, n)] + spread * rng.standard_normal((n, dim))
+    return (x / np.linalg.norm(x, axis=1, keepdims=True)).astype(np.float32)
+
+
+@pytest.mark.parametrize("min_cluster_size", [2, 4])
+def test_lt_slink_on_gpu_matches_sklearn_dbscan(min_cluster_size):
+    from sklearn.cluster import DBSCAN
+    from linktransformer import cluster_fns
+
+    x = _clustered(np.random.default_rng(1), 5000)
+    expected = DBSCAN(eps=0.15, min_samples=min_cluster_size, metric="cosine").fit(x).labels_
+    labels = cluster_fns._slink(x, 0.85, min_cluster_size, np.ones(len(x), dtype=np.int64))
+    assert np.array_equal(labels, expected)
+
+
+def test_lt_cluster_embeddings_on_gpu_matches_cpu(monkeypatch):
+    x = _clustered(np.random.default_rng(2), 20000)
+    gpu = lt.cluster_embeddings(x, sim_threshold=0.85)
+    monkeypatch.setattr(search, "_device", lambda: torch.device("cpu"))
+    assert np.array_equal(gpu, lt.cluster_embeddings(x, sim_threshold=0.85))
+
+
+def test_lt_cluster_rows_on_gpu():
+    df = pd.read_csv(os.path.join(DATA_DIR_PATH, "company_clusters.csv"))
+    out = lt.cluster_rows(df, model=LinkTransformer(MODEL), on="company_name", sim_threshold=0.85)
+    assert (out["cluster_size"] == out.groupby("cluster")["cluster"].transform("size")).all()
+    deduped = lt.dedup_rows(df, model=LinkTransformer(MODEL), on="company_name", sim_threshold=0.85, keep="medoid")
+    assert len(deduped) == out["cluster"].nunique()
+
+
 def test_lt_model_encodes_on_gpu_like_cpu():
     gpu_model, cpu_model = LinkTransformer(MODEL), LinkTransformer(MODEL, device="cpu")
     assert gpu_model.device.type == "cuda"

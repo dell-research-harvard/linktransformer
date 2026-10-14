@@ -6,6 +6,11 @@ Linkage and Classification Inference
 .. automodule:: linktransformer.infer
    :members:
 
+Clustering Embeddings
+----------------------
+.. autofunction:: linktransformer.cluster_fns.cluster_embeddings
+.. autofunction:: linktransformer.cluster_fns.resolve_cluster_params
+
 Checking Linkage Results
 -------------------------
 .. autofunction:: linktransformer.diagnostics.match_report

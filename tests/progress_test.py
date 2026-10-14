@@ -71,8 +71,8 @@ def test_lt_merge_functions_pass_progress_bar_to_the_encoder(monkeypatch, functi
 @pytest.mark.parametrize("function, kwargs", [
     ("evaluate_pairs", dict(left_on="a", right_on="b")),
     ("all_pair_combos_evaluate", dict(left_on="a", right_on="b")),
-    ("cluster_rows", dict(on="a")),
-    ("dedup_rows", dict(on="a")),
+    ("cluster_rows", dict(on="a", sim_threshold=0.9)),
+    ("dedup_rows", dict(on="a", sim_threshold=0.9)),
 ])
 def test_lt_single_frame_functions_pass_progress_bar_to_the_encoder(monkeypatch, function, kwargs):
     monkeypatch.delenv("LINKTRANSFORMER_PROGRESS", raising=False)
