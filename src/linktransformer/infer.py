@@ -20,11 +20,18 @@ from linktransformer.modelling.LinkTransformer import LinkTransformer
 from linktransformer.utils import (
     _gemini_client,
     _gemini_generate_text,
+    _gemini_inputs_prompt,
     _is_gemini_embedding_model,
     _is_openai_embedding_model,
+    _llm_dry_run_report,
     _load_tokenizer,
+    _max_output_tokens,
+    _missing_api_key_note,
     _openai_chat_completion_resilient,
+    _pending_transform_ranges,
+    _read_transform_checkpoint,
     _resolve_llm_provider,
+    _TRANSFORM_JSON_INSTRUCTION,
     gemini_transform,
     infer_embeddings,
     load_clf,
@@ -44,6 +51,7 @@ from linktransformer.api_runtime import (
     read_jsonl,
     call_with_retry,
 )
+from linktransformer.progress import progress_enabled
 
 
 logger = logging.getLogger(__name__)
@@ -115,6 +123,7 @@ def merge(
     failure_log_path: Optional[str] = None,
     retry_policy: Optional[Dict[str, Any]] = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings.
@@ -133,6 +142,7 @@ def merge(
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :return: DataFrame: The merged dataframe.
     """
     ## Set common columns as on if not specified
@@ -221,6 +231,7 @@ def merge(
         failure_log_path=failure_log_path,
         retry_policy=retry_policy,
         embedding_cache=embedding_cache,
+        progress_bar=progress_bar,
     )
     ## Infer embeddings for df2
     embeddings2 = infer_embeddings(
@@ -234,6 +245,7 @@ def merge(
         failure_log_path=failure_log_path,
         retry_policy=retry_policy,
         embedding_cache=embedding_cache,
+        progress_bar=progress_bar,
     )
 
     ### Expand dim if embeddings are 1d (numpy)
@@ -277,6 +289,7 @@ def merge_blocking(
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings with optional blocking.
@@ -296,6 +309,7 @@ def merge_blocking(
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :return: DataFrame: The merged dataframe.
     """
     ### For blocking, we need to chunk the dfs into blocks
@@ -304,7 +318,8 @@ def merge_blocking(
         logger.info("No blocking vars specified, matching between all rows")
         df_lm_matched = merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
                                     right_on=right_on, suffixes=suffixes, batch_size=batch_size,
-                                     openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+                                     openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache,
+                                     progress_bar=progress_bar)
         return df_lm_matched
     else:
         ## Partition the dfs into blocks
@@ -354,7 +369,8 @@ def merge_blocking(
             ## Merge the blocks
             df_block_matched = merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
                                            left_on=left_on, right_on=right_on, suffixes=suffixes,
-                                           batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+                                           batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache,
+                                           progress_bar=progress_bar)
             df_block_matched["match_status"] = "matched_block"
             ## Add to merged dfs
             merged_dfs.append(df_block_matched)
@@ -403,6 +419,7 @@ def aggregate_rows(
     openai_key: str = None,
     gemini_key: str = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
 ) -> DataFrame:
     """
     Aggregate the dataframe based on a reference dataframe using a language model.
@@ -413,6 +430,7 @@ def aggregate_rows(
     :param left_on (Union[str, List[str]]): Column(s) to aggregate on in df.
     :param right_on (Union[str, List[str]]): Reference column(s) to aggregate on in ref_df.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :return: DataFrame: The aggregated dataframe.
     """
 
@@ -427,7 +445,8 @@ def aggregate_rows(
     ## Each row of df is matched to its nearest row of ref_df
     df_lm_matched = merge(df, ref_df, on=None, model=model, left_on=left_on,
                                 right_on=right_on, suffixes=("_x", "_y"), batch_size=128,
-                                 openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+                                 openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache,
+                                 progress_bar=progress_bar)
 
     return df_lm_matched
 
@@ -440,6 +459,7 @@ def evaluate_pairs(df: DataFrame,
     openai_key: str = None,
     gemini_key: str = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
     ) -> DataFrame:
     """
     This function evaluates paired columns in a dataframe and gives a match score (cosine similarity). 
@@ -450,6 +470,7 @@ def evaluate_pairs(df: DataFrame,
     :param left_on (Union[str, List[str]]): Column(s) to evaluate on in df.
     :param right_on (Union[str, List[str]]): Reference column(s) to evaluate on in df.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :return: DataFrame: The evaluated dataframe.
     """
 
@@ -474,9 +495,9 @@ def evaluate_pairs(df: DataFrame,
 
 
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache, progress_bar=progress_bar)
     ## Infer embeddings for df2
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache, progress_bar=progress_bar)
 
     ### Expand dim if embeddings are 1d (numpy)
     if len(embeddings1.shape) == 1:
@@ -505,6 +526,7 @@ def cluster_rows(
     openai_key: str = None,
     gemini_key: str = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
 ) -> DataFrame:
     """
     Deduplicate a dataframe based on a similarity threshold. Various clustering options are supported.
@@ -534,6 +556,7 @@ def cluster_rows(
         - "metric": "cosine"
 
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
 
     :return: DataFrame: The deduplicated dataframe.
     """
@@ -554,7 +577,7 @@ def cluster_rows(
         strings = df[on].tolist()
     
     ## Infer embeddings for df
-    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+    embeddings = infer_embeddings(strings, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache, progress_bar=progress_bar)
     ## Normalize embedding tensors using numpy
     embeddings = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
     ### Now, cluster the embeddings based on similarity threshold
@@ -576,6 +599,7 @@ def dedup_rows(
     openai_key: str = None,
     gemini_key: str = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
 ) -> DataFrame:
     """
     Deduplicate a dataframe based on a similarity threshold. This is just clustering and keeping the first row in each cluster.
@@ -588,6 +612,7 @@ def dedup_rows(
     :param cluster_params (Dict[str, Any], optional): Parameters for clustering method. Defaults to DEFAULT_CLUSTER_PARAMS ({'threshold': 0.5, "min cluster size": 2, "metric": "cosine"}).
     :param openai_key (str): OpenAI API key
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :return: DataFrame: The deduplicated dataframe.
     """
 
@@ -605,7 +630,8 @@ def dedup_rows(
     df = df.drop_duplicates(subset=on, keep="first")
     logger.info(f"Number of rows after dropping exact duplicates: {len(df)}")
 
-    df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key, gemini_key, embedding_cache=embedding_cache)
+    df = cluster_rows(df, model, on, cluster_type, cluster_params, openai_key, gemini_key, embedding_cache=embedding_cache,
+                      progress_bar=progress_bar)
     df = df.drop_duplicates(subset="cluster", keep="first")
     df = df.drop(columns=["cluster"])
     logger.info(f"Number of rows after deduplication: {len(df)}")
@@ -622,6 +648,7 @@ def all_pair_combos_evaluate(df: DataFrame,
     openai_key: str = None,
     gemini_key: str = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
     ) -> DataFrame:
     """
     Get similarity scores for every pair of rows in a dataframe. 
@@ -633,6 +660,7 @@ def all_pair_combos_evaluate(df: DataFrame,
     :param right_on (Union[str, List[str]]): Reference column(s) to evaluate on in df.
     :param openai_key (str): OpenAI API key
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :return: DataFrame: The evaluated dataframe.
     """
 
@@ -650,7 +678,7 @@ def all_pair_combos_evaluate(df: DataFrame,
         strings_left = df[left_on].tolist()
     
     ## Infer embeddings for df1
-    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+    embeddings1 = infer_embeddings(strings_left, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache, progress_bar=progress_bar)
     embeddings1 = embeddings1 / np.linalg.norm(embeddings1, axis=1, keepdims=True)
 
     ###Get the embeddings for the right_on column
@@ -660,7 +688,7 @@ def all_pair_combos_evaluate(df: DataFrame,
         strings_right = df[right_on].tolist()
     
     ## Infer embeddings for df1
-    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+    embeddings2 = infer_embeddings(strings_right, model, batch_size=128, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache, progress_bar=progress_bar)
     embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
 
     ###calculate the cosine similarity between all pairs of rows
@@ -709,6 +737,7 @@ def merge_knn(
     failure_log_path: Optional[str] = None,
     retry_policy: Optional[Dict[str, Any]] = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings. This function would support k nearest neighbors matching for each row in df1.
@@ -726,6 +755,7 @@ def merge_knn(
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param drop_sim_threshold (float, optional): Drop rows with similarity below this threshold. Defaults to None.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :return: DataFrame: The merged dataframe.
     """
 
@@ -794,6 +824,7 @@ def merge_knn(
         failure_log_path=failure_log_path,
         retry_policy=retry_policy,
         embedding_cache=embedding_cache,
+        progress_bar=progress_bar,
     )
     ## Infer embeddings for df2
     embeddings2 = infer_embeddings(
@@ -808,6 +839,7 @@ def merge_knn(
         failure_log_path=failure_log_path,
         retry_policy=retry_policy,
         embedding_cache=embedding_cache,
+        progress_bar=progress_bar,
     )
 
 
@@ -878,6 +910,7 @@ def merge_range(
     failure_log_path: Optional[str] = None,
     retry_policy: Optional[Dict[str, Any]] = None,
     embedding_cache: Optional[str] = None,
+    progress_bar: bool = True,
 ) -> DataFrame:
     """
     Range-based left merge (exact range search over normalized embeddings).
@@ -898,6 +931,7 @@ def merge_range(
     :param openai_key (str, optional): OpenAI API key for OpenAI embedding models.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param progress_bar (bool): Show a progress bar while embedding. Defaults to True. LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :return: DataFrame: Left-join style matched dataframe with ``score`` column.
     """
     if sim_threshold < -1.0 or sim_threshold > 1.0:
@@ -958,6 +992,7 @@ def merge_range(
         failure_log_path=failure_log_path,
         retry_policy=retry_policy,
         embedding_cache=embedding_cache,
+        progress_bar=progress_bar,
     )
     embeddings2 = infer_embeddings(
         strings_right,
@@ -971,6 +1006,7 @@ def merge_range(
         failure_log_path=failure_log_path,
         retry_policy=retry_policy,
         embedding_cache=embedding_cache,
+        progress_bar=progress_bar,
     )
 
     if len(embeddings1.shape) == 1:
@@ -1233,6 +1269,11 @@ def _row_has_complete_judgement(row: pd.Series) -> bool:
     return True
 
 
+def _judge_gemini_prompt(llm_prompt: str, user_content: str) -> str:
+    """The single text prompt sent to a Gemini judge for one candidate pair."""
+    return f"{llm_prompt}\n\nCompare the following pair payload and return JSON only.\n{user_content}"
+
+
 def judge_merge_k_out(
     candidates_df: DataFrame,
     on: Optional[Union[str, List[str]]] = None,
@@ -1259,8 +1300,9 @@ def judge_merge_k_out(
     confidence_threshold: Optional[float] = None,
     progress_bar: bool = True,
     judge_workers: int = 1,
+    dry_run: bool = False,
     failure_function_name: str = "judge_merge_k_out",
-) -> DataFrame:
+) -> Union[DataFrame, Dict[str, Any]]:
     """Judge an existing merge_k/merge_knn candidate output dataframe with an LLM.
 
     This utility supports resume via JSONL checkpoint, skipping already-judged rows,
@@ -1269,6 +1311,11 @@ def judge_merge_k_out(
     Adds/updates debugging columns:
     - `llm_input_payload`: serialized JSON payload sent to the judge LLM
     - `llm_is_match`, `llm_confidence`, `llm_raw_response`
+
+    :param dry_run: if True, call no LLM and write no checkpoint; return a dict instead of a dataframe with
+        `llm_calls` (one per candidate row still to judge, after skipping rows already judged in `candidates_df`,
+        rows found in the checkpoint when `resume=True`, and rows outside the judge_skip_* score range) and
+        `estimated_input_tokens` (rough, ~4 characters per token). A missing API key is reported in `notes`.
     """
     llm_params = llm_params or {}
     candidates = candidates_df.copy()
@@ -1300,10 +1347,14 @@ def judge_merge_k_out(
 
     openai_api_key = openai_key or os.getenv("OPENAI_API_KEY")
     gemini_api_key = gemini_key or os.getenv("GEMINI_API_KEY")
-    if resolved_provider == "openai" and openai_api_key is None:
-        raise ValueError("judge_merge_k_out with llm_provider='openai' requires `openai_key` or OPENAI_API_KEY.")
-    if resolved_provider == "gemini" and gemini_api_key is None:
-        raise ValueError("judge_merge_k_out with llm_provider='gemini' requires `gemini_key` or GEMINI_API_KEY.")
+    dry_run_notes: List[str] = []
+    if (resolved_provider == "openai" and openai_api_key is None) or (resolved_provider == "gemini" and gemini_api_key is None):
+        if not dry_run:
+            raise ValueError(
+                f"judge_merge_k_out with llm_provider='{resolved_provider}' requires "
+                f"`{resolved_provider}_key` or {resolved_provider.upper()}_API_KEY."
+            )
+        dry_run_notes.append(_missing_api_key_note(resolved_provider))
 
     if llm_prompt is None:
         llm_prompt = (
@@ -1466,11 +1517,7 @@ def judge_merge_k_out(
                 response = _openai_chat_completion_resilient(client, request_kwargs)
                 return response.choices[0].message.content or ""
             gemini_client = _get_gemini_client()
-            prompt_text = (
-                f"{llm_prompt}\n\n"
-                f"Compare the following pair payload and return JSON only.\n"
-                f"{user_content}"
-            )
+            prompt_text = _judge_gemini_prompt(llm_prompt, user_content)
 
             generation_config: Dict[str, Any] = {}
             if "temperature" in llm_params:
@@ -1532,8 +1579,9 @@ def judge_merge_k_out(
     existing_judged_count = 0
     resumed_applied_count = 0
     skipped_by_score_count = 0
+    no_retries_count = 0
 
-    progress = tqdm(total=len(candidates), disable=not progress_bar, desc="judging matches")
+    progress = tqdm(total=len(candidates), disable=dry_run or not progress_enabled(progress_bar), desc="judging matches")
 
     for idx, (_, row) in enumerate(candidates.iterrows()):
         if _row_has_complete_judgement(row):
@@ -1564,7 +1612,7 @@ def judge_merge_k_out(
                 skip_by_score = True
 
         if skip_by_score:
-            _set_row_result(idx, 99, 99.0, "99", write_checkpoint=True)
+            _set_row_result(idx, 99, 99.0, "99", write_checkpoint=not dry_run)
             skipped_by_score_count += 1
             progress.update(1)
             continue
@@ -1574,7 +1622,8 @@ def judge_merge_k_out(
             requested_retries = int(retry_policy["max_retries"])
         if requested_retries <= 0:
             match_flag, match_conf = _coerce_llm_match_and_confidence("")
-            _set_row_result(idx, match_flag, match_conf, "", write_checkpoint=True)
+            _set_row_result(idx, match_flag, match_conf, "", write_checkpoint=not dry_run)
+            no_retries_count += 1
             progress.update(1)
             continue
 
@@ -1592,6 +1641,28 @@ def judge_merge_k_out(
         user_content = json.dumps({"left": left_payload, "right": right_payload}, default=str)
         llm_inputs[idx] = user_content
         pending_items.append((idx, user_content))
+
+    if dry_run:
+        progress.close()
+        return _llm_dry_run_report(
+            function=failure_function_name,
+            provider=resolved_provider,
+            model=resolved_judge_model,
+            call_payloads=[user_content for _, user_content in pending_items],
+            fixed_prompt=llm_prompt if resolved_provider == "openai" else _judge_gemini_prompt(llm_prompt, ""),
+            rows_total=len(candidates),
+            rows_to_send=len(pending_items),
+            rows_skipped={
+                "already_judged": existing_judged_count,
+                "resumed_from_checkpoint": resumed_applied_count,
+                "outside_judge_score_range": skipped_by_score_count,
+                "max_retries_zero": no_retries_count,
+            },
+            rows_per_call=1,
+            workers=judge_workers,
+            max_output_tokens=_max_output_tokens(resolved_provider, llm_params, 50 if resolved_provider == "openai" else None),
+            notes=dry_run_notes,
+        )
 
     if pending_items:
         logger.info(
@@ -1653,6 +1724,26 @@ def judge_merge_k_out(
     return candidates
 
 
+def _knn_candidates_without_retrieval(df1: DataFrame, df2: DataFrame, k: int, suffixes: Tuple[str, str]) -> DataFrame:
+    """A frame with the rows and columns merge_knn would return (each left row repeated min(k, len(df2)) times), but
+    pairing left rows with arbitrary right rows instead of their nearest neighbours. merge_k_judge(dry_run=True) uses
+    it to count judge calls without embedding anything when no similarity threshold affects that count."""
+    if "id_lt" in df1.columns:
+        raise ValueError("Column id_lt already exists in df1, please rename it to proceed")
+    if "id_lt" in df2.columns:
+        raise ValueError("Column id_lt already exists in df2,please rename it to proceed")
+
+    k = min(k, len(df2))
+    left_indices = np.repeat(np.arange(len(df1)), k)
+    right_indices = np.arange(len(left_indices)) % max(len(df2), 1)  # k distinct right rows per left row
+
+    left = df1.reset_index(drop=True).iloc[left_indices].reset_index(drop=True)
+    right = df2.reset_index(drop=True).iloc[right_indices].reset_index(drop=True)
+    left["id_lt"] = left_indices
+    right["id_lt"] = right_indices
+    return left.merge(right, left_index=True, right_index=True, how="inner", suffixes=suffixes)
+
+
 def merge_k_judge(
     df1: DataFrame,
     df2: DataFrame,
@@ -1687,7 +1778,8 @@ def merge_k_judge(
     progress_bar: bool = True,
     judge_workers: int = 1,
     embedding_cache: Optional[str] = None,
-) -> DataFrame:
+    dry_run: bool = False,
+) -> Union[DataFrame, Dict[str, Any]]:
     """
     Retrieve candidate matches with `merge_knn`, then verify each pair with an LLM.
     Adds:
@@ -1705,8 +1797,15 @@ def merge_k_judge(
         skip LLM judging and are assigned sentinel `99` in llm columns.
     :param judge_skip_upper_thresh: if set, rows with `score` greater than or equal to this threshold
         skip LLM judging and are assigned sentinel `99` in llm columns.
-    :param progress_bar: whether to show a progress bar while judging candidate rows.
+    :param progress_bar: whether to show progress bars while embedding and judging candidate rows.
+        LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param dry_run: if True, call no LLM and return a dict instead of a dataframe: `llm_calls`, a rough
+        `estimated_input_tokens`, and a `retrieval` entry (see judge_merge_k_out). Retrieval runs (embedding both
+        dataframes, which calls the embedding API for API embedding models) only when `drop_sim_threshold` or a
+        `judge_skip_*_thresh` is set, because only then does the number of calls depend on similarity scores.
+        Otherwise no embedding is computed: the count is exact and the token estimate pairs each left row with
+        arbitrary right rows instead of its nearest neighbours.
     """
     llm_params = llm_params or {}
 
@@ -1740,28 +1839,36 @@ def merge_k_judge(
     )
     warnings.warn(resolution_msg, UserWarning)
 
-    candidates = merge_knn(
-        df1=df1,
-        df2=df2,
-        on=on,
-        model=retrieval_model,
-        left_on=left_on,
-        right_on=right_on,
-        k=k,
-        suffixes=suffixes,
-        batch_size=batch_size,
-        openai_key=retrieval_openai_key,
-        gemini_key=retrieval_gemini_key,
-        drop_sim_threshold=drop_sim_threshold,
-        embedding_cache=embedding_cache,
-    ).copy()
-
-    logger.info(
-        "[merge_k_judge] Retrieved candidate set from merge_knn: "
-        f"rows={len(candidates)}, k={k}."
+    score_dependent = (
+        drop_sim_threshold is not None or judge_skip_lower_thresh is not None or judge_skip_upper_thresh is not None
     )
+    run_retrieval = not dry_run or score_dependent
+    if run_retrieval:
+        candidates = merge_knn(
+            df1=df1,
+            df2=df2,
+            on=on,
+            model=retrieval_model,
+            left_on=left_on,
+            right_on=right_on,
+            k=k,
+            suffixes=suffixes,
+            batch_size=batch_size,
+            openai_key=retrieval_openai_key,
+            gemini_key=retrieval_gemini_key,
+            drop_sim_threshold=drop_sim_threshold,
+            embedding_cache=embedding_cache,
+            progress_bar=progress_bar,
+        ).copy()
 
-    return judge_merge_k_out(
+        logger.info(
+            "[merge_k_judge] Retrieved candidate set from merge_knn: "
+            f"rows={len(candidates)}, k={k}."
+        )
+    else:
+        candidates = _knn_candidates_without_retrieval(df1, df2, k=k, suffixes=suffixes)
+
+    result = judge_merge_k_out(
         candidates_df=candidates,
         on=on,
         left_on=left_on,
@@ -1787,8 +1894,35 @@ def merge_k_judge(
         confidence_threshold=confidence_threshold,
         progress_bar=progress_bar,
         judge_workers=judge_workers,
+        dry_run=dry_run,
         failure_function_name="merge_k_judge",
     )
+    if not dry_run:
+        return result
+
+    result["retrieval"] = {
+        "ran": run_retrieval,
+        "model": retrieval_model if isinstance(retrieval_model, str) else type(retrieval_model).__name__,
+        "k": int(k),
+        "drop_sim_threshold": drop_sim_threshold,
+        "candidate_rows": int(len(candidates)),
+    }
+    if run_retrieval:
+        retrieval_notes = [
+            "Ran merge_knn retrieval because drop_sim_threshold or judge_skip_*_thresh makes the call count depend on "
+            "similarity scores; pass embedding_cache= so the real run reuses these embeddings."
+        ]
+        if _infer_retrieval_mode(retrieval_model).startswith("api"):
+            retrieval_notes.append("Retrieval used an API embedding model, which called the embedding API.")
+    else:
+        retrieval_notes = [
+            "Skipped retrieval (no embeddings computed): no similarity threshold is set, so every one of the "
+            "len(df1) * min(k, len(df2)) candidate pairs is judged. The token estimate pairs left rows with "
+            "arbitrary right rows rather than their nearest neighbours."
+        ]
+    # before the two general notes that close the list
+    result["notes"][-2:-2] = retrieval_notes
+    return result
 
 
 def merge_knn_with_llm(
@@ -1821,7 +1955,8 @@ def merge_knn_with_llm(
     progress_bar: bool = True,
     judge_workers: int = 1,
     embedding_cache: Optional[str] = None,
-) -> DataFrame:
+    dry_run: bool = False,
+) -> Union[DataFrame, Dict[str, Any]]:
     """Backward-compatible alias for `merge_k_judge`."""
     return merge_k_judge(
         df1=df1,
@@ -1853,6 +1988,7 @@ def merge_knn_with_llm(
         progress_bar=progress_bar,
         judge_workers=judge_workers,
         embedding_cache=embedding_cache,
+        dry_run=dry_run,
     )
 
 
@@ -1886,7 +2022,8 @@ def merge_knn_openai(
     progress_bar: bool = True,
     judge_workers: int = 1,
     embedding_cache: Optional[str] = None,
-) -> DataFrame:
+    dry_run: bool = False,
+) -> Union[DataFrame, Dict[str, Any]]:
     """Backward-compatible alias for `merge_k_judge`."""
     return merge_k_judge(
         df1=df1,
@@ -1918,6 +2055,7 @@ def merge_knn_openai(
         progress_bar=progress_bar,
         judge_workers=judge_workers,
         embedding_cache=embedding_cache,
+        dry_run=dry_run,
     )
 
 
@@ -1943,6 +2081,7 @@ def classify_rows(
     failure_log_path: Optional[str] = None,
     retry_policy: Optional[Dict[str, Any]] = None,
     tokenizer: Optional[str] = None,
+    dry_run: bool = False,
 ):
     """
     Classify texts in all rows of one or more columns whether they are relevant to a certain topic. The function uses
@@ -1963,6 +2102,9 @@ def classify_rows(
     :param progress_bar: (bool) Whether to show progress bar. Defaults to True.
     :param tokenizer: (str, optional) Tokenizer path or id, for local classifiers saved without tokenizer files.
         Defaults to the model's own tokenizer, or the base model's tokenizer if the checkpoint records it.
+    :param dry_run: (bool) If True, call no API and return a dict instead of a dataframe with `llm_calls` (one per
+        `batch_size` rows still to classify, after checkpoint resume) and a rough `estimated_input_tokens`.
+        With a local classifier it reports 0 calls without loading the model.
     :returns: DataFrame: The dataframe with a new column "clf_preds_{on}" that stores the classification results.
     """
 
@@ -1984,6 +2126,23 @@ def classify_rows(
 
     # infer using HF or local models
     if openai_key is None and gemini_key is None:
+        if dry_run:
+            return {
+                "dry_run": True,
+                "function": "classify_rows",
+                "provider": "local",
+                "model": model,
+                "llm_calls": 0,
+                "estimated_input_tokens": 0,
+                "max_output_tokens_per_call": None,
+                "rows_total": len(df),
+                "rows_to_send": 0,
+                "rows_skipped": {},
+                "rows_per_call": batch_size,
+                "workers": 1,
+                "notes": ["No openai_key or gemini_key: classify_rows uses the local classifier, which calls no API."],
+            }
+
         import torch
 
         clf = load_clf(model, num_labels=num_labels)
@@ -2000,7 +2159,7 @@ def classify_rows(
         clf.to(device).eval()
         batch_preds = []
         with torch.no_grad():
-            for start in tqdm(range(0, len(strings_col), batch_size), disable=not progress_bar):
+            for start in tqdm(range(0, len(strings_col), batch_size), disable=not progress_enabled(progress_bar)):
                 batch = tokenizer(strings_col[start:start + batch_size], padding=True, truncation=True, return_tensors="pt")
                 logits = clf(**batch.to(device)).logits
                 batch_preds.append(logits.argmax(dim=-1).cpu().numpy())
@@ -2062,7 +2221,11 @@ def classify_rows(
             checkpoint_window_size=checkpoint_window_size,
             workers=api_workers,
             progress_bar=progress_bar,
+            dry_run=dry_run,
         )
+        if dry_run:
+            preds["function"] = "classify_rows"
+            return preds
 
         assert len(preds) == df.shape[0], "DEBUG: Length mismatch"
 
@@ -2094,7 +2257,8 @@ def transform_rows(
     resume: bool = False,
     failure_log_path: Optional[str] = None,
     retry_policy: Optional[Dict[str, Any]] = None,
-) -> pd.DataFrame:
+    dry_run: bool = False,
+) -> Union[pd.DataFrame, Dict[str, Any]]:
     """
     High-level wrapper: transform every cell in one or more columns via any batch transform fn.
     By default uses OpenAI with a “Fix spelling mistakes” prompt.
@@ -2112,7 +2276,10 @@ def transform_rows(
                            - ratelimit_sleep_time
     :param batch_size:    (int) number of rows in each chunk
     :param output_column: (str) name for the new column; default "transformed_{on}"
-    :param progress_bar:  (bool)
+    :param progress_bar:  (bool) LINKTRANSFORMER_PROGRESS=0 turns off every progress bar.
+    :param dry_run:       (bool) if True, call no API and return a dict instead of a dataframe with `llm_calls`
+                           (one per `batch_size` chunk of non-null rows that still has rows to transform after
+                           checkpoint resume) and a rough `estimated_input_tokens`.
     :returns:             pd.DataFrame with an added column of transforms
     """
     df = df.copy()
@@ -2148,6 +2315,33 @@ def transform_rows(
 
     # final output column name
     out_col = output_column or f"transformed_{key_name}"
+
+    if dry_run:
+        # the same rows and chunks transform_column would send
+        texts = df_to_transform[column_to_use].astype(str).tolist()
+        transformed = _read_transform_checkpoint(len(texts), checkpoint_path, resume)
+        batch_ranges = _pending_transform_ranges(transformed, batch_size)
+        rows_to_send = sum(end - start for start, end in batch_ranges)
+        effective_prompt = openai_prompt + _TRANSFORM_JSON_INSTRUCTION
+        if resolved_provider == "openai":
+            provider_key = openai_key or os.getenv("OPENAI_API_KEY")
+        else:
+            provider_key = gemini_key or os.getenv("GEMINI_API_KEY")
+        notes = [] if provider_key else [_missing_api_key_note(resolved_provider)]
+        return _llm_dry_run_report(
+            function="transform_rows",
+            provider=resolved_provider,
+            model=model,
+            call_payloads=[json.dumps(texts[start:end]) for start, end in batch_ranges],
+            fixed_prompt=effective_prompt if resolved_provider == "openai" else _gemini_inputs_prompt(effective_prompt, ""),
+            rows_total=len(df),
+            rows_to_send=rows_to_send,
+            rows_skipped={"null": int(null_mask.sum()), "resumed_from_checkpoint": len(texts) - rows_to_send},
+            rows_per_call=batch_size,
+            workers=api_workers,
+            max_output_tokens=_max_output_tokens(resolved_provider, openai_params),
+            notes=notes,
+        )
 
     # prepare provider client and fn_kwargs
     if resolved_provider == "openai":

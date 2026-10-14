@@ -24,6 +24,7 @@ from linktransformer.api_runtime import (
     parse_retry_policy,
     read_jsonl,
 )
+from linktransformer.progress import hf_progress_bars_off_if_disabled, progress_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +226,8 @@ def load_clf(model_path: str, num_labels: int = 2) -> transformers.AutoModelForS
     :return: The loaded Classification model
     """
     try:
-        return transformers.AutoModelForSequenceClassification.from_pretrained(model_path, num_labels=num_labels)
+        with hf_progress_bars_off_if_disabled():
+            return transformers.AutoModelForSequenceClassification.from_pretrained(model_path, num_labels=num_labels)
     except Exception as exc:
         raise ValueError(f"Error loading classification model {model_path!r}.") from exc
 
@@ -355,7 +357,8 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
                      checkpoint_path: Optional[str] = None, resume: bool = False,
                      failure_log_path: Optional[str] = None,
                      retry_policy: Optional[Dict[str, Any]] = None,
-                     embedding_cache: Optional[str] = None) -> Union[np.ndarray, torch.Tensor]:
+                     embedding_cache: Optional[str] = None,
+                     progress_bar: bool = True) -> Union[np.ndarray, torch.Tensor]:
     """
     Infer embeddings for a list of strings using a language model.
 
@@ -372,6 +375,8 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
     :param retry_policy: Retry settings for API calls: max_retries, base_sleep_seconds, jitter_seconds (optional).
     :param embedding_cache: Folder for an on-disk embedding cache (optional). Embeddings are stored per
         model and text, so repeated calls, in this or any other function, only embed texts not cached yet.
+    :param progress_bar: Show a progress bar while encoding with a local model (default: True).
+        LINKTRANSFORMER_PROGRESS=0 turns it off for every call.
     :return: Embeddings as a numpy array or a tensor (depending on return_numpy).
     """
 
@@ -383,7 +388,8 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
             strings, embedding_cache, model_key,
             lambda texts: infer_embeddings(texts, model, batch_size=batch_size, sbert=sbert, openai_key=openai_key,
                                            gemini_key=gemini_key, return_numpy=True, checkpoint_path=checkpoint_path,
-                                           resume=resume, failure_log_path=failure_log_path, retry_policy=retry_policy),
+                                           resume=resume, failure_log_path=failure_log_path, retry_policy=retry_policy,
+                                           progress_bar=progress_bar),
         )
         return embeddings if return_numpy else torch.from_numpy(embeddings)
 
@@ -469,7 +475,7 @@ def infer_embeddings(strings: list, model: LinkTransformer, batch_size: int = 12
             "batch_size": batch_size,
             "convert_to_numpy": return_numpy,
             "convert_to_tensor": not return_numpy,
-            "show_progress_bar": True,
+            "show_progress_bar": progress_enabled(progress_bar),
         }
 
         if isinstance(model, LinkTransformer):
@@ -676,6 +682,83 @@ def _openai_chat_completion_resilient(client: openai.OpenAI, request_kwargs: Dic
     return response
 
 
+def _gemini_inputs_prompt(prompt: str, inputs_json: str) -> str:
+    """The single text prompt sent to Gemini for batched classification and transform calls."""
+    return f"{prompt}\n\nInputs:\n{inputs_json}"
+
+
+# Dry runs estimate tokens without a tokenizer: about 4 characters per token for plain text, one token per
+# non-ASCII character, and 4 per \uXXXX escape, which is how json.dumps sends non-ASCII text in request payloads
+# (checked against OpenAI's o200k tokenizer on English, Spanish, French and Japanese names: within about 10%).
+_OPENAI_CHAT_OVERHEAD_TOKENS = 7  # message framing for a system + user chat request
+_TOKENS_PER_UNICODE_ESCAPE = 4
+
+
+def _estimate_tokens(text: str) -> int:
+    escapes = text.count("\\u")
+    non_ascii = 0 if text.isascii() else sum(1 for ch in text if ord(ch) > 127)
+    plain = max(len(text) - non_ascii - 6 * escapes, 0)
+    return -(-plain // 4) + non_ascii + _TOKENS_PER_UNICODE_ESCAPE * escapes
+
+
+def _max_output_tokens(provider: str, params: Dict[str, Any], default: Optional[int] = None) -> Optional[int]:
+    if provider == "gemini" and "max_output_tokens" in params:
+        return params["max_output_tokens"]
+    return params.get("max_tokens", default)
+
+
+def _llm_dry_run_report(
+    *,
+    function: str,
+    provider: str,
+    model: str,
+    call_payloads: List[str],
+    fixed_prompt: str,
+    rows_total: int,
+    rows_to_send: int,
+    rows_skipped: Dict[str, int],
+    rows_per_call: int,
+    workers: int,
+    max_output_tokens: Optional[int],
+    notes: Sequence[str] = (),
+) -> Dict[str, Any]:
+    """
+    The dict an LLM function returns with dry_run=True: how many API calls it would make and roughly how many
+    input tokens they would send, without calling any API.
+
+    :param call_payloads: The variable part of each request that would be sent (e.g. the JSON list of texts).
+    :param fixed_prompt: The part every request repeats (the system prompt, or the Gemini prompt around the payload).
+    """
+    per_call_tokens = _estimate_tokens(fixed_prompt) + (_OPENAI_CHAT_OVERHEAD_TOKENS if provider == "openai" else 0)
+    input_tokens = sum(_estimate_tokens(payload) for payload in call_payloads) + per_call_tokens * len(call_payloads)
+    return {
+        "dry_run": True,
+        "function": function,
+        "provider": provider,
+        "model": model,
+        "llm_calls": len(call_payloads),
+        "estimated_input_tokens": int(input_tokens),
+        "max_output_tokens_per_call": max_output_tokens,
+        "rows_total": int(rows_total),
+        "rows_to_send": int(rows_to_send),
+        "rows_skipped": {reason: int(count) for reason, count in rows_skipped.items()},
+        "rows_per_call": int(rows_per_call),
+        "workers": int(workers),
+        "notes": [
+            "No LLM API call was made.",
+            *notes,
+            "llm_calls counts first attempts; failed or malformed responses are retried up to max_retries times.",
+            "estimated_input_tokens is rough (~4 characters per token, more for non-ASCII text); the model's "
+            "tokenizer decides the real count, and numeric codes or IDs can take up to twice as many.",
+        ],
+    }
+
+
+def _missing_api_key_note(provider: str) -> str:
+    return (f"No {provider} API key found ({provider}_key or {provider.upper()}_API_KEY): "
+            "the real call would raise an error.")
+
+
 def get_completion_from_messages(
         client: openai.OpenAI, 
         text: str,
@@ -740,6 +823,7 @@ def predict_rows_with_openai(
         resume: bool = False,
         failure_log_path: Optional[str] = None,
         retry_policy: Optional[Dict[str, Any]] = None,
+        progress_bar: bool = True,
 ):
     """
     This function takes a list of texts and run the texts through the API. The first part of the function
@@ -755,6 +839,7 @@ def predict_rows_with_openai(
     :param label_dict: (dict) a dictionary map text labels to numeric labels
     :param max_retries: (int) maximum number of retries if the API request fails
     :param ratelimit_sleep_time: (int) time to sleep when encountering rate-limiting errors
+    :param progress_bar: (bool) whether to show a progress bar
     :returns: (List[int]) a list of labels from OpenAI API
     """
 
@@ -780,7 +865,7 @@ def predict_rows_with_openai(
     )
 
     # get results from api
-    for i in tqdm(range(len(strings_col))):
+    for i in tqdm(range(len(strings_col)), disable=not progress_enabled(progress_bar)):
         if i in raw_preds:
             continue
 
@@ -850,7 +935,14 @@ def predict_rows_with_llm(
         checkpoint_window_size: Optional[int] = None,
         workers: int = 1,
         progress_bar: bool = True,
+        dry_run: bool = False,
 ):
+    """
+    Classify texts with an OpenAI or Gemini chat model, `batch_size` texts per request. Used by classify_rows.
+
+    With dry_run=True, returns a dict with the number of API calls and a rough input-token estimate instead of
+    predictions, after applying checkpoint resume, without calling the API.
+    """
     if batch_size < 1:
         raise ValueError("batch_size must be >= 1")
     if checkpoint_window_size is not None and checkpoint_window_size < 1:
@@ -876,10 +968,15 @@ def predict_rows_with_llm(
     resolved_openai_key = openai_key or os.getenv("OPENAI_API_KEY")
     resolved_gemini_key = gemini_key or os.getenv("GEMINI_API_KEY")
 
+    dry_run_notes: List[str] = []
     if provider == "openai" and resolved_openai_key is None:
-        raise ValueError("OpenAI classification requires `openai_key` or OPENAI_API_KEY.")
+        if not dry_run:
+            raise ValueError("OpenAI classification requires `openai_key` or OPENAI_API_KEY.")
+        dry_run_notes.append(_missing_api_key_note(provider))
     if provider == "gemini" and resolved_gemini_key is None:
-        raise ValueError("Gemini classification requires `gemini_key` or GEMINI_API_KEY.")
+        if not dry_run:
+            raise ValueError("Gemini classification requires `gemini_key` or GEMINI_API_KEY.")
+        dry_run_notes.append(_missing_api_key_note(provider))
 
     if openai_prompt is None:
         if openai_topic is None:
@@ -974,7 +1071,24 @@ def predict_rows_with_llm(
         if len(pending_indices) > 0:
             pending_batches.append((start, end, pending_indices, batch_texts))
 
-    progress = tqdm(total=len(pending_batches), disable=not progress_bar, desc="classifying rows")
+    if dry_run:
+        rows_to_send = sum(len(batch[2]) for batch in pending_batches)
+        return _llm_dry_run_report(
+            function="predict_rows_with_llm",
+            provider=provider,
+            model=model,
+            call_payloads=[json.dumps(batch[3]) for batch in pending_batches],
+            fixed_prompt=effective_prompt if provider == "openai" else _gemini_inputs_prompt(effective_prompt, ""),
+            rows_total=len(strings_col),
+            rows_to_send=rows_to_send,
+            rows_skipped={"resumed_from_checkpoint": len(strings_col) - rows_to_send},
+            rows_per_call=batch_size,
+            workers=workers,
+            max_output_tokens=_max_output_tokens(provider, openai_params),
+            notes=dry_run_notes,
+        )
+
+    progress = tqdm(total=len(pending_batches), disable=not progress_enabled(progress_bar), desc="classifying rows")
 
     def _run_batch(batch_item: Tuple[int, int, List[int], List[str]]) -> Tuple[int, int, List[int], List[Any]]:
         start, end, pending_indices, batch_texts = batch_item
@@ -1007,7 +1121,7 @@ def predict_rows_with_llm(
                 elif "max_tokens" in openai_params:
                     generation_config["max_output_tokens"] = openai_params["max_tokens"]
 
-                prompt_text = f"{effective_prompt}\n\nInputs:\n{json.dumps(batch_texts)}"
+                prompt_text = _gemini_inputs_prompt(effective_prompt, json.dumps(batch_texts))
                 content = _gemini_generate_text(_get_gemini_client(), model, prompt_text, generation_config) or "[]"
 
             arr = _extract_first_json_array(content)
@@ -1089,13 +1203,20 @@ def apply_in_chunks(
         items[i : i + chunk_size]
         for i in range(0, len(items), chunk_size)
     ]
-    iterator = tqdm(chunks, disable=not progress_bar, desc="applying transform")
+    iterator = tqdm(chunks, disable=not progress_enabled(progress_bar), desc="applying transform")
     for batch in iterator:
         transformed = fn(batch, fn_kwargs)
         if len(transformed) != len(batch):
             raise ValueError("Transform function returned wrong batch size")
         results.extend(transformed)
     return results
+
+# appended to the transform prompt by openai_transform and gemini_transform
+_TRANSFORM_JSON_INSTRUCTION = (
+    "\n\nPlease return only a JSON array of strings, "
+    "one entry per input, in the same order, with no extra text."
+)
+
 
 def openai_transform(
     texts: List[str],
@@ -1119,11 +1240,7 @@ def openai_transform(
     custom_retry_policy = params.get("retry_policy")
 
     # append JSON instructions automatically
-    json_instr = (
-        "\n\nPlease return only a JSON array of strings, "
-        "one entry per input, in the same order, with no extra text."
-    )
-    effective_prompt = prompt + json_instr
+    effective_prompt = prompt + _TRANSFORM_JSON_INSTRUCTION
 
     system_msg = {"role": "system", "content": effective_prompt}
     user_msg   = {"role": "user",   "content": json.dumps(texts)}
@@ -1181,11 +1298,7 @@ def gemini_transform(
     custom_retry_policy = params.get("retry_policy")
     client = params["gemini_client"]
 
-    json_instr = (
-        "\n\nPlease return only a JSON array of strings, "
-        "one entry per input, in the same order, with no extra text."
-    )
-    effective_prompt = prompt + json_instr
+    effective_prompt = prompt + _TRANSFORM_JSON_INSTRUCTION
 
     generation_config: Dict[str, Any] = {}
     if "temperature" in extra:
@@ -1206,7 +1319,7 @@ def gemini_transform(
     )
 
     def _call_transform() -> List[str]:
-        prompt_text = f"{effective_prompt}\n\nInputs:\n{json.dumps(texts)}"
+        prompt_text = _gemini_inputs_prompt(effective_prompt, json.dumps(texts))
         out = _gemini_generate_text(client, model, prompt_text, generation_config) or "[]"
         arr = _extract_first_json_array(out)
         if len(arr) != len(texts):
@@ -1227,6 +1340,45 @@ def gemini_transform(
         )
         raise
             
+def _read_transform_checkpoint(n_rows: int, checkpoint_path: Optional[str], resume: bool) -> List[Optional[Any]]:
+    """Outputs already recorded in a transform_column checkpoint, by row position (None where missing)."""
+    transformed: List[Optional[Any]] = [None] * n_rows
+    if checkpoint_path is None or not resume:
+        return transformed
+
+    for rec in read_jsonl(checkpoint_path):
+        if rec.get("kind") == "transform_column_row" and "index" in rec and "value" in rec:
+            idx = int(rec["index"])
+            if 0 <= idx < len(transformed):
+                transformed[idx] = rec["value"]
+        elif rec.get("kind") == "transform_column_batch" and "start" in rec and "values" in rec:
+            values = rec.get("values", [])
+            indices = rec.get("indices")
+            if isinstance(indices, list) and isinstance(values, list):
+                for idx_raw, value in zip(indices, values):
+                    idx = int(idx_raw)
+                    if 0 <= idx < len(transformed) and transformed[idx] is None:
+                        transformed[idx] = value
+            elif isinstance(values, list):
+                start = int(rec["start"])
+                for offset, value in enumerate(values):
+                    idx = start + offset
+                    if 0 <= idx < len(transformed) and transformed[idx] is None:
+                        transformed[idx] = value
+    return transformed
+
+
+def _pending_transform_ranges(transformed: List[Optional[Any]], chunk_size: int) -> List[Tuple[int, int]]:
+    """The (start, end) chunks that still have a row without output; each is sent whole."""
+    batch_ranges: List[Tuple[int, int]] = []
+    for start in range(0, len(transformed), chunk_size):
+        end = min(start + chunk_size, len(transformed))
+        if all(transformed[i] is not None for i in range(start, end)):
+            continue
+        batch_ranges.append((start, end))
+    return batch_ranges
+
+
 def transform_column(
     df: pd.DataFrame,
     column: str,
@@ -1257,28 +1409,7 @@ def transform_column(
 
     checkpoint_window = checkpoint_window_size or chunk_size
     ser = df[column].astype(str).tolist()
-    transformed: List[Optional[str]] = [None] * len(ser)
-
-    if checkpoint_path is not None and resume:
-        for rec in read_jsonl(checkpoint_path):
-            if rec.get("kind") == "transform_column_row" and "index" in rec and "value" in rec:
-                idx = int(rec["index"])
-                if 0 <= idx < len(transformed):
-                    transformed[idx] = rec["value"]
-            elif rec.get("kind") == "transform_column_batch" and "start" in rec and "values" in rec:
-                values = rec.get("values", [])
-                indices = rec.get("indices")
-                if isinstance(indices, list) and isinstance(values, list):
-                    for idx_raw, value in zip(indices, values):
-                        idx = int(idx_raw)
-                        if 0 <= idx < len(transformed) and transformed[idx] is None:
-                            transformed[idx] = value
-                elif isinstance(values, list):
-                    start = int(rec["start"])
-                    for offset, value in enumerate(values):
-                        idx = start + offset
-                        if 0 <= idx < len(transformed) and transformed[idx] is None:
-                            transformed[idx] = value
+    transformed = _read_transform_checkpoint(len(ser), checkpoint_path, resume)
 
     checkpoint_buffer_indices: List[int] = []
     checkpoint_buffer_values: List[Any] = []
@@ -1306,14 +1437,9 @@ def transform_column(
             del checkpoint_buffer_indices[:flush_n]
             del checkpoint_buffer_values[:flush_n]
 
-    batch_ranges: List[Tuple[int, int]] = []
-    for start in range(0, len(ser), chunk_size):
-        end = min(start + chunk_size, len(ser))
-        if all(transformed[i] is not None for i in range(start, end)):
-            continue
-        batch_ranges.append((start, end))
+    batch_ranges = _pending_transform_ranges(transformed, chunk_size)
 
-    progress = tqdm(total=len(batch_ranges), disable=not progress_bar, desc="applying transform")
+    progress = tqdm(total=len(batch_ranges), disable=not progress_enabled(progress_bar), desc="applying transform")
 
     def _run_transform_batch(batch_range: Tuple[int, int]) -> Tuple[int, int, List[Any]]:
         start, end = batch_range

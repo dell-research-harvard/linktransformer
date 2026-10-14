@@ -47,6 +47,7 @@ _LAZY_ATTRS = {
         "tokenize_data_for_inference", "transform_column",
     ],
     "linktransformer.cluster_fns": ["cluster", "clusters_from_edges"],
+    "linktransformer.diagnostics": ["match_report"],
     "linktransformer.preprocess": [
         "check_and_prep_data", "check_clust_data", "convert_to_text", "prep_clus_data", "prep_linkage_data",
         "prep_paired_label_data", "preprocess_any_data", "preprocess_mexican_tarrif_data",
@@ -59,8 +60,8 @@ _LAZY_ATTRS = {
 }
 _ATTR_TO_MODULE = {attr: module for module, attrs in _LAZY_ATTRS.items() for attr in attrs}
 _SUBMODULES = {
-    "api_runtime", "cluster_fns", "configs", "constants", "data", "embedding_cache", "infer", "modelling",
-    "modified_sbert", "preprocess", "search", "train_clf_model", "train_model", "utils",
+    "api_runtime", "cluster_fns", "configs", "constants", "data", "diagnostics", "embedding_cache", "infer",
+    "modelling", "modified_sbert", "preprocess", "progress", "search", "train_clf_model", "train_model", "utils",
 }
 
 __all__ = ["DATA_DIR_PATH", "citation", "print_citation", *sorted(_ATTR_TO_MODULE)]
@@ -99,6 +100,7 @@ sys.modules[__name__].__class__ = _LinkTransformerPackage
 
 if TYPE_CHECKING:  # let static type checkers and IDEs see the real definitions
     from .cluster_fns import cluster, clusters_from_edges
+    from .diagnostics import match_report
     from .infer import (
         aggregate_rows, all_pair_combos_evaluate, classify_rows, cluster_rows, dedup_rows, evaluate_pairs,
         judge_merge_k_out, merge, merge_blocking, merge_k_judge, merge_knn, merge_knn_openai, merge_knn_with_llm,

@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from typing import List
 import logging
+from linktransformer.progress import progress_enabled
 from linktransformer.utils import _require
 
 try:  # sentence-transformers >= 5.4
@@ -234,14 +235,14 @@ class InformationRetrievalEvaluator_wandb(evaluation.InformationRetrievalEvaluat
         max_k = max(max(self.mrr_at_k), max(self.ndcg_at_k), max(self.accuracy_at_k), max(self.precision_recall_at_k), max(self.map_at_k))
 
         # Compute embedding for the queries
-        query_embeddings = model.encode(self.queries, show_progress_bar=self.show_progress_bar, batch_size=self.batch_size, convert_to_tensor=True,normalize_embeddings=True)
+        query_embeddings = model.encode(self.queries, show_progress_bar=progress_enabled(self.show_progress_bar), batch_size=self.batch_size, convert_to_tensor=True,normalize_embeddings=True)
 
         queries_result_list = {}
         for name in self.score_functions:
             queries_result_list[name] = [[] for _ in range(len(query_embeddings))]
 
         #Iterate over chunks of the corpus
-        for corpus_start_idx in trange(0, len(self.corpus), self.corpus_chunk_size, desc='Corpus Chunks', disable=not self.show_progress_bar):
+        for corpus_start_idx in trange(0, len(self.corpus), self.corpus_chunk_size, desc='Corpus Chunks', disable=not progress_enabled(self.show_progress_bar)):
             corpus_end_idx = min(corpus_start_idx + self.corpus_chunk_size, len(self.corpus))
 
             #Encode chunk of corpus
@@ -441,7 +442,7 @@ class BinaryClassificationEvaluator_wandb(evaluation.BinaryClassificationEvaluat
         logger.info("*********************EVALUATION STARTED******************************")
 
         sentences = list(set(self.sentences1 + self.sentences2))
-        embeddings = model.encode(sentences, batch_size=self.batch_size, show_progress_bar=self.show_progress_bar, convert_to_numpy=True)
+        embeddings = model.encode(sentences, batch_size=self.batch_size, show_progress_bar=progress_enabled(self.show_progress_bar), convert_to_numpy=True)
         emb_dict = {sent: emb for sent, emb in zip(sentences, embeddings)}
         embeddings1 = [emb_dict[sent] for sent in self.sentences1]
         embeddings2 = [emb_dict[sent] for sent in self.sentences2]

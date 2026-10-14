@@ -10,6 +10,7 @@ from transformers.utils import logging as lg
 
 from linktransformer.modelling.LinkTransformer import LinkTransformer
 from linktransformer.modified_sbert import evaluation, losses
+from linktransformer.progress import hf_progress_bars_off_if_disabled, progress_enabled
 from linktransformer.utils import _require
 
 try:  # sentence-transformers >= 5.4
@@ -56,6 +57,7 @@ def _build_onlinecontrastive_dataset(df):
     return _require("datasets").Dataset.from_dict({"sentence1": source_text, "sentence2": target_text, "label": labels})
 
 
+@hf_progress_bars_off_if_disabled()
 def train_biencoder(
         train_data: dict = None,
         dev_data: dict = None,
@@ -182,6 +184,7 @@ def train_biencoder(
             ddp_backend="nccl" if distributed_mode else None,
             # SupCon needs several examples per label in a batch
             batch_sampler="group_by_label" if loss_type == "supcon" else "batch_sampler",
+            disable_tqdm=None if progress_enabled() else True,  # None keeps the transformers default
         )
 
         trainer = SentenceTransformerTrainer(

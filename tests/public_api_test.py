@@ -12,7 +12,7 @@ PUBLIC_API = [
     "clusters_from_edges", "convert_to_text", "cosine_similarity_corresponding_pairs",
     "cosine_similarity_corresponding_pairs_torch", "create_new_train_config", "dedup_rows", "evaluate_pairs",
     "get_completion_from_messages", "infer_embeddings", "infer_embeddings_with_gemini", "judge_merge_k_out", "load_clf",
-    "load_model",
+    "load_model", "match_report",
     "merge", "merge_blocking", "merge_k_judge", "merge_knn", "merge_knn_openai", "merge_knn_with_llm", "merge_range",
     "openai_transform", "predict_rows_with_openai", "prep_clus_data", "prep_linkage_data", "prep_paired_label_data",
     "preprocess_any_data", "preprocess_mexican_tarrif_data", "serialize_columns", "tokenize_data_for_inference",
@@ -57,3 +57,9 @@ def test_lt_import_is_lightweight():
 def test_lt_inference_does_not_import_optional_libraries():
     loaded = _modules_loaded_after("import linktransformer as lt\nlt.merge; lt.merge_knn; lt.cluster_rows")
     assert not set(NOT_NEEDED_FOR_INFERENCE) & loaded, set(NOT_NEEDED_FOR_INFERENCE) & loaded
+
+
+def test_lt_match_report_is_lightweight():
+    # checking a merge result should not pull in torch or the model libraries
+    loaded = _modules_loaded_after("import linktransformer as lt\nlt.match_report")
+    assert not {"torch", "transformers", "sentence_transformers", "openai"} & loaded

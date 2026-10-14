@@ -18,6 +18,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trai
 import sklearn.model_selection
 from typing import Tuple, List, Union
 
+from linktransformer.progress import hf_progress_bars_off_if_disabled, progress_enabled
 from linktransformer.utils import _require, serialize_columns
 from linktransformer.configs import CLF_CONFIG_PATH
 
@@ -166,6 +167,8 @@ def train_model(
     ##output_dir = save_dir if save_dir is not None else f"." 
     training_args["output_dir"]=save_dir
     training_args.setdefault("dataloader_pin_memory", False)
+    if not progress_enabled():  # LINKTRANSFORMER_PROGRESS=0 overrides disable_tqdm from the config
+        training_args["disable_tqdm"] = True
 
     model = AutoModelForSequenceClassification.from_pretrained(hf_model, num_labels=num_labels)
 
@@ -206,8 +209,11 @@ def evaluate_test(trained_model, predict_dataset, original_test_dir, num_labels=
 
     model = AutoModelForSequenceClassification.from_pretrained(trained_model, num_labels=num_labels)
 
-    # Instantiate Trainer
-    trainer = Trainer(model=model)
+    # Instantiate Trainer (without args it uses TrainingArguments(output_dir="tmp_trainer"))
+    if progress_enabled():
+        trainer = Trainer(model=model)
+    else:
+        trainer = Trainer(model=model, args=TrainingArguments(output_dir="tmp_trainer", disable_tqdm=True))
 
     predictions = trainer.predict(predict_dataset)
 
@@ -339,6 +345,7 @@ def load_default_training_args(config_path):
 
 
 
+@hf_progress_bars_off_if_disabled()
 def train_clf_model(data=None,model="distilroberta-base",on=None,label_col_name="label",train_data=None,val_data=None,test_data=None,data_dir=".",
                     training_args=None,config=CLF_CONFIG_PATH,
                     eval_steps=None,save_steps=None,batch_size=None,lr=None,

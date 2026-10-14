@@ -164,6 +164,25 @@ Both sides and all functions share one cache. Local models are identified by a f
 
 API-based workflows (OpenAI/Gemini embeddings, `merge_k_judge`, `judge_merge_k_out`, `classify_rows`, `transform_rows`) accept `checkpoint_path` (a JSONL progress file), `resume=True` to continue an interrupted run, `failure_log_path` to record failed calls, and `retry_policy={"max_retries": 5, "base_sleep_seconds": 15, "jitter_seconds": 2}`. `judge_workers` / `api_workers` run API calls in parallel.
 
+## Checking results and API cost
+
+These helpers return small dicts of plain Python values, which suit scripts and coding agents:
+
+```python
+# how many LLM calls (and roughly how many input tokens) a run would make, without calling the LLM
+plan = lt.merge_k_judge(left_df, right_df, on="CompanyName", k=5, knn_sbert_model="all-MiniLM-L6-v2",
+                        judge_llm_model="gpt-4o-mini", dry_run=True)
+print(plan["llm_calls"], plan["estimated_input_tokens"])
+
+# summary of a merge: unmatched rows, score quantiles, one-to-many links, samples near a threshold
+matches = lt.merge_knn(left_df, right_df, on="CompanyName", k=3)
+report = lt.match_report(matches, left_df, right_df, on="CompanyName", threshold=0.8)
+```
+
+`dry_run=True` also works on `judge_merge_k_out`, `classify_rows` and `transform_rows`. It applies checkpoint resume, already-judged rows, score-based skipping and batching as the real run would. `merge_k_judge` only embeds the data during a dry run when `drop_sim_threshold` or a `judge_skip_*_thresh` makes the number of calls depend on similarity scores. Token counts are rough estimates: about 4 characters per token, with more tokens for non-English text. Without a `threshold`, `match_report` suggests one: the cutoff that agrees best with the LLM's judgments, if there are any, or else a split of the score histogram. Check the returned samples before relying on it.
+
+Set `LINKTRANSFORMER_PROGRESS=0` to turn off every progress bar, including transformers' weight-loading bars. Functions that show a bar also accept `progress_bar=False`.
+
 ## Provider Notes
 
 - Japanese models built on mLUKE (`lt-wikidata-comp-ja`, `lt-wikidata-comp-prod-ind-ja`, `lt-historicjapan-*`) need transformers 4.x: `pip install "transformers>=4.56,<5" "sentence-transformers>=5,<6"`. transformers 5 does not tokenize them correctly, and LinkTransformer raises an error rather than returning wrong embeddings.

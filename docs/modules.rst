@@ -6,6 +6,10 @@ Linkage and Classification Inference
 .. automodule:: linktransformer.infer
    :members:
 
+Checking Linkage Results
+-------------------------
+.. autofunction:: linktransformer.diagnostics.match_report
+
 Linkage Model Training
 -----------------------
 .. automodule:: linktransformer.train_model

@@ -86,6 +86,25 @@
           discussion in #31 with @julienberman). Local models are keyed by a fingerprint of
           their weights, so a retrained model never reuses stale embeddings.
 
+        Checking results and API spend (for scripts and coding agents)
+        - New `lt.match_report(df, df1, df2)`: a small JSON-serializable summary of merge, merge_knn,
+          merge_range, merge_blocking or merge_k_judge output: row counts, unmatched rows, score
+          quantiles, left/right rows linked to several rows of the other side, LLM judge statistics,
+          and sample pairs on both sides of a given or suggested threshold. It needs only numpy and
+          pandas and takes well under a second on a million rows.
+        - `dry_run=True` on merge_k_judge, judge_merge_k_out, classify_rows and transform_rows returns
+          the number of LLM calls and a rough input-token estimate instead of results, after checkpoint
+          resume, already-judged rows, score-based skipping and batching, without calling any LLM.
+          merge_k_judge embeds (runs retrieval) in a dry run only when drop_sim_threshold or a
+          judge_skip_*_thresh makes the count depend on similarity scores.
+        - Every progress bar can be turned off: LINKTRANSFORMER_PROGRESS=0 silences all of them, including
+          transformers' weight-loading and Hugging Face download bars while models load and the Trainer and
+          datasets bars in train_model / train_clf_model. infer_embeddings,
+          merge, merge_knn, merge_range, merge_blocking, aggregate_rows, evaluate_pairs,
+          all_pair_combos_evaluate, cluster_rows, dedup_rows and predict_rows_with_openai accept
+          `progress_bar=` (embedding progress was always shown before), and merge_k_judge's
+          progress_bar also covers retrieval.
+
         Fixes and contributions
         - Japanese mLUKE models (e.g. lt-wikidata-comp-ja, lt-historicjapan-*): transformers 5.0-5.1
           tokenize them incorrectly without an error (0.1.18 pinned transformers 5.1.0) and later

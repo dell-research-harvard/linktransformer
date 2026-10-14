@@ -6,6 +6,7 @@ from huggingface_hub import HfApi, get_token
 import os
 import json
 from linktransformer.model_card_templates import render_linktransformer_card
+from linktransformer.progress import hf_progress_bars_off_if_disabled
 import shutil
 import stat
 from torch import nn
@@ -86,7 +87,8 @@ class LinkTransformer(SentenceTransformer):
 
 
         try:
-            super().__init__(model_name_or_path=model_name_or_path, modules=modules, device=device, cache_folder=cache_folder, token=use_auth_token)
+            with hf_progress_bars_off_if_disabled():
+                super().__init__(model_name_or_path=model_name_or_path, modules=modules, device=device, cache_folder=cache_folder, token=use_auth_token)
         except Exception as exc:
             if model_name_or_path is not None and _transformers_is_v5_or_later():
                 declared = _declared_tokenizer_class(model_name_or_path)
