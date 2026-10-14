@@ -5,7 +5,7 @@ description: Record linkage, fuzzy merges, entity resolution, deduplication and 
 
 # LinkTransformer
 
-LinkTransformer embeds the key column(s) of each row with a transformer model and links rows by cosine similarity. Everything is a function on pandas DataFrames: call the Python API directly. This skill describes version 0.2.0 with `lt.match_report` and `dry_run=`. If `python -c "import linktransformer as lt; print(lt.__version__, hasattr(lt, 'match_report'))"` prints an older version or `False`, upgrade the package.
+LinkTransformer embeds the key column(s) of each row with a transformer model and links rows by cosine similarity. Everything is a function on pandas DataFrames: call the Python API directly. This skill describes version 0.1.19 with `lt.match_report` and `dry_run=`. If `python -c "import linktransformer as lt; print(lt.__version__, hasattr(lt, 'match_report'))"` prints an older version or `False`, upgrade the package.
 
 ```bash
 pip install linktransformer              # extras: [train] fine-tuning, [gemini] Gemini models, [all]

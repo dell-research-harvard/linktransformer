@@ -10,7 +10,7 @@ import sys
 import types
 from typing import TYPE_CHECKING
 
-__version__ = "0.2.0"
+__version__ = "0.1.19"
 
 # For compatibility with sentence-transformers / existing model-card behavior.
 from .constants import __MODEL_HUB_ORGANIZATION__

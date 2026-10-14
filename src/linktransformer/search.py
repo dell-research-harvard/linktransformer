@@ -10,8 +10,8 @@ How the search is organized:
 - Tiling (``tiled=True``, the default): queries and corpus are both split into tiles, so
   every matrix product is large and roughly square and only one tile of scores is held in
   memory at a time. Each query keeps a running top-k across the corpus tiles.
-  ``tiled=False`` multiplies chunks of queries against the whole corpus at once, as in
-  LinkTransformer 0.2.0 before tiling was added.
+  ``tiled=False`` multiplies chunks of queries against the whole corpus at once, as the
+  first torch search did before tiling was added.
 - Top-k within a tile uses block maxima: the k highest scores of a row lie in the k blocks
   of ``_BLOCK`` (CPU) or ``_CUDA_BLOCK`` (CUDA) columns with the highest maxima, so only
   those blocks are ranked. This is exact and much cheaper than ranking every column.

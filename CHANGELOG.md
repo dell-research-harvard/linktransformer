@@ -1,6 +1,18 @@
 # Change Log
 
-## 0.2.0
+## 0.1.19
+        A testing release of the changes planned for 0.2.0, published as 0.1.19 to gather
+        feedback from more users first. Please report problems on GitHub.
+
+        Breaking changes
+        - cluster_rows and dedup_rows need a threshold: pass sim_threshold= (a cosine similarity)
+          or the original cluster_params["threshold"] (a distance). Calls without one raise an error.
+        - cluster_rows gives every row a cluster id and adds a cluster_size column; rows SLINK or
+          HDBScan leave unclustered are no longer labelled -1.
+        - Training needs the train extra: pip install "linktransformer[train]".
+        - FAISS and the hdbscan package are no longer installed or used.
+        - Japanese mLUKE models (lt-wikidata-comp-ja, lt-historicjapan-*) need transformers 4.x.
+
         Packaging
         - Dependencies are now version ranges instead of exact pins, tested in CI at both the
           oldest allowed and newest versions (numpy>=2.0, pandas>=2.2.2, torch>=2.6,
