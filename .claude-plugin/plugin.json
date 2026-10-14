@@ -1,0 +1,12 @@
+{
+  "name": "linktransformer",
+  "description": "Teaches coding agents to use LinkTransformer correctly: choosing the merge function and model, validating similarity thresholds, LLM cost guardrails and long-running jobs.",
+  "author": {
+    "name": "Dell Research Harvard",
+    "url": "https://linktransformer.github.io/"
+  },
+  "homepage": "https://linktransformer.github.io/",
+  "repository": "https://github.com/dell-research-harvard/linktransformer",
+  "license": "MIT",
+  "keywords": ["record-linkage", "entity-resolution", "deduplication", "fuzzy-merge", "pandas", "embeddings"]
+}

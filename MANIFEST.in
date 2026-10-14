@@ -1,3 +1,6 @@
 include src/linktransformer/data/*.csv
 include src/linktransformer/data/*.xlsx
 include src/linktransformer/configs/*.json
+# The agent skill and Claude Code plugin files are for the GitHub repo only, not the Python package
+prune skills
+prune .claude-plugin

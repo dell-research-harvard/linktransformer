@@ -192,6 +192,17 @@ Set `LINKTRANSFORMER_PROGRESS=0` to turn off every progress bar, including trans
 - API embedding models and local SBERT models are both supported.
 - For multi-column API retrieval, LinkTransformer serializes columns safely using `<SEP>`.
 
+## Using with AI agents
+
+The repo includes an agent skill, [`skills/linktransformer`](https://github.com/dell-research-harvard/linktransformer/tree/main/skills/linktransformer). It teaches coding agents to pick the right function and model, validate a similarity threshold before trusting it, estimate LLM costs before paying for them, and run long jobs resumably. To install it as a Claude Code plugin:
+
+```text
+/plugin marketplace add dell-research-harvard/linktransformer
+/plugin install linktransformer@linktransformer
+```
+
+On Claude Code 2.1.275 or later, one step also works: `/plugin install linktransformer --marketplace dell-research-harvard/linktransformer`. Claude then loads the skill for record-linkage tasks automatically, or you can call it with `/linktransformer:linktransformer`. Other agents can read `skills/linktransformer/SKILL.md` and its `references/` folder directly.
+
 ## Development and testing
 
 ```bash

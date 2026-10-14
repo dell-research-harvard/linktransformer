@@ -1,0 +1,15 @@
+{
+  "name": "linktransformer",
+  "description": "Agent skill for the LinkTransformer Python package: record linkage, fuzzy merges, deduplication and clustering of dataframes.",
+  "owner": {
+    "name": "Dell Research Harvard",
+    "url": "https://linktransformer.github.io/"
+  },
+  "plugins": [
+    {
+      "name": "linktransformer",
+      "source": ".",
+      "description": "Teaches coding agents to use LinkTransformer correctly: choosing the merge function and model, validating similarity thresholds, LLM cost guardrails and long-running jobs."
+    }
+  ]
+}
