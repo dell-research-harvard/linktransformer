@@ -3,10 +3,12 @@
 Every snippet runs on the toy data shipped with the package. Swap in your own frames and column names. The snippets share this setup:
 
 ```python
+import json
 import os
 import pandas as pd
 import linktransformer as lt
 
+os.environ.setdefault("LINKTRANSFORMER_PROGRESS", "0")   # no progress bars
 D = lt.DATA_DIR_PATH
 firms_a = pd.read_csv(os.path.join(D, "toy_comp_1.csv"))   # CompanyID, CompanyName, Industry, Founded_Year, Country
 firms_b = pd.read_csv(os.path.join(D, "toy_comp_2.csv"))   # CompanyID, CompanyName, Revenue..., Num_Employees, Country
@@ -52,7 +54,12 @@ print(out[["CompanyName_x", "Country_x", "CompanyName_y", "Country_y", "score", 
 ```
 
 - `match_status` is `matched_block`, `left_only_block` (no right rows in that block) or `right_only_block`. Unmatched rows have NaN `score`.
-- `id_lt_x` / `id_lt_y` are row positions *within each block*, so they can't be used to join back. Keep your own ID column for that.
+- `id_lt_x` / `id_lt_y` are row positions *within each block*, so they can't be used to join back. Keep your own ID column for that, and pass it to `match_report`:
+
+  ```python
+  report = lt.match_report(out, firms_a, firms_b, on="CompanyName", left_key="CompanyID_x", right_key="CompanyID_y")
+  print(json.dumps(report["match_status"]), json.dumps(report["left"]))
+  ```
 - Rows with a missing value in a blocking column are dropped, because pandas `groupby` drops NaN keys. Fill missing values first (e.g. `fillna("unknown")`) if those rows matter.
 - `merge_blocking` takes `embedding_cache=` but not the API checkpoint arguments.
 

@@ -1,11 +1,14 @@
 # LLM workflows: judging, classification, transforms, long jobs
 
-Snippets marked `# Needs OPENAI_API_KEY` call a paid API. Run the cost estimate and a pilot before any of them on full data, and never put a key in code: read it from the environment. The snippets share this setup:
+Snippets marked `# Needs OPENAI_API_KEY` call a paid API. Run a `dry_run=True` estimate and a pilot before any of them on full data, and never put a key in code: read it from the environment. The snippets share this setup:
 
 ```python
+import json
 import os
 import pandas as pd
 import linktransformer as lt
+
+os.environ.setdefault("LINKTRANSFORMER_PROGRESS", "0")   # no progress bars
 
 left = pd.read_csv(os.path.join(lt.DATA_DIR_PATH, "toy_comp_1.csv"))
 right = pd.read_csv(os.path.join(lt.DATA_DIR_PATH, "toy_comp_2.csv"))
@@ -17,7 +20,7 @@ MODEL = "dell-research-harvard/lt-wikidata-comp-en"
 The recommended flow has three stages, and only the last one costs money:
 
 1. **Retrieve candidates** with a local model: `merge_knn(k=...)`. This is free, so iterate on `k`, the model and `drop_sim_threshold` here.
-2. **Estimate the cost** and pick skip thresholds (next section).
+2. **Estimate the cost** with `dry_run=True` and pick skip thresholds (next section).
 3. **Judge** the saved candidates with `judge_merge_k_out`. Pilot on a sample first, then run everything with a checkpoint.
 
 `merge_k_judge(df1, df2, ...)` runs stages 1 and 3 in one call. That suits small jobs, but it recomputes the candidates on every call and doesn't checkpoint API embeddings. For big jobs, save the candidates and call `judge_merge_k_out` yourself.
@@ -33,33 +36,48 @@ Judge parameters worth knowing:
 
 ## Estimate cost before running
 
+Every paid function takes `dry_run=True`. It returns a dict instead of results, calls no LLM and writes no checkpoint. The rows it counts are the ones the real call would send: after rows already judged, rows found in the checkpoint when `resume=True`, score-based skips and batching. So dry-run with exactly the arguments you will use:
+
 ```python
 cands = lt.merge_knn(left, right, on="CompanyName", model=MODEL, k=3, drop_sim_threshold=0.5,
                      embedding_cache="lt_cache")
 lo, hi = 0.6, 0.97                       # judge_skip_lower_thresh, judge_skip_upper_thresh
-to_judge = cands[(cands["score"] > lo) & (cands["score"] < hi)]
-n_calls = len(to_judge)                  # one LLM call per judged pair
+judge_args = dict(on="CompanyName", judge_llm_model="gpt-4o-mini",
+                  judge_skip_lower_thresh=lo, judge_skip_upper_thresh=hi)
 
-# about 4 characters per token: system prompt (~350 chars) + JSON payload, compact JSON reply
-payload_chars = to_judge["CompanyName_x"].astype(str).str.len() + to_judge["CompanyName_y"].astype(str).str.len() + 60
-input_tokens = int(((payload_chars + 350) / 4).sum())
-output_tokens = 20 * n_calls
-print(f"{n_calls} calls, ~{input_tokens} input and ~{output_tokens} output tokens")
-print(cands["score"].describe())         # check how many pairs the skip thresholds remove
+plan = lt.judge_merge_k_out(cands, **judge_args, dry_run=True)
+print(json.dumps({key: value for key, value in plan.items() if key != "notes"}))
+print(plan["notes"])
 ```
 
-Multiply the tokens by the model's current per-token prices (look them up) to get dollars. Calls for the other functions:
+The dict holds:
 
-| Function | LLM calls |
-|---|---|
-| `merge_k_judge` | pairs from `merge_knn(k, drop_sim_threshold)` with `lower < score < upper` |
-| `judge_merge_k_out` | same, over `candidates_df`, minus rows that already have `llm_*` values |
-| `classify_rows` (API) | `ceil(n_rows / batch_size)`, default `batch_size=128` texts per call |
-| `transform_rows` | `ceil(n_non_null_rows / batch_size)`, default `batch_size=50` |
-| OpenAI embeddings | about one request per 5,000 characters of text; billed per token. Cached texts are free. |
-| Gemini embeddings | one request per 100 texts (one per text when `checkpoint_path` is set) |
+- `llm_calls` (first attempts; retries come on top) and `estimated_input_tokens` (about 4 characters per token, more for non-ASCII text).
+- `max_output_tokens_per_call`: 50 for the OpenAI judge, `None` when no limit is set.
+- `rows_total`, `rows_to_send`, `rows_per_call` and `workers`.
+- `rows_skipped`, by reason: `already_judged`, `resumed_from_checkpoint`, `outside_judge_score_range`, `null` (transform), and so on.
+- `notes`, which include a missing API key. The real call would raise on it; the dry run doesn't.
 
-For classification, input tokens are about the total characters of the texts / 4. For transforms, budget about as many output tokens as input tokens.
+`merge_k_judge(..., dry_run=True)` adds a `retrieval` entry. It embeds both frames only when `drop_sim_threshold` or a skip threshold makes the count depend on scores. Otherwise the count is exact without embedding anything.
+
+`classify_rows` and `transform_rows` take the API path only when a key *argument* is passed. Without one, a `classify_rows` dry run reports the local classifier (0 calls) and `transform_rows` raises. To dry-run them whether or not a key is set:
+
+```python
+news = pd.read_csv(os.path.join(lt.DATA_DIR_PATH, "protest_test.csv"))   # headline, text, label
+api_key = os.environ.get("OPENAI_API_KEY", "")   # "" still selects the API path
+
+plan = lt.classify_rows(news, on="text", model="gpt-4o-mini", openai_key=api_key, llm_provider="openai",
+                        openai_topic="a protest, strike or riot", batch_size=10, dry_run=True)
+print("classify:", plan["llm_calls"], "calls,", plan["estimated_input_tokens"], "input tokens")
+
+plan = lt.transform_rows(right, on="CompanyName", model="gpt-4o-mini", openai_key=api_key, llm_provider="openai",
+                         openai_prompt="Expand abbreviations in these company names.", dry_run=True)
+print("transform:", plan["llm_calls"], "calls,", plan["estimated_input_tokens"], "input tokens")
+```
+
+To get dollars, multiply the tokens by the model's current per-token prices (look them up). Classification replies are a few tokens per row; transforms reply about as long as their input.
+
+Dry runs don't cover API *embeddings*. OpenAI embeddings take about one request per 5,000 characters of text; Gemini takes one request per 100 texts, or one per text when `checkpoint_path` is set. Both bill about one token per 4 characters, and texts already in `embedding_cache` are free.
 
 Confirm with the user before a full run above roughly 1,000 calls or US$5, or their stated budget.
 
@@ -81,7 +99,6 @@ Read the pairs the judge rejected with a high `score`, and those it accepted wit
 In 0.2.0 the reply parser mis-reads a reply wrapped in a ```` ```json ```` fence as a match, and some models (often Gemini) add those fences. Re-parse the raw replies and compare:
 
 ```python
-import json
 import re
 
 def reparse_is_match(raw):
@@ -97,6 +114,18 @@ llm_ran = judged["llm_is_match"] != 99
 judged.loc[llm_ran, "llm_is_match"] = judged.loc[llm_ran, "llm_raw_response"].map(reparse_is_match)
 print("unreadable replies:", judged.loc[llm_ran, "llm_is_match"].isna().sum())
 ```
+
+Then summarize the judged pairs. `match_report` reads `llm_is_match`, so run it on the re-parsed frame:
+
+```python
+report = lt.match_report(judged, pilot_left, right, on="CompanyName")
+print(json.dumps(report["llm"]))         # rows judged / skipped, match rate, confidence, disagreements with the cutoff
+print(json.dumps(report["threshold"]))   # score cutoff that agrees best (F1) with the LLM's labels
+for s in report["samples"]:
+    print(s["score"], s.get("llm_is_match"), s["left"], "<->", s["right"])
+```
+
+A high `llm_match_below_threshold` or `llm_non_match_at_or_above_threshold` under `disagreements_at_threshold` means the scores and the judge disagree. Read those pairs before trusting either one.
 
 Then decide matches yourself, counting pairs skipped for a high score as matches:
 
@@ -167,15 +196,17 @@ nohup python link_job.py > link_job.log 2>&1 &
 ```python
 # Needs OPENAI_API_KEY
 """Retrieve candidates locally, then judge them with an LLM. Rerun the same command to resume."""
+import json
 import os
 
 os.environ.setdefault("LINKTRANSFORMER_SILENCE_CITATION", "1")
-os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("LINKTRANSFORMER_PROGRESS", "0")   # no progress bars in the log
 
 import pandas as pd
 import linktransformer as lt
 
 OUT = "lt_out"
+MAX_LLM_CALLS = int(os.environ.get("MAX_LLM_CALLS", "1000"))   # the budget the user agreed to
 os.makedirs(OUT, exist_ok=True)
 left = pd.read_csv(os.path.join(lt.DATA_DIR_PATH, "toy_comp_1.csv"))
 right = pd.read_csv(os.path.join(lt.DATA_DIR_PATH, "toy_comp_2.csv"))
@@ -188,22 +219,29 @@ if not os.path.exists(cand_path):
                          k=3, drop_sim_threshold=0.5, embedding_cache=os.path.join(OUT, "emb_cache"))
     cands.to_csv(cand_path, index=False)
 cands = pd.read_csv(cand_path)
-print(f"{len(cands)} candidate pairs", flush=True)
+print(json.dumps(lt.match_report(cands, left, right, on="CompanyName")["score"]), flush=True)
 
-# Stage 2, paid: LLM judge, resumable.
-judged = lt.judge_merge_k_out(
-    cands, on="CompanyName", judge_llm_model="gpt-4o-mini",
+# Stage 2, paid: LLM judge, resumable. The dry run counts only the calls still to make.
+judge_args = dict(
+    on="CompanyName", judge_llm_model="gpt-4o-mini",
     judge_skip_lower_thresh=0.6, judge_skip_upper_thresh=0.97,
     checkpoint_path=os.path.join(OUT, "judge_checkpoint.jsonl"), resume=True,
     failure_log_path=os.path.join(OUT, "judge_failures.jsonl"),
     retry_policy={"max_retries": 5, "base_sleep_seconds": 15, "jitter_seconds": 2},
-    judge_workers=4, progress_bar=False,
+    judge_workers=4,
 )
+plan = lt.judge_merge_k_out(cands, **judge_args, dry_run=True)
+print(f"plan: {plan['llm_calls']} calls, ~{plan['estimated_input_tokens']} input tokens", flush=True)
+if plan["llm_calls"] > MAX_LLM_CALLS:
+    raise SystemExit(f"{plan['llm_calls']} LLM calls exceed MAX_LLM_CALLS={MAX_LLM_CALLS}: confirm with the user first")
+
+judged = lt.judge_merge_k_out(cands, **judge_args)
 judged.to_csv(os.path.join(OUT, "judged.csv"), index=False)
+print(json.dumps(lt.match_report(judged, left, right, on="CompanyName")["llm"]), flush=True)
 print("done", flush=True)
 ```
 
-To check on it, run `tail -n 5 link_job.log` and `wc -l lt_out/judge_checkpoint.jsonl` (pairs judged so far). Don't block on the process.
+To check on it, run `tail -n 5 link_job.log` and `wc -l lt_out/judge_checkpoint.jsonl` (pairs judged so far). Don't block on the process. After a crash, rerun the same command: the dry run then counts only the pairs still to judge. The judged output still needs the [re-parse check](#check-the-judge-output) before you use it.
 
 On a Slurm cluster, submit the same script from a shell where the API key is already exported. `sbatch` passes the submitting environment to the job by default, so the key never has to be written to disk. Add partition and account flags as the cluster requires:
 

@@ -5,11 +5,13 @@ description: Record linkage, fuzzy merges, entity resolution, deduplication and 
 
 # LinkTransformer
 
-LinkTransformer embeds the key column(s) of each row with a transformer model and links rows by cosine similarity. Everything is a function on pandas DataFrames: call the Python API directly. This skill describes version 0.2.0; check it with `python -c "import linktransformer as lt; print(lt.__version__)"`.
+LinkTransformer embeds the key column(s) of each row with a transformer model and links rows by cosine similarity. Everything is a function on pandas DataFrames: call the Python API directly. This skill describes version 0.2.0 with `lt.match_report` and `dry_run=`. If `python -c "import linktransformer as lt; print(lt.__version__, hasattr(lt, 'match_report'))"` prints an older version or `False`, upgrade the package.
 
 ```bash
 pip install linktransformer              # extras: [train] fine-tuning, [gemini] Gemini models, [all]
 export LINKTRANSFORMER_SILENCE_CITATION=1  # otherwise every import prints a BibTeX citation
+export LINKTRANSFORMER_PROGRESS=0          # turn off every progress bar, so bars don't fill your context or logs
+export TRANSFORMERS_VERBOSITY=error        # hide transformers' model-load reports, which are not progress bars
 ```
 
 ## Pick the function
@@ -25,6 +27,7 @@ export LINKTRANSFORMER_SILENCE_CITATION=1  # otherwise every import prints a Bib
 | Map fine labels to a coarse reference list | `lt.aggregate_rows(df, ref_df, left_on=, right_on=)` | Same as `merge` with `ref_df` on the right. |
 | Group near-duplicates | `lt.cluster_rows` | Adds a `cluster` column; `-1` means unclustered for SLINK/HDBScan. |
 | Drop near-duplicates | `lt.dedup_rows` | Keeps the first row per cluster. Read the dedup gotcha below first. |
+| Check a merge's output | `lt.match_report(out, df1, df2, on=...)` | Small JSON-ready dict: score quantiles, a suggested threshold, unmatched and one-to-many rows, LLM judge statistics, sample pairs near the threshold. Read it instead of printing the dataframe. |
 | Score known pairs (two columns of one df) | `lt.evaluate_pairs` | Adds `score`; use it to pick a threshold from labeled pairs. |
 | Classify rows | `lt.classify_rows` | Local HF classifier, or an OpenAI/Gemini chat model in batches. |
 | Clean or standardize text before linking | `lt.transform_rows` | LLM rewrite in batches (OCR fixes, name normalization). API only. |
@@ -71,27 +74,38 @@ Which to start with: pick the LinkTransformer model for your domain and language
 
 ## Validate before trusting a threshold
 
-Embedding scores have no universal cutoff: it depends on the model and the data. Run this loop on every new task and pass `embedding_cache=` so reruns only embed new text.
+Embedding scores have no universal cutoff: it depends on the model and the data. Run this loop on every new task, and pass `embedding_cache=` so reruns only embed new text. `lt.match_report` summarizes a merge in a small dict, so you never need to print the dataframe.
 
 ```python
+import json
+
 MODEL = "dell-research-harvard/lt-wikidata-comp-en"
-cands = lt.merge_knn(left, right, on="CompanyName", model=MODEL, k=1, embedding_cache="lt_cache")
+cands = lt.merge_knn(left, right, on="CompanyName", model=MODEL, k=3, embedding_cache="lt_cache")
 
-# 1. Score distribution of each left row's best match
-print(cands["score"].describe())
-print(pd.cut(cands["score"], [-1, .5, .6, .7, .8, .9, 1.0]).value_counts().sort_index())
+# 1. Score quantiles, a suggested threshold, and sample pairs on both sides of it
+report = lt.match_report(cands, left, right, on="CompanyName")
+print(json.dumps(report["score"]), json.dumps(report["threshold"]), report["notes"], sep="\n")
+for s in report["samples"]:
+    print(s["score"], s["side"], s["left"], "<->", s["right"])
 
-# 2. Read pairs near a candidate threshold, where the errors are
+# 2. Re-check at the cutoff you are considering, with more samples near it
 t = 0.75
-near = cands[cands["score"].between(t - 0.05, t + 0.05)]
-print(near.sample(min(20, len(near)), random_state=0)[["CompanyName_x", "CompanyName_y", "score"]])
+report = lt.match_report(cands, left, right, on="CompanyName", threshold=t, n_samples=10)
+print(json.dumps(report["left"]["at_threshold"]), json.dumps(report["right"]["at_threshold"]))
 
 # 3. Apply the threshold you settled on
-links = lt.merge_knn(left, right, on="CompanyName", model=MODEL, k=1, drop_sim_threshold=t,
-                     embedding_cache="lt_cache")
+links = cands[cands["score"] >= t]
 ```
 
-Show the user the near-threshold pairs and let them confirm the cutoff. `merge` has no threshold argument: filter `out[out["score"] >= t]` yourself.
+Reading the report:
+
+- `threshold` holds `value` and `source`. `source` is `"given"`, `"score_histogram"` (the Otsu split of the scores) or `"llm_judgments"` (the cutoff with the best F1 against `llm_is_match`). A suggested value is only a starting point.
+- `samples` are the pairs nearest the threshold, half at or above it and half below. That's where the errors are. Show them to the user and let them confirm the cutoff.
+- `left` / `right` count matched and `unmatched` rows (pass `df1` and `df2` for those). They also count rows linked to several rows of the other side (`with_multiple_right` / `with_multiple_left`, `max_right_per_key` / `max_left_per_key`), over all pairs and under `at_threshold` and `llm_matches`.
+- `llm` (judge output only) has `rows_judged`, `rows_skipped_by_score`, `match_rate`, `confidence` quantiles and `disagreements_at_threshold`. `match_status` counts `merge_blocking` statuses.
+- For `merge_blocking` output, pass your own `left_key=` / `right_key=` columns, because its `id_lt` numbers restart in every block.
+
+`merge` and `merge_knn` with `k=1` give one candidate per left row. `k` > 1 also shows near-ties. `merge` has no threshold argument: filter on `score` yourself, or pass `drop_sim_threshold=` to `merge_knn`.
 
 With labeled pairs (one row per pair, with a 0/1 label), choose the threshold from data:
 
@@ -114,10 +128,20 @@ for t in np.arange(0.5, 1.0, 0.05):
 
 `merge_k_judge`, `judge_merge_k_out`, `classify_rows` and `transform_rows` with an API model, plus API embeddings, cost money. Before any full run:
 
-1. **Count the calls.** Judging makes one call per candidate pair with `judge_skip_lower_thresh < score < judge_skip_upper_thresh`. `classify_rows` makes `ceil(n_rows / batch_size)` calls (default `batch_size=128`). `transform_rows` makes `ceil(n_non_null_rows / batch_size)` calls (default 50). The formulas and a token estimate are in [references/llm-workflows.md](references/llm-workflows.md#estimate-cost-before-running).
-2. **Pilot on a small sample** (e.g. `left.sample(30, random_state=0)`) and read `llm_raw_response` / the predictions before scaling up.
-3. **Confirm with the user** before the full run when it needs more than about 1,000 LLM calls, or the estimate exceeds about US$5 or their stated budget. Report the call count, the model and the estimated cost. Look up current prices; don't assume them.
-4. Narrow the judged set first: use a lower `k`, `drop_sim_threshold`, and skip thresholds so pairs that are clearly matches or clearly not skip the LLM.
+1. **Dry-run it.** Pass `dry_run=True` with exactly the arguments of the real call. No LLM is called and no checkpoint is written. You get a dict with `llm_calls`, `estimated_input_tokens` (rough, ~4 characters per token), `max_output_tokens_per_call`, `rows_to_send`, `rows_skipped` and `notes`. The count accounts for resumed checkpoints, rows already judged, score-based skips and batching.
+
+   ```python
+   plan = lt.merge_k_judge(left, right, on="CompanyName", knn_sbert_model=MODEL, k=3, judge_llm_model="gpt-4o-mini",
+                           judge_skip_lower_thresh=0.6, judge_skip_upper_thresh=0.97,
+                           embedding_cache="lt_cache", dry_run=True)
+   print(plan["llm_calls"], plan["estimated_input_tokens"], plan["max_output_tokens_per_call"], plan["rows_skipped"])
+   ```
+
+   A judge dry run needs no API key; a missing key is reported in `notes`. It embeds (runs retrieval) only when `drop_sim_threshold` or a skip threshold makes the count depend on scores, so pass `embedding_cache=` and the real run reuses those embeddings. For `classify_rows` / `transform_rows` dry runs, see [references/llm-workflows.md](references/llm-workflows.md#estimate-cost-before-running).
+2. **Price it.** Multiply by the model's current per-token prices; look them up, don't assume them. Output tokens are at most `llm_calls * max_output_tokens_per_call` (50 for the OpenAI judge). Classification replies are short; transforms reply about as long as their input. Dry runs don't cover API *embeddings*: those cost about one token per 4 characters embedded, and cached texts are free.
+3. **Pilot on a small sample** (e.g. `left.sample(30, random_state=0)`) and check the output with `lt.match_report` / `llm_raw_response` before scaling up.
+4. **Confirm with the user** before the full run when it needs more than about 1,000 LLM calls, or the estimate exceeds about US$5 or their stated budget. Report the call count, the model and the estimated cost.
+5. Narrow the judged set first: use a lower `k`, `drop_sim_threshold`, and skip thresholds so pairs that are clearly matches or clearly not skip the LLM. Then dry-run again.
 
 ## Long jobs
 
@@ -127,7 +151,7 @@ for t in np.arange(0.5, 1.0, 0.05):
 - `judge_workers=` (judge) and `api_workers=` (classify/transform) run API calls in parallel. Start at 4 and raise it if there are no rate-limit errors.
 - Embedding and search run on CUDA automatically when a GPU is visible.
 
-A complete script template, plus a Slurm variant, is in [references/llm-workflows.md](references/llm-workflows.md#long-job-template).
+A complete script template is in [references/llm-workflows.md](references/llm-workflows.md#long-job-template). It saves candidates, gates the paid stage on a `dry_run` call count, resumes from a checkpoint, and ends with a `match_report`. A Slurm variant is there too.
 
 ## Gotchas
 
@@ -139,9 +163,10 @@ A complete script template, plus a Slurm variant, is in [references/llm-workflow
 - **`dedup_rows` with SLINK or HDBScan collapses all unclustered rows into one.** It keeps one row per `cluster` label, and every unclustered row has the label `-1`. Use `cluster_type="agglomerative"` with explicit params (it has no `-1`), or use `cluster_rows` and keep the `-1` rows yourself. See [references/recipes.md](references/recipes.md#deduplicate-and-cluster).
 - **`agglomerative` without `cluster_params` raises an error** (ward linkage with cosine). Pass e.g. `{"threshold": 0.3, "clustering linkage": "average", "metric": "cosine"}`; the threshold is then a cosine distance.
 - **The LLM judge's output columns are `llm_is_match` (0/1), `llm_confidence`, `llm_raw_response` and `llm_input_payload`**, not `is_match` / `confidence`. Rows skipped by the skip thresholds get the sentinel `99` in `llm_is_match` and `llm_confidence`. `confidence_threshold=` keeps those `99` rows, including those skipped for a *low* score. Filter on `score` and `llm_is_match` yourself instead.
-- **A judge reply wrapped in a ```` ```json ```` fence is mis-parsed as a match** (0.2.0 bug). Check `llm_raw_response` in the pilot; [references/llm-workflows.md](references/llm-workflows.md#check-the-judge-output) has a re-parse snippet.
+- **A judge reply wrapped in a ```` ```json ```` fence is mis-parsed as a match** (0.2.0 bug). Check `llm_raw_response` in the pilot. [references/llm-workflows.md](references/llm-workflows.md#check-the-judge-output) has a re-parse snippet; run it before `match_report`, whose `llm` statistics trust `llm_is_match`.
 - **`classify_rows` and `transform_rows` use an API only when `openai_key=` or `gemini_key=` is passed explicitly**, e.g. `openai_key=os.environ["OPENAI_API_KEY"]`. Without a key, `classify_rows` treats `model` as a local classifier. Output columns are `clf_preds_<col>` and `transformed_<col>`; multiple columns are joined with `-`.
-- **Progress bars:** judging, classification and transforms take `progress_bar=False`. The sentence-transformers "Batches" bar during embedding always prints to stderr in 0.2.0. `HF_HUB_DISABLE_PROGRESS_BARS=1` silences the model-loading bars. In background jobs, redirect stderr to the log.
+- **Progress bars fill your context.** Set `LINKTRANSFORMER_PROGRESS=0` before running anything (`false`, `no` and `off` also work). It turns off every bar: embedding, judging, model loading and downloads, and training. It is read on every call, so `os.environ["LINKTRANSFORMER_PROGRESS"] = "0"` inside a script works too. Every function also takes `progress_bar=False`.
+- **A `classify_rows` dry run with no key argument reports 0 calls.** Without `openai_key=` / `gemini_key=` it takes the local-classifier path. A `transform_rows` dry run without a key raises. Pass `openai_key=os.environ.get("OPENAI_API_KEY", "")` and `llm_provider="openai"` so the dry run takes the API path even when no key is set.
 - **`merge_k_judge` warns** about which retrieval model it resolved. Pass `knn_sbert_model=` (local) or `knn_api_model=` (API embeddings) explicitly; otherwise it retrieves with `model`, which defaults to MiniLM.
 - **The embedding cache is keyed by model weights and the exact text.** Changing `on` or the column order changes the text, so those rows are re-embedded. One cache folder can serve every function and both sides of a merge.
 
