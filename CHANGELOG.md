@@ -19,6 +19,18 @@
         - Nearest-neighbour and range search run in torch instead of FAISS (exact search, same
           results). This fixes segfaults/"OMP: Error #15" aborts on macOS when FAISS and torch
           were used in one process, and runs on GPU when CUDA is available.
+        - Search splits queries and corpus into tiles and ranks top-k within each tile by block
+          maxima (still exact). On a 16-core CPU it is about 1.5-1.9x faster than the first torch
+          version and faster than FAISS (MKL build) for top-1 and range search, within ~15% for
+          top-k; on GPU it matches faiss-gpu. `search_tiling=False` restores the untiled search.
+        - New `search_precision="fp16"` for merge, merge_knn, merge_range, merge_blocking,
+          aggregate_rows and merge_k_judge: on a CUDA GPU, candidates are shortlisted in half
+          precision and rescored in fp32, with a rounding-error check that guarantees the same
+          matches as the default "fp32" (queries that fail the check are searched again in fp32).
+          About 3x faster than fp32 or faiss-gpu on GPUs with tensor cores. On CPU it runs in
+          fp32 (with a warning).
+        - Search runs in full fp32 even when TF32 matmuls are enabled globally
+          (torch.set_float32_matmul_precision), so results stay exact.
         - merge_knn caps k at the size of the right dataframe (FAISS previously returned
           invalid -1 indices that matched the last row).
         - classify_rows with a local classifier predicts with a plain batched forward pass
@@ -39,6 +51,8 @@
           with fallbacks, and pass warmup as a step count so `warm_up_perc` keeps its meaning.
         - train_clf_model maps `warmup_ratio` (removed in transformers 5.15) instead of silently
           ignoring it, and warns about other unsupported training arguments.
+        - train_clf_model no longer starts Weights & Biases (and asks for a login) when it predicts
+          on the test split with `wandb_log=False`; transformers 4.x defaulted to report_to="all".
 
         Model cards
         - Rewritten LinkTransformer and classifier cards: working code examples (`lt.merge` with

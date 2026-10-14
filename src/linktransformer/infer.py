@@ -35,7 +35,7 @@ from linktransformer.utils import (
     transform_column,
     cosine_similarity_corresponding_pairs,
 )
-from linktransformer.search import knn_search, range_search
+from linktransformer.search import check_search_options, knn_search, range_search
 from tqdm import tqdm
 from linktransformer.api_runtime import (
     append_jsonl,
@@ -115,6 +115,8 @@ def merge(
     failure_log_path: Optional[str] = None,
     retry_policy: Optional[Dict[str, Any]] = None,
     embedding_cache: Optional[str] = None,
+    search_precision: str = "fp32",
+    search_tiling: bool = True,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings.
@@ -133,8 +135,11 @@ def merge(
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param search_precision (str): "fp32" (default) or "fp16". On a CUDA GPU, "fp16" shortlists candidates in half precision and rescores them in fp32, with a check that guarantees the same matches as "fp32"; it is faster on GPUs with tensor cores. On CPU it runs in fp32.
+    :param search_tiling (bool): Split queries and corpus into tiles for faster exact search. Defaults to True. False multiplies query chunks against the whole right dataframe at once.
     :return: DataFrame: The merged dataframe.
     """
+    check_search_options(search_precision, search_tiling)
     ## Set common columns as on if not specified
     if on is None:
         on = _shared_columns_in_left_order(df1, df2)
@@ -247,7 +252,7 @@ def merge(
     embeddings2 = embeddings2 / np.linalg.norm(embeddings2, axis=1, keepdims=True)
 
     ## Nearest neighbour in df2 for each row of df1
-    D, I = knn_search(embeddings1, embeddings2, 1)
+    D, I = knn_search(embeddings1, embeddings2, 1, precision=search_precision, tiled=search_tiling)
 
     df1 = df1.reset_index(drop=True)
     df2 = df2.reset_index(drop=True)
@@ -277,6 +282,8 @@ def merge_blocking(
     openai_key: Optional[str] = None,
     gemini_key: Optional[str] = None,
     embedding_cache: Optional[str] = None,
+    search_precision: str = "fp32",
+    search_tiling: bool = True,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings with optional blocking.
@@ -296,6 +303,8 @@ def merge_blocking(
     :param openai_key (str, optional): OpenAI API key for OpenAI models. Defaults to None.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param search_precision (str): "fp32" (default) or "fp16". On a CUDA GPU, "fp16" shortlists candidates in half precision and rescores them in fp32, with a check that guarantees the same matches as "fp32"; it is faster on GPUs with tensor cores. On CPU it runs in fp32.
+    :param search_tiling (bool): Split queries and corpus into tiles for faster exact search. Defaults to True. False multiplies query chunks against the whole right dataframe at once.
     :return: DataFrame: The merged dataframe.
     """
     ### For blocking, we need to chunk the dfs into blocks
@@ -304,7 +313,8 @@ def merge_blocking(
         logger.info("No blocking vars specified, matching between all rows")
         df_lm_matched = merge(df1, df2, merge_type=merge_type, on=on, model=model, left_on=left_on,
                                     right_on=right_on, suffixes=suffixes, batch_size=batch_size,
-                                     openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+                                     openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache,
+                                     search_precision=search_precision, search_tiling=search_tiling)
         return df_lm_matched
     else:
         ## Partition the dfs into blocks
@@ -354,7 +364,8 @@ def merge_blocking(
             ## Merge the blocks
             df_block_matched = merge(df1_block, df2_block, merge_type=merge_type, on=on, model=model,
                                            left_on=left_on, right_on=right_on, suffixes=suffixes,
-                                           batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+                                           batch_size=batch_size, openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache,
+                                           search_precision=search_precision, search_tiling=search_tiling)
             df_block_matched["match_status"] = "matched_block"
             ## Add to merged dfs
             merged_dfs.append(df_block_matched)
@@ -403,6 +414,8 @@ def aggregate_rows(
     openai_key: str = None,
     gemini_key: str = None,
     embedding_cache: Optional[str] = None,
+    search_precision: str = "fp32",
+    search_tiling: bool = True,
 ) -> DataFrame:
     """
     Aggregate the dataframe based on a reference dataframe using a language model.
@@ -413,6 +426,8 @@ def aggregate_rows(
     :param left_on (Union[str, List[str]]): Column(s) to aggregate on in df.
     :param right_on (Union[str, List[str]]): Reference column(s) to aggregate on in ref_df.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param search_precision (str): "fp32" (default) or "fp16". On a CUDA GPU, "fp16" shortlists candidates in half precision and rescores them in fp32, with a check that guarantees the same matches as "fp32"; it is faster on GPUs with tensor cores. On CPU it runs in fp32.
+    :param search_tiling (bool): Split queries and corpus into tiles for faster exact search. Defaults to True. False multiplies query chunks against the whole right dataframe at once.
     :return: DataFrame: The aggregated dataframe.
     """
 
@@ -427,7 +442,8 @@ def aggregate_rows(
     ## Each row of df is matched to its nearest row of ref_df
     df_lm_matched = merge(df, ref_df, on=None, model=model, left_on=left_on,
                                 right_on=right_on, suffixes=("_x", "_y"), batch_size=128,
-                                 openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache)
+                                 openai_key=openai_key, gemini_key=gemini_key, embedding_cache=embedding_cache,
+                                 search_precision=search_precision, search_tiling=search_tiling)
 
     return df_lm_matched
 
@@ -709,6 +725,8 @@ def merge_knn(
     failure_log_path: Optional[str] = None,
     retry_policy: Optional[Dict[str, Any]] = None,
     embedding_cache: Optional[str] = None,
+    search_precision: str = "fp32",
+    search_tiling: bool = True,
 ) -> DataFrame:
     """
     Merge two dataframes using language model embeddings. This function would support k nearest neighbors matching for each row in df1.
@@ -726,8 +744,11 @@ def merge_knn(
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models. Defaults to None.
     :param drop_sim_threshold (float, optional): Drop rows with similarity below this threshold. Defaults to None.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param search_precision (str): "fp32" (default) or "fp16". On a CUDA GPU, "fp16" shortlists candidates in half precision and rescores them in fp32, with a check that guarantees the same matches as "fp32"; it is faster on GPUs with tensor cores. On CPU it runs in fp32.
+    :param search_tiling (bool): Split queries and corpus into tiles for faster exact search. Defaults to True. False multiplies query chunks against the whole right dataframe at once.
     :return: DataFrame: The merged dataframe.
     """
+    check_search_options(search_precision, search_tiling)
 
 
     ## Set common columns as on if not specified
@@ -826,7 +847,7 @@ def merge_knn(
 
 
     ## k nearest neighbours in df2 for each row of df1 (k is capped at len(df2))
-    D, I = knn_search(embeddings1, embeddings2, k)
+    D, I = knn_search(embeddings1, embeddings2, k, precision=search_precision, tiled=search_tiling)
     k = I.shape[1]
 
     df1 = df1.reset_index(drop=True)
@@ -878,6 +899,8 @@ def merge_range(
     failure_log_path: Optional[str] = None,
     retry_policy: Optional[Dict[str, Any]] = None,
     embedding_cache: Optional[str] = None,
+    search_precision: str = "fp32",
+    search_tiling: bool = True,
 ) -> DataFrame:
     """
     Range-based left merge (exact range search over normalized embeddings).
@@ -898,8 +921,11 @@ def merge_range(
     :param openai_key (str, optional): OpenAI API key for OpenAI embedding models.
     :param gemini_key (str, optional): Gemini API key for Gemini embedding models.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param search_precision (str): "fp32" (default) or "fp16". On a CUDA GPU, "fp16" shortlists candidates in half precision and rescores them in fp32, with a check that guarantees the same matches as "fp32"; it is faster on GPUs with tensor cores. On CPU it runs in fp32.
+    :param search_tiling (bool): Split queries and corpus into tiles for faster exact search. Defaults to True. False multiplies query chunks against the whole right dataframe at once.
     :return: DataFrame: Left-join style matched dataframe with ``score`` column.
     """
+    check_search_options(search_precision, search_tiling)
     if sim_threshold < -1.0 or sim_threshold > 1.0:
         raise ValueError("sim_threshold must be between -1.0 and 1.0 for cosine similarity.")
 
@@ -981,7 +1007,9 @@ def merge_range(
     embeddings1 = embeddings1 / np.clip(np.linalg.norm(embeddings1, axis=1, keepdims=True), 1e-12, None)
     embeddings2 = embeddings2 / np.clip(np.linalg.norm(embeddings2, axis=1, keepdims=True), 1e-12, None)
 
-    lims, distances, indices = range_search(embeddings1, embeddings2, sim_threshold)
+    lims, distances, indices = range_search(
+        embeddings1, embeddings2, sim_threshold, precision=search_precision, tiled=search_tiling
+    )
 
     df1 = df1.reset_index(drop=True)
     df2 = df2.reset_index(drop=True)
@@ -1034,6 +1062,29 @@ def merge_range(
     return df_lm_matched
 
 
+def _load_llm_json(response_text: str) -> Any:
+    """
+    Load JSON from an LLM response, allowing a Markdown code fence around it
+    (```json ... ```) or prose around a single JSON object. Returns None if no
+    JSON can be read.
+    """
+    text = response_text.strip()
+    fenced = re.fullmatch(r"```[A-Za-z0-9_-]*\s*(.*?)\s*```", text, flags=re.DOTALL)
+    if fenced:
+        text = fenced.group(1)
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    obj = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if obj:
+        try:
+            return json.loads(obj.group(0))
+        except Exception:
+            pass
+    return None
+
+
 def _coerce_llm_match_and_confidence(response_text: str) -> Tuple[int, float]:
     """
     Parse an LLM response into a binary match flag and confidence in [0, 1].
@@ -1043,8 +1094,8 @@ def _coerce_llm_match_and_confidence(response_text: str) -> Tuple[int, float]:
     is_match = 0
     confidence = 0.0
 
-    try:
-        payload = json.loads(response_text)
+    payload = _load_llm_json(response_text)
+    if payload is not None:
         if isinstance(payload, dict):
             raw_match = payload.get("is_match", payload.get("match", payload.get("label", 0)))
             if isinstance(raw_match, bool):
@@ -1065,12 +1116,19 @@ def _coerce_llm_match_and_confidence(response_text: str) -> Tuple[int, float]:
                 confidence = float(payload[1])
             except Exception:
                 pass
-    except Exception:
+    else:
+        # Not readable as JSON (e.g. truncated). Use an `is_match: <value>` pair if
+        # there is one; otherwise look for a yes/no answer in the prose. Whole
+        # words only, so the key name "is_match" never counts as a "match".
         lower_txt = response_text.lower()
-        if any(tok in lower_txt for tok in ["yes", "true", "match"]):
-            is_match = 1
+        key_value = re.search(r"\b(?:is_match|match|label)[\"']?\s*[:=]\s*[\"']?(\w+)", lower_txt)
+        if key_value:
+            is_match = int(key_value.group(1) in {"yes", "true", "1", "match"})
+        elif not re.search(r"\b(?:no|not|false)\b", lower_txt):
+            is_match = int(bool(re.search(r"\b(?:yes|true|match)\b", lower_txt)))
 
-        score_matches = re.findall(r"([01](?:\.\d+)?)", response_text)
+        conf_value = re.search(r"\b(?:confidence|score|probability)[\"']?\s*[:=]\s*(\d+(?:\.\d+)?)", lower_txt)
+        score_matches = [conf_value.group(1)] if conf_value else re.findall(r"([01](?:\.\d+)?)", response_text)
         if score_matches:
             try:
                 confidence = float(score_matches[-1])
@@ -1472,7 +1530,8 @@ def judge_merge_k_out(
                 f"{user_content}"
             )
 
-            generation_config: Dict[str, Any] = {}
+            # JSON mode stops Gemini from wrapping its answer in a ```json code fence.
+            generation_config: Dict[str, Any] = {"response_mime_type": "application/json"}
             if "temperature" in llm_params:
                 generation_config["temperature"] = llm_params.get("temperature")
             if "top_p" in llm_params:
@@ -1687,6 +1746,8 @@ def merge_k_judge(
     progress_bar: bool = True,
     judge_workers: int = 1,
     embedding_cache: Optional[str] = None,
+    search_precision: str = "fp32",
+    search_tiling: bool = True,
 ) -> DataFrame:
     """
     Retrieve candidate matches with `merge_knn`, then verify each pair with an LLM.
@@ -1707,6 +1768,8 @@ def merge_k_judge(
         skip LLM judging and are assigned sentinel `99` in llm columns.
     :param progress_bar: whether to show a progress bar while judging candidate rows.
     :param embedding_cache (str, optional): Folder for an on-disk embedding cache. Embeddings are stored per model and text, so repeated calls only embed texts that are not cached yet. Defaults to None.
+    :param search_precision (str): "fp32" (default) or "fp16". On a CUDA GPU, "fp16" shortlists candidates in half precision and rescores them in fp32, with a check that guarantees the same matches as "fp32"; it is faster on GPUs with tensor cores. On CPU it runs in fp32.
+    :param search_tiling (bool): Split queries and corpus into tiles for faster exact search. Defaults to True. False multiplies query chunks against the whole right dataframe at once.
     """
     llm_params = llm_params or {}
 
@@ -1754,6 +1817,8 @@ def merge_k_judge(
         gemini_key=retrieval_gemini_key,
         drop_sim_threshold=drop_sim_threshold,
         embedding_cache=embedding_cache,
+        search_precision=search_precision,
+        search_tiling=search_tiling,
     ).copy()
 
     logger.info(
@@ -1821,6 +1886,8 @@ def merge_knn_with_llm(
     progress_bar: bool = True,
     judge_workers: int = 1,
     embedding_cache: Optional[str] = None,
+    search_precision: str = "fp32",
+    search_tiling: bool = True,
 ) -> DataFrame:
     """Backward-compatible alias for `merge_k_judge`."""
     return merge_k_judge(
@@ -1853,6 +1920,8 @@ def merge_knn_with_llm(
         progress_bar=progress_bar,
         judge_workers=judge_workers,
         embedding_cache=embedding_cache,
+        search_precision=search_precision,
+        search_tiling=search_tiling,
     )
 
 
@@ -1886,6 +1955,8 @@ def merge_knn_openai(
     progress_bar: bool = True,
     judge_workers: int = 1,
     embedding_cache: Optional[str] = None,
+    search_precision: str = "fp32",
+    search_tiling: bool = True,
 ) -> DataFrame:
     """Backward-compatible alias for `merge_k_judge`."""
     return merge_k_judge(
@@ -1918,6 +1989,8 @@ def merge_knn_openai(
         progress_bar=progress_bar,
         judge_workers=judge_workers,
         embedding_cache=embedding_cache,
+        search_precision=search_precision,
+        search_tiling=search_tiling,
     )
 
 
