@@ -5,6 +5,7 @@ Snippets marked `# Needs OPENAI_API_KEY` call a paid API. Run a `dry_run=True` e
 ```python
 import json
 import os
+import numpy as np
 import pandas as pd
 import linktransformer as lt
 
@@ -17,22 +18,73 @@ MODEL = "dell-research-harvard/lt-wikidata-comp-en"
 
 ## Retrieve, then judge
 
-The recommended flow has three stages, and only the last one costs money:
+The recommended flow has five steps. Only judging costs anything, and only the pairs in the judge range are judged:
 
-1. **Retrieve candidates** with a local model: `merge_knn(k=...)`. This is free, so iterate on `k`, the model and `drop_sim_threshold` here.
-2. **Judge only the uncertain range.** Most candidates are clearly matches (very high score) or clearly not (low score). `judge_skip_upper_thresh=` and `judge_skip_lower_thresh=` send only the pairs in between to the judge; pick them by reading pairs near each cutoff, and estimate the cost with `dry_run=True` (next section).
-3. **Judge** the uncertain pairs with `judge_merge_k_out`: an API model, or yourself ([Judge the pairs yourself](#judge-the-pairs-yourself)). Pilot on a sample first, then run everything with a checkpoint.
+1. **Ask the user** who judges (you or an API model), the provider and key for an API model, what counts as a match, and whether very similar pairs may be accepted without judging ([Ask the user first](#ask-the-user-first)).
+2. **Retrieve candidates** with a local model: `merge_knn(k=...)`, saved to a file. This is free, so iterate on `k`, the model and `drop_sim_threshold` here.
+3. **Find the judge ranges** from a small calibration sample: an *auto-accept* range of very high scores (only if the user agreed), a *never-judge* range of low scores, and the *judge* range in between. Confirm them with the user, with the number of pairs to judge and, for an API judge, the cost ([Find the judge ranges](#find-the-judge-ranges)).
+4. **Judge the judge range**, yourself ([Judge the pairs yourself](#judge-the-pairs-yourself)) or with `judge_merge_k_out` and an API model (pilot first, then everything with a checkpoint).
+5. **Check the output and pick the matches** ([Check the judge output](#check-the-judge-output)).
 
-`merge_k_judge(df1, df2, ...)` runs stages 1 and 3 in one call. That suits small jobs, but it recomputes the candidates on every call and doesn't checkpoint API embeddings. For big jobs, save the candidates and call `judge_merge_k_out` yourself.
+`merge_k_judge(df1, df2, ...)` runs retrieval and judging in one call. That suits small jobs, but it recomputes the candidates on every call and doesn't checkpoint API embeddings. For big jobs, save the candidates and call `judge_merge_k_out` yourself.
 
 Judge parameters worth knowing:
 
 - `judge_llm_model` (required). `llm_provider="auto"` routes names containing `gemini` to Gemini and everything else to OpenAI. Keys come from `OPENAI_API_KEY` / `GEMINI_API_KEY`.
 - `judge_on`, or `judge_left_on` / `judge_right_on`: columns sent to the judge. They can differ from the retrieval columns, e.g. retrieve on the name, then judge on name + industry + city. For each column the judge reads `<col>_x` / `<col>_y` when those exist, and otherwise `<col>`.
-- `judge_skip_lower_thresh` / `judge_skip_upper_thresh`: pairs with `score <= lower` or `score >= upper` skip the LLM and get the sentinel `99`.
+- `judge_skip_lower_thresh` / `judge_skip_upper_thresh`: the never-judge and auto-accept cutoffs. Pairs with `score <= lower` or `score >= upper` skip the LLM and get the sentinel `99`; `None` turns a cutoff off.
 - `llm_prompt` replaces the system prompt. Keep asking for JSON with `is_match` and `confidence`. `llm_params` takes `temperature` (default 0), `max_tokens` (default 50 for OpenAI) and `request_timeout` (default 15 s).
 - `judge_workers` sets parallel calls; `checkpoint_path`, `resume`, `failure_log_path` and `retry_policy` are covered below.
 - In `merge_k_judge`, pass `knn_sbert_model=` (local retrieval) or `knn_api_model=` (API embeddings) explicitly; `model=` is only a fallback.
+
+## Ask the user first
+
+Before retrieving or judging, ask these in one message (with your question tool if you have one), each with your recommendation:
+
+1. **Who judges the pairs?** You, the coding agent: no API key and no API cost, but every pair uses your context, so it suits up to a few hundred pairs in the judge range. Or an API model: costs money, runs unattended with checkpoints, and suits thousands of pairs.
+2. **For an API model: which provider and model?** OpenAI (e.g. `gpt-4o-mini`) or Gemini (a current Gemini model; needs `pip install "linktransformer[gemini]"`). Then check whether the key is set, without printing it: `bool(os.getenv("OPENAI_API_KEY"))` or `bool(os.getenv("GEMINI_API_KEY"))`. If it is not, ask the user to set it in the environment the job runs in (their shell profile, a `.env` file they load, or the job script's environment) and to tell you when it is done. Don't ask them to paste a key into the chat, and never write one into code, files or logs.
+3. **What counts as a match?** The default is the same real-world entity. Ask about the cases that matter for their data, such as a parent and its subsidiary, branches, a company before and after a rename, or a product and its variants. Apply the answer when you judge, and give it to an API judge in `llm_prompt`, keeping the JSON instruction: `"Decide whether LEFT and RIGHT refer to the same real-world entity. <the user's rules>. Return ONLY compact JSON with keys is_match (0 or 1) and confidence (0 to 1)."`
+4. **May very similar pairs be accepted without judging?** An auto-accept range saves judging the pairs that are almost always matches, but some users want every pair checked. Pairs in the never-judge range are always treated as non-matches.
+
+## Find the judge ranges
+
+Take up to 10 random candidate pairs from each 0.05-wide score band (about 100 to 200 pairs in all), have the chosen judge label them, and read off the ranges. Fewer than 10 per band often misses the few matches in the lower bands, and the never-judge range then silently drops them:
+
+```python
+cands = pd.read_csv("candidates.csv")      # saved merge_knn output
+band = (np.floor(cands["score"].astype(float) * 20 + 1e-9) / 20).round(2)   # 0.05-wide score bands
+print(band.value_counts().sort_index(ascending=False).to_string())   # candidate pairs per band
+calib = (cands.assign(band=band).sample(frac=1, random_state=0)
+         .groupby("band").head(10).sort_values("score", ascending=False))
+cols = ["id_lt_x", "id_lt_y", "band", "score", "CompanyName_x", "CompanyName_y", "Country_x", "Country_y"]
+print(calib[cols].to_string(index=False))
+```
+
+Label the calibration pairs with the judge the user chose:
+
+- **You judge:** read them and record your decisions as in [Judge the pairs yourself](#judge-the-pairs-yourself). They count toward the final judging too. Then `labels = pd.read_csv("agent_decisions.csv")[["id_lt_x", "id_lt_y", "is_match"]]`.
+- **API judge:** dry-run, then judge only the sample: `pilot = lt.judge_merge_k_out(calib, on="CompanyName", judge_llm_model="gpt-4o-mini", checkpoint_path="calib_judge.jsonl", resume=True)` and `labels = pilot[["id_lt_x", "id_lt_y", "llm_is_match"]].rename(columns={"llm_is_match": "is_match"})`.
+
+Then propose the cutoffs. Bands at the bottom in which every sampled pair was a non-match become the never-judge range, and bands at the top in which every sampled pair was a match become the auto-accept range, each less one band as a safety margin:
+
+```python
+by_band = calib.merge(labels, on=["id_lt_x", "id_lt_y"]).groupby("band")["is_match"].agg(["mean", "size"])
+print(by_band.sort_index(ascending=False).to_string())          # match rate of the sampled pairs in each band
+all_no = (by_band["mean"] == 0).cumprod().astype(bool).to_numpy()              # from the lowest band up
+all_yes = (by_band["mean"] == 1)[::-1].cumprod()[::-1].astype(bool).to_numpy()  # from the highest band down
+no_bands, yes_bands = by_band.index[all_no], by_band.index[all_yes]
+seen_match, seen_non_match = bool((by_band["mean"] > 0).any()), bool((by_band["mean"] < 1).any())
+lo = float(no_bands[-1]) if seen_match and len(no_bands) >= 2 else None        # never judge: score <= lo
+hi = float(yes_bands[1]) if seen_non_match and len(yes_bands) >= 2 else None   # auto-accept: score >= hi
+# hi = None                                                 # if the user wants every pair judged
+
+accept = cands["score"] >= hi if hi is not None else pd.Series(False, index=cands.index)
+never = cands["score"] <= lo if lo is not None else pd.Series(False, index=cands.index)
+print(f"auto-accept (score >= {hi}): {accept.sum()} | never judge (score <= {lo}): {never.sum()} | "
+      f"judge: {(~accept & ~never).sum()} of {len(cands)}")
+```
+
+The never-judge range is where matches can be lost without anyone seeing them, so keep it conservative: a band with only a few sampled pairs is weak evidence, and the bands just below `lo` deserve another 10 or 20 sampled pairs before you trust it. If the sample holds no matches at all (or no non-matches), it cannot place a cutoff, so none is proposed: tell the user, and check the model and what counts as a match with them before judging everything. Show the user the three ranges with their pair counts, a few pairs on each side of each cutoff (`lt.match_report(cands, left, right, on="CompanyName", threshold=hi, n_samples=10)["samples"]`, and the same with `lo`), and the cost: the number of pairs you would read, or the API dry run below. Judge nothing more until the user confirms or adjusts the cutoffs.
 
 ## Estimate cost before running
 
@@ -41,7 +93,7 @@ Every paid function takes `dry_run=True`. It returns a dict instead of results, 
 ```python
 cands = lt.merge_knn(left, right, on="CompanyName", model=MODEL, k=3, drop_sim_threshold=0.5,
                      embedding_cache="lt_cache")
-lo, hi = 0.6, 0.97                       # judge_skip_lower_thresh, judge_skip_upper_thresh
+lo, hi = 0.6, 0.97                       # the confirmed never-judge and auto-accept cutoffs (None turns one off)
 judge_args = dict(on="CompanyName", judge_llm_model="gpt-4o-mini",
                   judge_skip_lower_thresh=lo, judge_skip_upper_thresh=hi)
 
@@ -96,22 +148,27 @@ Read the pairs the judge rejected with a high `score`, and those it accepted wit
 
 ## Judge the pairs yourself
 
-You can be the judge instead of an API model: no key and no API cost, but every pair uses your context. Ask the user which they prefer. Judging yourself suits up to a few hundred uncertain pairs. For more, judge a sample yourself and let `judge_merge_k_out` judge the rest with an API model (it skips pairs you already decided), or use the API judge throughout.
+When the user chooses you as the judge, you decide the pairs yourself: no key and no API cost, but every pair uses your context. That suits up to a few hundred pairs in the judge range. For more, judge a sample yourself and let `judge_merge_k_out` judge the rest with an API model (it skips pairs you already decided), or use the API judge throughout.
 
-Keep the score-based skips, so you only read the uncertain range, and record decisions in the judge's columns so `match_report` and the match filter below work unchanged:
+Read only the judge range, and record decisions in the judge's columns so `match_report` and the match filter below work unchanged:
 
 ```python
 # 1. Candidates (free), saved once: decisions refer to their id_lt_x / id_lt_y
 lt.merge_knn(left, right, on="CompanyName", model=MODEL, k=3, embedding_cache="lt_cache").to_csv("candidates.csv", index=False)
 
-# 2. The uncertain range, minus pairs already decided (so a rerun continues where you stopped)
+# 2. The judge range, minus pairs already decided (so a rerun continues where you stopped)
 cands = pd.read_csv("candidates.csv")
-lo, hi = 0.6, 0.97                       # at or below lo: not a match; at or above hi: a match
-gray = cands[(cands["score"] > lo) & (cands["score"] < hi)]
+lo, hi = 0.6, 0.97                       # the confirmed cutoffs; None turns one off
+in_range = pd.Series(True, index=cands.index)
+if lo is not None:
+    in_range &= cands["score"] > lo
+if hi is not None:
+    in_range &= cands["score"] < hi
+gray = cands[in_range]
 done = pd.read_csv("agent_decisions.csv") if os.path.exists("agent_decisions.csv") else pd.DataFrame(columns=["id_lt_x", "id_lt_y"])
 todo = gray.merge(done[["id_lt_x", "id_lt_y"]], on=["id_lt_x", "id_lt_y"], how="left", indicator=True)
 todo = todo[todo["_merge"] == "left_only"].drop(columns="_merge")
-print(len(gray), "pairs in the uncertain range,", len(todo), "still to judge")
+print(len(gray), "pairs in the judge range,", len(todo), "still to judge")
 
 # 3. Read a batch: only the columns needed to decide
 cols = ["id_lt_x", "id_lt_y", "score", "CompanyName_x", "CompanyName_y", "Industry", "Country_x", "Country_y"]
@@ -133,7 +190,7 @@ Repeat steps 2 and 3 until nothing is left, then put the decisions into the judg
 ```python
 dec = pd.read_csv("agent_decisions.csv").drop_duplicates(["id_lt_x", "id_lt_y"], keep="last")
 judged = cands.merge(dec, on=["id_lt_x", "id_lt_y"], how="left")
-skipped = (judged["score"] <= lo) | (judged["score"] >= hi)
+skipped = ~in_range
 judged["llm_is_match"] = judged["is_match"].where(~skipped, 99)
 judged["llm_confidence"] = judged["confidence"].where(~skipped, 99.0)
 judged["llm_raw_response"] = ("agent: " + judged["reason"]).where(~skipped, "99")
@@ -174,10 +231,11 @@ for s in report["samples"]:
 
 A high `llm_match_below_threshold` or `llm_non_match_at_or_above_threshold` under `disagreements_at_threshold` means the scores and the judge disagree. Read those pairs before trusting either one.
 
-Then decide matches yourself, counting pairs skipped for a high score as matches:
+Then pick the matches: pairs judged a match, plus the auto-accept range when the user agreed to one:
 
 ```python
-matches = pilot[(pilot["llm_is_match"] == 1) | ((pilot["llm_is_match"] == 99) & (pilot["score"] >= hi))]
+auto = (pilot["llm_is_match"] == 99) & (pilot["score"] >= hi) if hi is not None else False
+matches = pilot[(pilot["llm_is_match"] == 1) | auto]
 best = matches.sort_values("score", ascending=False).drop_duplicates("id_lt_x")   # at most one match per left row
 ```
 
@@ -254,6 +312,7 @@ import linktransformer as lt
 
 OUT = "lt_out"
 MAX_LLM_CALLS = int(os.environ.get("MAX_LLM_CALLS", "1000"))   # the budget the user agreed to
+LO, HI = 0.6, 0.97   # the never-judge and auto-accept cutoffs the user confirmed; None turns one off
 os.makedirs(OUT, exist_ok=True)
 left = pd.read_csv(os.path.join(lt.DATA_DIR_PATH, "toy_comp_1.csv"))
 right = pd.read_csv(os.path.join(lt.DATA_DIR_PATH, "toy_comp_2.csv"))
@@ -271,7 +330,7 @@ print(json.dumps(lt.match_report(cands, left, right, on="CompanyName")["score"])
 # Stage 2, paid: LLM judge, resumable. The dry run counts only the calls still to make.
 judge_args = dict(
     on="CompanyName", judge_llm_model="gpt-4o-mini",
-    judge_skip_lower_thresh=0.6, judge_skip_upper_thresh=0.97,
+    judge_skip_lower_thresh=LO, judge_skip_upper_thresh=HI,
     checkpoint_path=os.path.join(OUT, "judge_checkpoint.jsonl"), resume=True,
     failure_log_path=os.path.join(OUT, "judge_failures.jsonl"),
     retry_policy={"max_retries": 5, "base_sleep_seconds": 15, "jitter_seconds": 2},
