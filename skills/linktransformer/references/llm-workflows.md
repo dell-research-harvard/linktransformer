@@ -20,8 +20,8 @@ MODEL = "dell-research-harvard/lt-wikidata-comp-en"
 The recommended flow has three stages, and only the last one costs money:
 
 1. **Retrieve candidates** with a local model: `merge_knn(k=...)`. This is free, so iterate on `k`, the model and `drop_sim_threshold` here.
-2. **Estimate the cost** with `dry_run=True` and pick skip thresholds (next section).
-3. **Judge** the saved candidates with `judge_merge_k_out`. Pilot on a sample first, then run everything with a checkpoint.
+2. **Judge only the uncertain range.** Most candidates are clearly matches (very high score) or clearly not (low score). `judge_skip_upper_thresh=` and `judge_skip_lower_thresh=` send only the pairs in between to the judge; pick them by reading pairs near each cutoff, and estimate the cost with `dry_run=True` (next section).
+3. **Judge** the uncertain pairs with `judge_merge_k_out`: an API model, or yourself ([Judge the pairs yourself](#judge-the-pairs-yourself)). Pilot on a sample first, then run everything with a checkpoint.
 
 `merge_k_judge(df1, df2, ...)` runs stages 1 and 3 in one call. That suits small jobs, but it recomputes the candidates on every call and doesn't checkpoint API embeddings. For big jobs, save the candidates and call `judge_merge_k_out` yourself.
 
@@ -93,6 +93,63 @@ print(pilot[["CompanyName_x", "CompanyName_y", "score", "llm_is_match", "llm_con
 ```
 
 Read the pairs the judge rejected with a high `score`, and those it accepted with a low one. Adjust the prompt, the judged columns or the thresholds before scaling up.
+
+## Judge the pairs yourself
+
+You can be the judge instead of an API model: no key and no API cost, but every pair uses your context. Ask the user which they prefer. Judging yourself suits up to a few hundred uncertain pairs. For more, judge a sample yourself and let `judge_merge_k_out` judge the rest with an API model (it skips pairs you already decided), or use the API judge throughout.
+
+Keep the score-based skips, so you only read the uncertain range, and record decisions in the judge's columns so `match_report` and the match filter below work unchanged:
+
+```python
+# 1. Candidates (free), saved once: decisions refer to their id_lt_x / id_lt_y
+lt.merge_knn(left, right, on="CompanyName", model=MODEL, k=3, embedding_cache="lt_cache").to_csv("candidates.csv", index=False)
+
+# 2. The uncertain range, minus pairs already decided (so a rerun continues where you stopped)
+cands = pd.read_csv("candidates.csv")
+lo, hi = 0.6, 0.97                       # at or below lo: not a match; at or above hi: a match
+gray = cands[(cands["score"] > lo) & (cands["score"] < hi)]
+done = pd.read_csv("agent_decisions.csv") if os.path.exists("agent_decisions.csv") else pd.DataFrame(columns=["id_lt_x", "id_lt_y"])
+todo = gray.merge(done[["id_lt_x", "id_lt_y"]], on=["id_lt_x", "id_lt_y"], how="left", indicator=True)
+todo = todo[todo["_merge"] == "left_only"].drop(columns="_merge")
+print(len(gray), "pairs in the uncertain range,", len(todo), "still to judge")
+
+# 3. Read a batch: only the columns needed to decide
+cols = ["id_lt_x", "id_lt_y", "score", "CompanyName_x", "CompanyName_y", "Industry", "Country_x", "Country_y"]
+print(todo[cols].head(50).to_string(index=False))
+```
+
+After reading a batch, append your decisions, one per pair you read:
+
+```python
+decisions = [  # (id_lt_x, id_lt_y, is_match, confidence, reason)
+    (0, 0, 1, 0.95, "TechCorp / Tech Corporation: same name with a legal suffix, same country"),
+]
+pd.DataFrame(decisions, columns=["id_lt_x", "id_lt_y", "is_match", "confidence", "reason"]).to_csv(
+    "agent_decisions.csv", mode="a", header=not os.path.exists("agent_decisions.csv"), index=False)
+```
+
+Repeat steps 2 and 3 until nothing is left, then put the decisions into the judge's columns. Skipped pairs get the sentinel `99`, as with the API judge:
+
+```python
+dec = pd.read_csv("agent_decisions.csv").drop_duplicates(["id_lt_x", "id_lt_y"], keep="last")
+judged = cands.merge(dec, on=["id_lt_x", "id_lt_y"], how="left")
+skipped = (judged["score"] <= lo) | (judged["score"] >= hi)
+judged["llm_is_match"] = judged["is_match"].where(~skipped, 99)
+judged["llm_confidence"] = judged["confidence"].where(~skipped, 99.0)
+judged["llm_raw_response"] = ("agent: " + judged["reason"]).where(~skipped, "99")
+judged = judged.drop(columns=["is_match", "confidence", "reason"])
+print(json.dumps(lt.match_report(judged, left, right, on="CompanyName")["llm"]))
+```
+
+How to judge:
+
+- Ask the same question as the API judge: do the LEFT and RIGHT records refer to the same real-world entity? Use the fields shown and general knowledge (abbreviations, legal suffixes, translations, former names).
+- Read every pair you record. Never fill decisions from a rule or a script, such as a string-similarity cutoff: that is another threshold, not a judgment.
+- When the fields don't settle it, record `is_match` 0 with confidence 0.5 or lower and say what is missing in `reason`. List those pairs for the user.
+- Work in batches of about 50 pairs and append after each batch, so an interruption loses at most one batch.
+- Tell the user how many pairs you judged and how many were uncertain. `llm_raw_response` starts with `agent:` on the pairs you decided.
+
+To hand the rest to an API model, pass `judged` to `judge_merge_k_out` with the same skip thresholds: it judges only the pairs that have no decision yet.
 
 ## Check the judge output
 

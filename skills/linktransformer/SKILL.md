@@ -63,6 +63,7 @@ Expect Tech Corporation → Tech Corp and Acme Inc → ACME Incorporated, both s
 | Fuzzy match only within exact groups (same country, year, ...) | `lt.merge_blocking(blocking_vars=[...])` | Runs `merge` inside each block. Rows in blocks missing from the other side come back with `match_status` `left_only_block` / `right_only_block`. |
 | Retrieve candidates, then have an LLM decide | `lt.merge_k_judge` | `merge_knn` + `judge_merge_k_out`. Costs one LLM call per judged pair. See [references/llm-workflows.md](references/llm-workflows.md). |
 | Judge a candidate table you already have, resumably | `lt.judge_merge_k_out` | Skips rows that already have `llm_*` values. Prefer it for large runs. |
+| Decide the uncertain pairs yourself, without an API | `lt.merge_knn`, then read and judge the pairs | Ask the user first. Suits up to a few hundred pairs. See [references/llm-workflows.md](references/llm-workflows.md#judge-the-pairs-yourself). |
 | Map fine labels to a coarse reference list | `lt.aggregate_rows(df, ref_df, left_on=, right_on=)` | Same as `merge` with `ref_df` on the right. |
 | Group near-duplicates | `lt.cluster_rows(sim_threshold=...)` | Adds `cluster` (an id for every row) and `cluster_size`; `cluster_size == 1` means no near-duplicate. `blocking_vars=` clusters within exact groups. |
 | Drop near-duplicates | `lt.dedup_rows(sim_threshold=...)` | Keeps one row per cluster: the first, or the most central with `keep="medoid"`. |
@@ -210,7 +211,8 @@ for t in np.arange(0.5, 1.0, 0.05):
 2. **Price it.** Multiply by the model's current per-token prices; look them up, don't assume them. Output tokens are at most `llm_calls * max_output_tokens_per_call` (50 for the OpenAI judge). Classification replies are short; transforms reply about as long as their input. Dry runs don't cover API *embeddings*: those cost about one token per 4 characters embedded, and cached texts are free.
 3. **Pilot on a small sample** (e.g. `left.sample(30, random_state=0)`) and check the output with `lt.match_report` / `llm_raw_response` before scaling up.
 4. **Confirm with the user** before the full run when it needs more than about 1,000 LLM calls, or the estimate exceeds about US$5 or their stated budget. Report the call count, the model and the estimated cost.
-5. Narrow the judged set first: use a lower `k`, `drop_sim_threshold`, and skip thresholds so pairs that are clearly matches or clearly not skip the LLM. Then dry-run again.
+5. **Judge only the uncertain range.** `judge_skip_upper_thresh=` treats pairs at or above it as matches and `judge_skip_lower_thresh=` pairs at or below it as non-matches, without an LLM call; only pairs in between are judged. Also use a lower `k` and `drop_sim_threshold`, then dry-run again.
+6. **Or judge the uncertain pairs yourself**, with no API key or cost, when there are up to a few hundred. Ask the user which they prefer; see [references/llm-workflows.md](references/llm-workflows.md#judge-the-pairs-yourself).
 
 ## Long jobs
 
