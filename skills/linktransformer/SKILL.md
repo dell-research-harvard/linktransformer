@@ -56,11 +56,18 @@ Output: the left columns, then the right columns, then `score` (cosine similarit
 
 ## Choose a model
 
-LinkTransformer links rows by **semantic similarity**: it embeds each row's text and compares the embeddings by cosine similarity. So `model=` must be a model trained to produce sentence embeddings for semantic similarity. Any model that `sentence-transformers` can load works, not only LinkTransformer's own. Choose in this order:
+LinkTransformer links rows by **semantic similarity**: it embeds each row's text and compares the embeddings by cosine similarity. **Anything `sentence-transformers` can load works as `model=`**: LinkTransformer's own models, any sentence-transformers model on the Hugging Face Hub, a local folder, or a model trained with `lt.train_model`. Records with several fields need nothing special from the model: with a list of `on` columns, LinkTransformer joins the fields into one text using the model tokenizer's separator token.
 
-1. **A LinkTransformer model for your domain and language.** They are listed at https://linktransformer.github.io/ and tagged `linktransformer` on the Hugging Face Hub (https://huggingface.co/models?other=linktransformer, which also lists models other people trained with the package):
+**If the user has not named a model, ask whether they want you to search the Hugging Face Hub for one that fits their task**, and describe the task you would search for (the kind of records, the language or languages, the domain). With their go-ahead, search in this order and report a few candidates with their language, downloads and what the model card says they were trained on:
 
-| Domain | Models |
+1. **Models tagged `linktransformer`**, trained for record linkage: https://huggingface.co/api/models?filter=linktransformer (browse: https://huggingface.co/models?other=linktransformer). They include the Dell Research Harvard models listed at https://linktransformer.github.io/ and models other people trained with the package.
+2. **Other sentence-transformers models** for semantic similarity, searching for the task's language or domain and sorted by downloads: https://huggingface.co/api/models?pipeline_tag=sentence-similarity&library=sentence-transformers&sort=downloads&limit=20&search=german. Prefer widely used models whose card says they are trained for semantic similarity in the right language, or a multilingual one when the two sides are in different languages.
+
+Then compare two or three candidates on the same labeled sample with `evaluate_pairs` before committing to one: the best model for one dataset is often not the best for another.
+
+Without a search, these are known starting points:
+
+| Domain | LinkTransformer models (prefix `dell-research-harvard/`) |
 |---|---|
 | Company names (Wikidata aliases) | `lt-wikidata-comp-en`, `-es`, `-fr`, `-de`, `-zh`, `-ja`, and `lt-wikidata-comp-multi` (multilingual and cross-lingual) |
 | Modern Japanese companies (company, product, industry) | `lt-wikidata-comp-prod-ind-ja` |
@@ -68,12 +75,9 @@ LinkTransformer links rows by **semantic similarity**: it embeds each row's text
 | Product descriptions (UN product classifications) | `lt-un-data-fine-fine-{en,es,fr,multi}` (product to product), `lt-un-data-fine-coarse-{...}` (product to coarse category), `lt-un-data-fine-industry-{...}` (product to ISIC industry) |
 | Spanish product descriptions in Mexican trade data | `lt-mexicantrade4748` |
 
-   Prefix each name with `dell-research-harvard/`.
-2. **Otherwise, a sentence-similarity model from the Hugging Face Hub.** Search https://huggingface.co/models?pipeline_tag=sentence-similarity&library=sentence-transformers&sort=downloads and add your language or domain to the search (`&search=german`, `&search=legal`). Prefer widely used models whose card says they are trained for semantic similarity in your language, or a multilingual one when the two sides are in different languages. Pass the Hub id as `model=`. The LinkTransformer site suggests these starting points, which are also good bases for `lt.train_model`:
-
-| Language | Model |
+| Language | General similarity model (the LinkTransformer site's suggestion, also a good base for `lt.train_model`) |
 |---|---|
-| English | `sentence-transformers/multi-qa-mpnet-base-dot-v1` |
+| English | `sentence-transformers/multi-qa-mpnet-base-dot-v1`, or the small, fast default `all-MiniLM-L6-v2` |
 | Multilingual | `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` |
 | French | `dangvantuan/sentence-camembert-large` |
 | Spanish | `hiiamsid/sentence_similarity_spanish_es` |
@@ -81,14 +85,9 @@ LinkTransformer links rows by **semantic similarity**: it embeds each row's text
 | Chinese | `DMetaSoul/sbert-chinese-qmc-domain-v1` |
 | Japanese | `oshizo/sbert-jsnli-luke-japanese-base-lite` |
 
-3. **API embeddings:** OpenAI model names contain `text-embedding` (e.g. `"text-embedding-3-small"`); Gemini names contain `gemini` (e.g. `"gemini-embedding-001"`, needs the `[gemini]` extra). Keys come from the `OPENAI_API_KEY` / `GEMINI_API_KEY` environment variables. Never write a key into code, logs or notebooks. If a key is missing, ask the user to export it. Don't pass `openai_key=` / `gemini_key=` together with a *local* model name: `merge` and its siblings then send that name to the API and fail.
-
-- **Default:** `model="all-MiniLM-L6-v2"` (sentence-transformers) is small and fast, a reasonable baseline for English names.
-- **A local folder** works too, including a model you trained with `lt.train_model`.
-- **Not a similarity model:** a plain Hugging Face encoder such as `bert-base-uncased` still loads (with mean pooling), but it was not trained for similarity and its scores rank pairs poorly. Use one only as a base for `lt.train_model`.
+- **API embeddings:** OpenAI model names contain `text-embedding` (e.g. `"text-embedding-3-small"`); Gemini names contain `gemini` (e.g. `"gemini-embedding-001"`, needs the `[gemini]` extra). Keys come from the `OPENAI_API_KEY` / `GEMINI_API_KEY` environment variables. Never write a key into code, logs or notebooks. If a key is missing, ask the user to export it. Don't pass `openai_key=` / `gemini_key=` together with a *local* model name: `merge` and its siblings then send that name to the API and fail.
+- **Not a similarity model:** a plain Hugging Face encoder such as `bert-base-uncased` also loads (with mean pooling), but it was not trained for similarity and its scores rank pairs poorly. Use one only as a base for `lt.train_model`.
 - **Japanese models built on mLUKE** (the Japanese LinkTransformer models and `oshizo/sbert-jsnli-luke-japanese-base-lite`) need `pip install "transformers>=4.56,<5" "sentence-transformers>=5,<6"`; LinkTransformer raises an error under transformers 5.
-
-Whichever you pick, compare two or three candidates on the same labeled sample with `evaluate_pairs` before committing to one: the best model for one dataset is often not the best for another.
 
 ## Validate before trusting a threshold
 
