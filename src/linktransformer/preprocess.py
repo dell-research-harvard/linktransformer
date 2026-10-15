@@ -427,10 +427,12 @@ def prep_paired_label_data(
             test_left_text_list.append(row["left_text"])
             test_right_text_list.append(row["right_text"])
             test_labels_list.append(row[label_col_name])
+        test_data = (test_left_text_list, test_right_text_list, test_labels_list)
     else:
-        test_left_text_list, test_right_text_list, test_labels_list=None,None,None
+        ##No test set, as in the other prep functions (train_biencoder skips the test evaluator on None)
+        test_data = None
 
-    return train_data_dict, (val_left_text_list, val_right_text_list, val_labels_list), (test_left_text_list, test_right_text_list, test_labels_list)    
+    return train_data_dict, (val_left_text_list, val_right_text_list, val_labels_list), test_data
 
 
 

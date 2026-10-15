@@ -1,5 +1,10 @@
 # Change Log
 
+## Unreleased
+        Fixes
+        - train_model with labeled pairs (label_col_name=) and training_args={"test_at_end": False}
+          no longer fails while building the test evaluator.
+
 ## 0.1.19
         A testing release of the changes planned for 0.2.0, published as 0.1.19 to gather
         feedback from more users first. Please report problems on GitHub.

@@ -47,7 +47,9 @@ def test_lt_train_supcon_with_pooling_layer(linked_pairs, tmp_path):
     _check_saved_model(path)
 
 
-def test_lt_train_onlinecontrastive(linked_pairs, tmp_path):
+@pytest.mark.parametrize("split_args", [{}, {"val_perc": 1, "test_at_end": False}],
+                         ids=["default_split", "all_pairs_no_test"])
+def test_lt_train_onlinecontrastive(linked_pairs, tmp_path, split_args):
     negatives = linked_pairs.assign(right_name=np.roll(linked_pairs["right_name"].to_numpy(), 1),
                                     right_id=np.roll(linked_pairs["right_id"].to_numpy(), 1))
     data = pd.concat([linked_pairs.assign(label=1), negatives.assign(label=0)], ignore_index=True)
@@ -56,7 +58,7 @@ def test_lt_train_onlinecontrastive(linked_pairs, tmp_path):
         left_col_names=["left_name"], right_col_names=["right_name"],
         left_id_name=["left_id"], right_id_name=["right_id"], label_col_name="label",
         training_args={"num_epochs": 1, "train_batch_size": 8, "loss_type": "onlinecontrastive",
-                       "model_save_dir": str(tmp_path), "save_val_test_pickles": False},
+                       "model_save_dir": str(tmp_path), "save_val_test_pickles": False, **split_args},
     )
     _check_saved_model(path)
 
