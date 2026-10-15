@@ -172,7 +172,8 @@ out = lt.merge_knn(firms_a, firms_b, on="CompanyName", model=path, k=1)   # use 
 ```
 
 - `training_args` overrides keys of the default config, `linktransformer/configs/linkage.json` (`num_epochs`, `train_batch_size`, `learning_rate`, `loss_type`, `val_perc`, `model_save_dir`, `model_save_name`, ...). When `training_args` is omitted, `num_epochs` is 10. Without `model_save_dir` the model is saved under `./models/linkage`.
-- The returned path is the best checkpoint. Evaluation results and `LT_training_config.json` are saved next to it.
+- The returned path is the model folder. It holds the weights at the end of training, not those of the best evaluation step, so check the model on held-out data. Evaluation results and `LT_training_config.json` are saved next to it.
+- No labeled pairs yet? Have a judge (you or an API model) make them, a round at a time: see [judge-train-loop.md](judge-train-loop.md).
 - Real runs take minutes to hours, so run them as background jobs (see [llm-workflows.md](llm-workflows.md#long-job-template)) and on a GPU when you can.
 
 Classifiers train the same way with `lt.train_clf_model`, which returns `(best_model_path, best_metric, label_map)`. Given only `data`, it splits it 70/15/15 into train, eval and test. Labels can be text or integers, and `on` can list several columns, joined with the tokenizer's separator as `classify_rows` does. Two things to get right:

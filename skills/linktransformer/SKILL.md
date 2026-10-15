@@ -1,6 +1,6 @@
 ---
 name: linktransformer
-description: Record linkage, fuzzy merges, entity resolution, deduplication and clustering of messy names or records (firms, people, products, places, OCR text) by semantic similarity in pandas DataFrames with the linktransformer Python package (`import linktransformer as lt`). Use when joining tables that lack a clean shared key, matching names across spellings or languages, retrieving top-k candidate matches, verifying matches with an LLM judge, deduplicating or clustering rows, mapping fine categories to coarse ones, classifying or cleaning rows with an LLM, or fine-tuning a linkage model. Covers choosing the function and model, validating a similarity threshold, LLM cost guardrails and long-running jobs.
+description: Record linkage, fuzzy merges, entity resolution, deduplication and clustering of messy names or records (firms, people, products, places, OCR text) by semantic similarity in pandas DataFrames with the linktransformer Python package (`import linktransformer as lt`). Use when joining tables that lack a clean shared key, matching names across spellings or languages, retrieving top-k candidate matches, verifying matches with an LLM judge, deduplicating or clustering rows, mapping fine categories to coarse ones, classifying or cleaning rows with an LLM, or fine-tuning a linkage model, including from labels an LLM or coding-agent judge makes in rounds (active learning). Covers choosing the function and model, validating a similarity threshold, LLM cost guardrails and long-running jobs.
 ---
 
 # LinkTransformer
@@ -74,6 +74,7 @@ Expect Tech Corporation → Tech Corp and Acme Inc → ACME Incorporated, both s
 | Clean or standardize text before linking | `lt.transform_rows` | LLM rewrite in batches (OCR fixes, name normalization). API only. |
 | Embeddings only | `lt.infer_embeddings(strings, model)` | Returns a numpy array. Normalize it before taking dot products. |
 | Fine-tune on your own matched pairs or clusters | `lt.train_model`, `lt.train_clf_model` | Needs the `[train]` extra. See [references/recipes.md](references/recipes.md#train-a-linkage-model). |
+| Train a model from judge labels, then link without a judge | `lt.merge_knn`, a judge, `lt.train_model`, in rounds | You or an API model label the pairs the current model is least sure about; held-out rows measure each round and give the final threshold. See [references/judge-train-loop.md](references/judge-train-loop.md). |
 
 `merge_knn_with_llm` and `merge_knn_openai` are backward-compatible aliases of `merge_k_judge`; don't use them in new code.
 
@@ -244,3 +245,4 @@ A complete script template is in [references/llm-workflows.md](references/llm-wo
 
 - [references/recipes.md](references/recipes.md): multi-column and cross-lingual links, blocking, `merge_range`, aggregation, dedup and clustering, local classification, training.
 - [references/llm-workflows.md](references/llm-workflows.md): LLM judging end to end, cost estimation, output checks, `classify_rows` / `transform_rows` with APIs, the long-job script.
+- [references/judge-train-loop.md](references/judge-train-loop.md): train a model from judge labels in rounds, measure it on held-out rows, pick the threshold, then use and extend the model.
