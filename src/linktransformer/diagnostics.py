@@ -205,14 +205,15 @@ def match_report(
     :param suffixes (Tuple[str, str]): Suffixes used by the merge. Defaults to ('_x', '_y').
     :param left_key (Union[str, List[str]], optional): Column(s) identifying a left row. Defaults to "id_lt_x", which
         merge, merge_knn, merge_range and merge_k_judge add. merge_blocking numbers id_lt within each block, so pass
-        your own key columns for its output.
+        your own key columns for its output, as for any table with ids of your own.
     :param right_key (Union[str, List[str]], optional): Column(s) identifying a right row. Defaults to "id_lt_y".
     :param n_samples (int): Number of sample pairs nearest the threshold, half above and half below. Defaults to 6.
     :param max_chars (int): Truncate sample texts to this many characters. Defaults to 80.
     :return: Dict with keys rows_out, rows_in, columns, score (quantiles), threshold, left and right (per-key match
         counts, unmatched counts when df1/df2 are given, and keys linked to several keys of the other side: over all
         scored pairs, at the threshold, and among pairs the LLM judged a match), match_status (merge_blocking),
-        llm (judge statistics), samples and notes.
+        llm (judge statistics, including the input and output tokens the judge's provider reported, when the
+        llm_input_tokens / llm_output_tokens columns are present), samples and notes.
     """
     if score_col not in df.columns:
         raise ValueError(f"Score column {score_col!r} not found in df; pass score_col= to name it.")
@@ -293,6 +294,7 @@ def match_report(
             "match_rate": _round(n_matches / n_judged) if n_judged else None,
             "confidence": None,
             "disagreements_at_threshold": None,
+            "tokens": None,
         }
         if "llm_confidence" in df.columns and n_judged:
             confidence = pd.to_numeric(df["llm_confidence"], errors="coerce").to_numpy(dtype=float)[judged]
@@ -302,6 +304,14 @@ def match_report(
                     "p10": _round(np.quantile(confidence, 0.1)), "p50": _round(np.quantile(confidence, 0.5)),
                     "p90": _round(np.quantile(confidence, 0.9)), "mean": _round(confidence.mean()),
                 }
+        if "llm_input_tokens" in df.columns and "llm_output_tokens" in df.columns:
+            input_tokens = pd.to_numeric(df["llm_input_tokens"], errors="coerce")
+            output_tokens = pd.to_numeric(df["llm_output_tokens"], errors="coerce")
+            llm_summary["tokens"] = {
+                "input": int(input_tokens.sum()),
+                "output": int(output_tokens.sum()),
+                "rows_with_usage": int((input_tokens.notna() | output_tokens.notna()).sum()),
+            }
         if above_mask is not None:
             llm_summary["disagreements_at_threshold"] = {
                 "llm_match_below_threshold": int((scored_mask & ~above_mask & (llm_labels == 1)).sum()),

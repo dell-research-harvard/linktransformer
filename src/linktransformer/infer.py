@@ -19,11 +19,12 @@ from linktransformer.cluster_fns import _cluster_points, _normalize as _normaliz
 from linktransformer.modelling.LinkTransformer import LinkTransformer
 from linktransformer.utils import (
     _gemini_client,
-    _gemini_generate_text,
+    _gemini_generate,
     _gemini_inputs_prompt,
     _is_gemini_embedding_model,
     _is_openai_embedding_model,
     _llm_dry_run_report,
+    _llm_token_usage,
     _load_tokenizer,
     _max_output_tokens,
     _missing_api_key_note,
@@ -1407,6 +1408,11 @@ def _is_missing_judgement_value(value: Any) -> bool:
     return False
 
 
+def _is_score_skip_sentinel(value: Any) -> bool:
+    """True for the 99 that marks a row skipped by judge_skip_*_thresh: the row was never judged."""
+    return pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0] == 99
+
+
 def _row_has_complete_judgement(row: pd.Series) -> bool:
     required_cols = ["llm_is_match", "llm_confidence", "llm_raw_response"]
     for col in required_cols:
@@ -1414,7 +1420,8 @@ def _row_has_complete_judgement(row: pd.Series) -> bool:
             return False
         if _is_missing_judgement_value(row[col]):
             return False
-    return True
+    # A score skip is decided again from the current judge_skip_*_thresh, so changed cutoffs take effect.
+    return not _is_score_skip_sentinel(row["llm_is_match"])
 
 
 def _judge_gemini_prompt(llm_prompt: str, user_content: str) -> str:
@@ -1459,6 +1466,13 @@ def judge_merge_k_out(
     Adds/updates debugging columns:
     - `llm_input_payload`: serialized JSON payload sent to the judge LLM
     - `llm_is_match`, `llm_confidence`, `llm_raw_response`
+    - `llm_input_tokens`, `llm_output_tokens`: tokens the provider reported for that row's call (output includes
+      reasoning / thinking tokens); NaN for rows not sent to the LLM or when the provider reported no usage.
+      Sum them for the spend so far; `match_report(...)["llm"]["tokens"]` does.
+
+    The checkpoint holds one line per LLM call. Rows skipped by `judge_skip_*_thresh` (sentinel 99) are not
+    checkpointed and are not treated as judged: every run decides them again from the current thresholds, so
+    rerunning with a wider judge range judges the newly included rows.
 
     :param confidence_threshold: optional post-filter: keep rows the LLM judged with `llm_confidence` at or above
         this value (matches and non-matches), and rows skipped for a high score (`judge_skip_upper_thresh`).
@@ -1541,7 +1555,8 @@ def judge_merge_k_out(
             "Provide `judge_on` or `judge_left_on`/`judge_right_on`."
         )
 
-    for col in ["llm_input_payload", "llm_is_match", "llm_confidence", "llm_raw_response"]:
+    for col in ["llm_input_payload", "llm_is_match", "llm_confidence", "llm_raw_response",
+                "llm_input_tokens", "llm_output_tokens"]:
         if col not in candidates.columns:
             candidates[col] = np.nan
 
@@ -1549,6 +1564,8 @@ def judge_merge_k_out(
     llm_matches = candidates["llm_is_match"].tolist()
     llm_confidences = candidates["llm_confidence"].tolist()
     llm_raw = candidates["llm_raw_response"].tolist()
+    llm_input_tokens = candidates["llm_input_tokens"].tolist()
+    llm_output_tokens = candidates["llm_output_tokens"].tolist()
 
     policy = parse_retry_policy(
         retry_policy,
@@ -1560,7 +1577,9 @@ def judge_merge_k_out(
     if checkpoint_path is not None and resume:
         logger.info(f"[judge_merge_k_out] Reading checkpoint: {checkpoint_path}")
         for rec in read_jsonl(checkpoint_path):
-            if rec.get("kind") == "merge_k_judge_row" and "index" in rec:
+            # Older versions also checkpointed score skips (99); those are decided again from the current thresholds.
+            if (rec.get("kind") == "merge_k_judge_row" and "index" in rec
+                    and not _is_score_skip_sentinel(rec.get("llm_is_match"))):
                 resumed_rows[int(rec["index"])] = rec
         logger.info(
             "[judge_merge_k_out] Loaded "
@@ -1578,6 +1597,8 @@ def judge_merge_k_out(
         match_flag: int,
         match_conf: float,
         response_text: str,
+        input_tokens: Optional[int],
+        output_tokens: Optional[int],
     ) -> None:
         append_jsonl(
             checkpoint_path,
@@ -1588,6 +1609,8 @@ def judge_merge_k_out(
                 "llm_is_match": match_flag,
                 "llm_confidence": match_conf,
                 "llm_raw_response": response_text,
+                "llm_input_tokens": input_tokens,
+                "llm_output_tokens": output_tokens,
             },
         )
 
@@ -1598,6 +1621,8 @@ def judge_merge_k_out(
         response_text: str,
         *,
         input_payload: Optional[str] = None,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
         write_checkpoint: bool = True,
     ) -> None:
         if input_payload is not None:
@@ -1605,11 +1630,14 @@ def judge_merge_k_out(
         llm_matches[index] = match_flag
         llm_confidences[index] = match_conf
         llm_raw[index] = response_text
+        llm_input_tokens[index] = np.nan if input_tokens is None else input_tokens
+        llm_output_tokens[index] = np.nan if output_tokens is None else output_tokens
         if write_checkpoint:
             checkpoint_input = llm_inputs[index]
             if _is_missing_judgement_value(checkpoint_input):
                 checkpoint_input = ""
-            _append_checkpoint(index, str(checkpoint_input), match_flag, match_conf, response_text)
+            _append_checkpoint(index, str(checkpoint_input), match_flag, match_conf, response_text,
+                               input_tokens, output_tokens)
 
     def _raise_judge_error(judge_error: Exception, stage: str, item_key: Optional[int] = None) -> None:
         if item_key is not None:
@@ -1648,8 +1676,10 @@ def judge_merge_k_out(
             thread_local.gemini_client = client
         return client
 
-    def _judge_once(user_content: str) -> str:
-        def _judge_call() -> str:
+    def _judge_once(user_content: str) -> Tuple[str, Optional[int], Optional[int]]:
+        """The judge's reply to one pair, with the input and output tokens the provider reported."""
+
+        def _judge_call() -> Tuple[str, Optional[int], Optional[int]]:
             if resolved_provider == "openai":
                 client = _get_openai_client()
                 request_kwargs: Dict[str, Any] = {
@@ -1666,7 +1696,7 @@ def judge_merge_k_out(
                 }
 
                 response = _openai_chat_completion_resilient(client, request_kwargs)
-                return response.choices[0].message.content or ""
+                return (response.choices[0].message.content or "", *_llm_token_usage(response))
             gemini_client = _get_gemini_client()
             prompt_text = _judge_gemini_prompt(llm_prompt, user_content)
 
@@ -1686,9 +1716,10 @@ def judge_merge_k_out(
             dropped_params: List[str] = []
             while True:
                 try:
-                    response_text = _gemini_generate_text(
+                    response = _gemini_generate(
                         gemini_client, resolved_judge_model, prompt_text, generation_config
                     )
+                    response_text = getattr(response, "text", None) or ""
                     break
                 except Exception as exc:
                     error_text = str(exc)
@@ -1723,7 +1754,7 @@ def judge_merge_k_out(
                     f"{resolved_judge_model}: {sorted(set(dropped_params))}",
                     UserWarning,
                 )
-            return response_text
+            return (response_text, *_llm_token_usage(response))
 
         return call_with_retry(_judge_call, policy)
 
@@ -1749,6 +1780,8 @@ def judge_merge_k_out(
                 float(rec.get("llm_confidence", 0.0)),
                 str(rec.get("llm_raw_response", "")),
                 input_payload=str(rec.get("llm_input_payload", "")),
+                input_tokens=rec.get("llm_input_tokens"),
+                output_tokens=rec.get("llm_output_tokens"),
                 write_checkpoint=False,
             )
             resumed_applied_count += 1
@@ -1764,7 +1797,8 @@ def judge_merge_k_out(
                 skip_by_score = True
 
         if skip_by_score:
-            _set_row_result(idx, 99, 99.0, "99", write_checkpoint=not dry_run)
+            # Not checkpointed: the next run decides it again from its own thresholds.
+            _set_row_result(idx, 99, 99.0, "99", write_checkpoint=False)
             skipped_by_score_count += 1
             progress.update(1)
             continue
@@ -1824,21 +1858,21 @@ def judge_merge_k_out(
     else:
         logger.info("[judge_merge_k_out] No pending rows require LLM judging.")
 
-    def _run_pending(item: Tuple[int, str]) -> Tuple[int, str]:
+    def _run_pending(item: Tuple[int, str]) -> Tuple[int, str, Optional[int], Optional[int]]:
         idx, user_content = item
-        response_text = _judge_once(user_content)
-        return idx, response_text
+        return (idx, *_judge_once(user_content))
 
     try:
         if judge_workers == 1:
             for item in pending_items:
                 idx = item[0]
                 try:
-                    _, response_text = _run_pending(item)
+                    _, response_text, input_tokens, output_tokens = _run_pending(item)
                 except Exception as judge_runtime_error:
                     _raise_judge_error(judge_runtime_error, stage="judge inference", item_key=idx)
                 match_flag, match_conf = _coerce_llm_match_and_confidence(response_text)
-                _set_row_result(idx, match_flag, match_conf, response_text, write_checkpoint=True)
+                _set_row_result(idx, match_flag, match_conf, response_text,
+                                input_tokens=input_tokens, output_tokens=output_tokens, write_checkpoint=True)
                 progress.update(1)
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=judge_workers) as executor:
@@ -1846,11 +1880,12 @@ def judge_merge_k_out(
                 for fut in concurrent.futures.as_completed(futures):
                     idx = futures[fut]
                     try:
-                        _, response_text = fut.result()
+                        _, response_text, input_tokens, output_tokens = fut.result()
                     except Exception as judge_runtime_error:
                         _raise_judge_error(judge_runtime_error, stage="judge inference", item_key=idx)
                     match_flag, match_conf = _coerce_llm_match_and_confidence(response_text)
-                    _set_row_result(idx, match_flag, match_conf, response_text, write_checkpoint=True)
+                    _set_row_result(idx, match_flag, match_conf, response_text,
+                                    input_tokens=input_tokens, output_tokens=output_tokens, write_checkpoint=True)
                     progress.update(1)
     except Exception as judge_runtime_error:
         if not isinstance(judge_runtime_error, RuntimeError):
@@ -1869,6 +1904,8 @@ def judge_merge_k_out(
     candidates["llm_confidence"] = llm_confidences
     candidates["llm_raw_response"] = llm_raw
     candidates["llm_input_payload"] = llm_inputs
+    candidates["llm_input_tokens"] = pd.to_numeric(pd.Series(llm_input_tokens, index=candidates.index), errors="coerce")
+    candidates["llm_output_tokens"] = pd.to_numeric(pd.Series(llm_output_tokens, index=candidates.index), errors="coerce")
 
     if confidence_threshold is not None:
         # Rows skipped by score carry the sentinel 99, not an LLM confidence: keep those skipped for a high score

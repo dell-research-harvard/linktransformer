@@ -59,13 +59,36 @@ def _gemini_client(api_key: str, timeout_seconds: Optional[float] = None):
     return genai.Client(api_key=api_key, http_options=http_options)
 
 
-def _gemini_generate_text(client, model: str, prompt_text: str, generation_config: Optional[Dict[str, Any]] = None) -> str:
-    """Generate text with a Gemini model; generation_config holds GenerateContentConfig fields (temperature, top_p, ...)."""
+def _gemini_generate(client, model: str, prompt_text: str, generation_config: Optional[Dict[str, Any]] = None) -> Any:
+    """The Gemini response for one prompt; generation_config holds GenerateContentConfig fields (temperature, top_p, ...)."""
     config = None
     if generation_config:
         config = _require("google.genai").types.GenerateContentConfig(**generation_config)
-    response = client.models.generate_content(model=model, contents=prompt_text, config=config)
+    return client.models.generate_content(model=model, contents=prompt_text, config=config)
+
+
+def _gemini_generate_text(client, model: str, prompt_text: str, generation_config: Optional[Dict[str, Any]] = None) -> str:
+    """Generate text with a Gemini model; generation_config holds GenerateContentConfig fields (temperature, top_p, ...)."""
+    response = _gemini_generate(client, model, prompt_text, generation_config)
     return getattr(response, "text", None) or ""
+
+
+def _llm_token_usage(response: Any) -> Tuple[Optional[int], Optional[int]]:
+    """(input tokens, output tokens) billed for one OpenAI chat completion or Gemini response, or (None, None) when
+    the response doesn't report usage. Output tokens include reasoning / thinking tokens, which are billed as output."""
+
+    def _count(obj: Any, *names: str) -> Optional[int]:
+        values = [getattr(obj, name, None) for name in names]
+        values = [int(v) for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        return sum(values) if values else None
+
+    usage = getattr(response, "usage", None)
+    if usage is not None:  # OpenAI: completion_tokens already includes reasoning tokens
+        return _count(usage, "prompt_tokens"), _count(usage, "completion_tokens")
+    usage = getattr(response, "usage_metadata", None)
+    if usage is not None:  # Gemini: thinking tokens are counted separately from the visible answer
+        return _count(usage, "prompt_token_count"), _count(usage, "candidates_token_count", "thoughts_token_count")
+    return None, None
 
 
 def _is_gemini_embedding_model(model: Any) -> bool:

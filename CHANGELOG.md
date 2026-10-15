@@ -4,6 +4,16 @@
         Fixes
         - train_model with labeled pairs (label_col_name=) and training_args={"test_at_end": False}
           no longer fails while building the test evaluator.
+        Added
+        - The LLM judge (merge_k_judge, judge_merge_k_out) records the tokens the provider billed for each
+          pair in llm_input_tokens and llm_output_tokens (output includes reasoning / thinking tokens),
+          also in its checkpoint, and match_report(...)["llm"]["tokens"] sums them, so spend can be
+          checked against a budget.
+        Changed
+        - The judge no longer checkpoints pairs skipped by judge_skip_lower_thresh / judge_skip_upper_thresh,
+          and no longer treats their sentinel 99 as a decision: each run decides them again from its own
+          thresholds, so rerunning with a wider judge range judges the newly included pairs. 99 lines in
+          older checkpoints are ignored, and the checkpoint now has one line per LLM call.
 
 ## 0.1.19
         A testing release of the changes planned for 0.2.0, published as 0.1.19 to gather

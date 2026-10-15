@@ -1041,3 +1041,103 @@ def test_lt_merge_k_judge_logs_failure(monkeypatch, tmp_path):
     assert payload["function"] == "merge_k_judge"
     assert payload["provider"] == "openai"
 
+
+
+def _fake_openai_with_usage(monkeypatch, calls):
+    """An OpenAI client whose judge replies report 120 input and 9 output tokens per call."""
+
+    class _Completions:
+        def create(self, **kwargs):
+            calls.append(json.loads(kwargs["messages"][1]["content"]))
+            msg = types.SimpleNamespace(content='{"is_match": 1, "confidence": 0.9}')
+            usage = types.SimpleNamespace(prompt_tokens=120, completion_tokens=9, total_tokens=129)
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg)], usage=usage)
+
+    def _client(api_key=None, timeout=None):
+        return types.SimpleNamespace(chat=types.SimpleNamespace(completions=_Completions()))
+
+    monkeypatch.setattr(infer_mod.openai, "OpenAI", _client)
+
+
+def _judge_candidates():
+    return pd.DataFrame({"CompanyName_x": ["A", "B", "C", "D"], "CompanyName_y": ["A2", "B2", "C2", "D2"],
+                         "score": [0.99, 0.80, 0.60, 0.20]})
+
+
+def test_lt_judge_records_token_usage_in_output_checkpoint_and_report(monkeypatch, tmp_path):
+    import linktransformer as lt
+
+    calls = []
+    _fake_openai_with_usage(monkeypatch, calls)
+    checkpoint = tmp_path / "judge.jsonl"
+    kwargs = dict(on="CompanyName", openai_key="dummy", judge_llm_model="gpt-4o-mini", progress_bar=False,
+                  checkpoint_path=str(checkpoint), resume=True, judge_skip_lower_thresh=0.3, judge_skip_upper_thresh=0.95)
+
+    out = lt.judge_merge_k_out(_judge_candidates(), **kwargs)
+
+    assert len(calls) == 2  # B and C; A and D are skipped by score
+    assert out["llm_input_tokens"].tolist()[1:3] == [120, 120] and out["llm_output_tokens"].tolist()[1:3] == [9, 9]
+    assert out[["llm_input_tokens", "llm_output_tokens"]].iloc[[0, 3]].isna().all().all()  # no call, no usage
+    assert lt.match_report(out, threshold=0.5)["llm"]["tokens"] == {"input": 240, "output": 18, "rows_with_usage": 2}
+
+    resumed = lt.judge_merge_k_out(_judge_candidates(), **kwargs)  # everything comes back from the checkpoint
+
+    assert len(calls) == 2
+    assert resumed["llm_input_tokens"].sum() == 240 and resumed["llm_output_tokens"].sum() == 18
+
+
+def test_lt_judge_rejudges_score_skips_when_the_thresholds_widen(monkeypatch, tmp_path):
+    import linktransformer as lt
+
+    calls = []
+    _fake_openai_with_usage(monkeypatch, calls)
+    checkpoint = tmp_path / "judge.jsonl"
+    kwargs = dict(on="CompanyName", openai_key="dummy", judge_llm_model="gpt-4o-mini", progress_bar=False,
+                  checkpoint_path=str(checkpoint), resume=True)
+
+    first = lt.judge_merge_k_out(_judge_candidates(), judge_skip_lower_thresh=0.7, **kwargs)
+
+    assert first["llm_is_match"].tolist() == [1, 1, 99, 99]
+    assert len(checkpoint.read_text(encoding="utf-8").splitlines()) == 2  # one line per LLM call, none for skips
+
+    # A wider judge range judges C, from the checkpoint and from a table that already holds the 99 sentinels
+    for candidates in (_judge_candidates(), first):
+        calls.clear()
+        wider = lt.judge_merge_k_out(candidates, judge_skip_lower_thresh=0.5, dry_run=True, **kwargs)
+        assert wider["llm_calls"] == 1 and wider["rows_skipped"]["outside_judge_score_range"] == 1
+        out = lt.judge_merge_k_out(candidates, judge_skip_lower_thresh=0.5, **kwargs)
+        assert [c["left"]["CompanyName"] for c in calls] == ["C"]
+        assert out["llm_is_match"].tolist() == [1, 1, 1, 99]
+        checkpoint.write_text("".join(checkpoint.read_text(encoding="utf-8").splitlines(keepends=True)[:2]),
+                              encoding="utf-8")  # back to the first run's checkpoint
+
+
+def test_lt_judge_ignores_score_skips_in_old_checkpoints(monkeypatch, tmp_path):
+    import linktransformer as lt
+
+    calls = []
+    _fake_openai_with_usage(monkeypatch, calls)
+    checkpoint = tmp_path / "judge.jsonl"  # as 0.1.19 and earlier wrote it: score skips were checkpointed as 99
+    checkpoint.write_text(json.dumps({"kind": "merge_k_judge_row", "index": 2, "llm_is_match": 99,
+                                      "llm_confidence": 99.0, "llm_raw_response": "99", "llm_input_payload": ""}) + "\n",
+                          encoding="utf-8")
+
+    out = lt.judge_merge_k_out(_judge_candidates(), on="CompanyName", openai_key="dummy", judge_llm_model="gpt-4o-mini",
+                               progress_bar=False, checkpoint_path=str(checkpoint), resume=True)
+
+    assert len(calls) == 4 and out["llm_is_match"].tolist() == [1, 1, 1, 1]
+
+
+def test_llm_token_usage_reads_openai_and_gemini_responses():
+    from linktransformer.utils import _llm_token_usage
+
+    openai_response = types.SimpleNamespace(usage=types.SimpleNamespace(prompt_tokens=50, completion_tokens=7))
+    gemini_response = types.SimpleNamespace(
+        usage_metadata=types.SimpleNamespace(prompt_token_count=40, candidates_token_count=6, thoughts_token_count=30))
+    gemini_no_thinking = types.SimpleNamespace(
+        usage_metadata=types.SimpleNamespace(prompt_token_count=40, candidates_token_count=6, thoughts_token_count=None))
+
+    assert _llm_token_usage(openai_response) == (50, 7)
+    assert _llm_token_usage(gemini_response) == (40, 36)  # thinking tokens are billed as output
+    assert _llm_token_usage(gemini_no_thinking) == (40, 6)
+    assert _llm_token_usage(types.SimpleNamespace(text="{}")) == (None, None)
