@@ -59,6 +59,16 @@ Main functions
 - Fine-tune models on your own data: :func:`~linktransformer.train_model.train_model`,
   :func:`~linktransformer.train_clf_model.train_clf_model`
 
+Using with AI agents
+--------------------
+
+The repository includes an agent skill, `skills/linktransformer
+<https://github.com/dell-research-harvard/linktransformer/tree/main/skills/linktransformer>`_, that teaches
+coding agents to pick the function and model, check a similarity threshold, judge candidate pairs within a
+budget and run long jobs resumably. Its ``SKILL.md`` lists the reference files and when to read each. The
+`README <https://github.com/dell-research-harvard/linktransformer#using-with-ai-agents>`_ shows how to
+install it as a Claude Code plugin.
+
 .. toctree::
    :maxdepth: 2
    :caption: API reference

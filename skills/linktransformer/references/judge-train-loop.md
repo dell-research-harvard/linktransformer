@@ -1,11 +1,13 @@
 # Train a model from judge labels
 
+Part of the LinkTransformer skill: [SKILL.md](../SKILL.md) covers picking the function and model, thresholds and cost; [llm-workflows.md](llm-workflows.md) covers asking the user, judging pairs and API cost; [recipes.md](recipes.md#train-a-linkage-model) covers `train_model` itself.
+
 The judge (you, or an API model) labels a few hundred candidate pairs, and those labels fine-tune a linkage model. The new model retrieves candidates again, the judge labels the pairs it is least sure about, and the model is trained again. A fixed set of held-out rows, judged in full, measures every round's model and gives the final similarity threshold. What you end with:
 
 - **a model and a threshold** that link the rest of the data, and similar data later, with no judge;
 - **a labels file** that retrains the model or extends it to new data.
 
-It pays off when there are too many candidate pairs to judge them all (for you, more than a few hundred; for an API, when the cost or the wait is too much), when the same kind of linking will come back (new batches, other years, other sources), or when the base model separates matches poorly. For a one-off job of a few hundred pairs, judge the judge range instead ([llm-workflows.md](llm-workflows.md#retrieve-then-judge)).
+It pays off when there are too many candidate pairs to judge them all (for you, more than a few hundred; for an API, when the cost or the wait is too much; [When the judge range is too big](llm-workflows.md#when-the-judge-range-is-too-big) lists the other options), when the same kind of linking will come back (new batches, other years, other sources), or when the base model separates matches poorly. For a one-off job of a few hundred pairs, judge the judge range instead ([llm-workflows.md](llm-workflows.md#retrieve-then-judge)).
 
 Training needs `pip install "linktransformer[train]"`. A small model such as `all-MiniLM-L6-v2` trains on a few hundred labels in a minute or two on a laptop CPU; larger base models want a GPU (see [Long jobs](../SKILL.md#long-jobs)).
 

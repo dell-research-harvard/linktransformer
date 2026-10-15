@@ -14,6 +14,11 @@
           and no longer treats their sentinel 99 as a decision: each run decides them again from its own
           thresholds, so rerunning with a wider judge range judges the newly included pairs. 99 lines in
           older checkpoints are ignored, and the checkpoint now has one line per LLM call.
+        - The agent skill (skills/linktransformer) gained what a trial on scraped Amazon–Google product
+          data showed was missing: retrieve before asking who judges, calibrate by rank as well as score,
+          what to do when the judge range is too big, pilots measured by precision and recall, auditing an
+          API judge, comparing models without labeled pairs, a near-miss model check, and cross-links
+          between SKILL.md and its reference files.
 
 ## 0.1.19
         A testing release of the changes planned for 0.2.0, published as 0.1.19 to gather

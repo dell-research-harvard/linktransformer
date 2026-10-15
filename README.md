@@ -80,6 +80,7 @@ judged = lt.merge_k_judge(
 # - llm_is_match (1 match, 0 no match; 99 if judge_skip_*_thresh skipped the pair)
 # - llm_confidence (float in [0, 1]; 99 for skipped pairs)
 # - llm_raw_response (the judge's reply)
+# - llm_input_tokens, llm_output_tokens (tokens the provider billed for that pair; NaN if not sent)
 ```
 
 You can also combine providers (for example OpenAI embeddings retrieval + Gemini judge) by setting `knn_api_model`, `judge_llm_model`, and `llm_provider` explicitly.
@@ -182,7 +183,7 @@ For most jobs, computing the embeddings takes far longer than the search itself.
 
 ## Long-running API jobs
 
-API-based workflows (OpenAI/Gemini embeddings, `merge_k_judge`, `judge_merge_k_out`, `classify_rows`, `transform_rows`) accept `checkpoint_path` (a JSONL progress file), `resume=True` to continue an interrupted run, `failure_log_path` to record failed calls, and `retry_policy={"max_retries": 5, "base_sleep_seconds": 15, "jitter_seconds": 2}`. `judge_workers` / `api_workers` run API calls in parallel.
+API-based workflows (OpenAI/Gemini embeddings, `merge_k_judge`, `judge_merge_k_out`, `classify_rows`, `transform_rows`) accept `checkpoint_path` (a JSONL progress file), `resume=True` to continue an interrupted run, `failure_log_path` to record failed calls, and `retry_policy={"max_retries": 5, "base_sleep_seconds": 15, "jitter_seconds": 2}`. `judge_workers` / `api_workers` run API calls in parallel. The judge's checkpoint has one line per LLM call, with its token counts. Pairs outside `judge_skip_*_thresh` are not checkpointed: each run decides them again from its own thresholds, so rerunning with a wider judge range judges the newly included pairs.
 
 ## Checking results and API cost
 
@@ -197,6 +198,8 @@ print(plan["llm_calls"], plan["estimated_input_tokens"])
 # summary of a merge: unmatched rows, score quantiles, one-to-many links, samples near a threshold
 matches = lt.merge_knn(left_df, right_df, on="CompanyName", k=3)
 report = lt.match_report(matches, left_df, right_df, on="CompanyName", threshold=0.8)
+
+# on judge output, report["llm"]["tokens"] sums the input and output tokens the provider billed
 ```
 
 `dry_run=True` also works on `judge_merge_k_out`, `classify_rows` and `transform_rows`. It applies checkpoint resume, already-judged rows, score-based skipping and batching as the real run would. `merge_k_judge` only embeds the data during a dry run when `drop_sim_threshold` or a `judge_skip_*_thresh` makes the number of calls depend on similarity scores. Token counts are rough estimates: about 4 characters per token, with more tokens for non-English text. Without a `threshold`, `match_report` suggests one: the cutoff that agrees best with the LLM's judgments, if there are any, or else a split of the score histogram. Check the returned samples before relying on it.
@@ -221,7 +224,11 @@ The repo includes an agent skill, [`skills/linktransformer`](https://github.com/
 /plugin install linktransformer@linktransformer
 ```
 
-On Claude Code 2.1.275 or later, one step also works: `/plugin install linktransformer --marketplace dell-research-harvard/linktransformer`. Claude then loads the skill for record-linkage tasks automatically, or you can call it with `/linktransformer:linktransformer`. Other agents can read `skills/linktransformer/SKILL.md` and its `references/` folder directly.
+On Claude Code 2.1.275 or later, one step also works: `/plugin install linktransformer --marketplace dell-research-harvard/linktransformer`. Claude then loads the skill for record-linkage tasks automatically, or you can call it with `/linktransformer:linktransformer`. Other agents can read `skills/linktransformer/SKILL.md` and its `references/` folder directly. `SKILL.md` lists the reference files and when to read each:
+
+- [`references/recipes.md`](skills/linktransformer/references/recipes.md): linking patterns (several columns, languages, blocking, clustering, training on labels you have).
+- [`references/llm-workflows.md`](skills/linktransformer/references/llm-workflows.md): judging candidate pairs, by the agent itself or an API model, with cost checks, pilots, audits and long jobs.
+- [`references/judge-train-loop.md`](skills/linktransformer/references/judge-train-loop.md): training a model from judge labels in rounds, when there are too many pairs to judge.
 
 ## Development and testing
 

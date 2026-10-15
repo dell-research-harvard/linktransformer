@@ -1,5 +1,7 @@
 # LinkTransformer recipes
 
+Part of the LinkTransformer skill: [SKILL.md](../SKILL.md) covers picking the function and model, thresholds and cost; [llm-workflows.md](llm-workflows.md) covers judging pairs (yourself or with an API model) and long jobs; [judge-train-loop.md](judge-train-loop.md) trains a model from judge labels.
+
 Every snippet runs on the toy data shipped with the package. Swap in your own frames and column names. The snippets share this setup:
 
 ```python
@@ -29,6 +31,21 @@ print(out[["CompanyName_x", "ProductDescription_x", "CompanyName_y", "ProductDes
 ```
 
 Include only columns that carry identity: a noisy column (prices, free-text notes) can drag scores down. Compare the score distributions with and without it.
+
+A column filled on one side and mostly empty on the other (in scraped product data, a manufacturer present on every Amazon row but missing from 93% of Google rows) does more harm than good in `on`, because the empty side embeds `""` there. Add it to the name on the side that has it, unless the name already contains it, and link on the result:
+
+```python
+def with_field(df, name_col, field_col):
+    """name_col, prefixed with field_col where the field is filled and not already in the name."""
+    name, field = df[name_col].fillna("").astype(str), df[field_col].fillna("").astype(str)
+    missing = (field != "") & ~pd.Series([f.lower() in n.lower() for f, n in zip(field, name)], index=df.index)
+    return name.where(~missing, field + " " + name)
+
+firms_a["name_country"] = with_field(firms_a, "CompanyName", "Country")
+out = lt.merge_knn(firms_a, firms_b, left_on="name_country", right_on="CompanyName", model="all-MiniLM-L6-v2", k=2)
+```
+
+Compare the variants the way you compare models ([Compare candidate models](../SKILL.md#compare-candidate-models)): in the products trial, adding the manufacturer to the Amazon titles helped both general English models.
 
 ## Different column names, or different languages
 
